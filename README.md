@@ -128,6 +128,36 @@ Ollama prompts live under `prompts/`. Each run prepends `_common.txt` (forbids r
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
+Existing `rollup.db` files remain compatible: the `summaries` table is added via `CREATE TABLE IF NOT EXISTS` on the first `--ollama` run. New databases record schema version 2 via `INSERT OR IGNORE` during any non-dry-run digest; the first `--ollama` run upgrades an existing v1 row to 2 with `INSERT OR REPLACE`.
+
+## Ollama validation (live)
+
+Prerequisites:
+
+```bash
+pip install -e ".[ollama]"
+ollama pull llama3.2:3b
+```
+
+Incremental checks (default digest performs **no network calls** unless `--ollama` is passed):
+
+```bash
+# Single-folder smoke
+python -m rollup digest --ollama --folder tech --lookback-days 7
+
+# Re-run — expect cache hits in stats
+python -m rollup digest --ollama --folder tech --lookback-days 7
+
+# Force rebuild
+python -m rollup digest --ollama --rebuild-summaries --folder tech --lookback-days 7
+
+# Stop Ollama, then confirm preview fallback (no crash)
+python -m rollup digest --ollama --folder tech --lookback-days 7
+
+# Full digest after smoke passes
+python -m rollup digest --ollama
+```
+
 ## Project layout
 
 ```

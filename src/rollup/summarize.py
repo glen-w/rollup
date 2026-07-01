@@ -21,7 +21,13 @@ class OllamaError(Exception):
 
 def validate_ollama_url(url: str, allow_remote: bool) -> None:
     parsed = urlparse(url)
-    host = parsed.hostname or ""
+    if parsed.scheme not in ("http", "https"):
+        raise OllamaError(
+            f"Ollama URL scheme {parsed.scheme!r} is not supported; use http or https."
+        )
+    host = parsed.hostname
+    if not host:
+        raise OllamaError("Ollama URL must include a hostname.")
     if host not in LOCAL_HOSTS and not allow_remote:
         raise OllamaError(
             f"Ollama URL host {host!r} is not local. "
@@ -56,6 +62,16 @@ def build_prompt(classified: ClassifiedMessage, body_excerpt: str) -> str:
     )
 
 
+def _ollama_model_matches(requested: str, available: str) -> bool:
+    if not requested or not available:
+        return False
+    if available == requested:
+        return True
+    if ":" not in requested and available.startswith(f"{requested}:"):
+        return True
+    return False
+
+
 def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
     """Check Ollama tags endpoint. Returns (ok, message)."""
     try:
@@ -64,13 +80,15 @@ def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
         return False, "requests not installed; pip install -e '.[ollama]'"
 
     parsed = urlparse(base_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return False, "Ollama URL must use http/https with a hostname."
     tags_url = f"{parsed.scheme}://{parsed.netloc}/api/tags"
     try:
         resp = requests.get(tags_url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         models = [m.get("name", "") for m in data.get("models", [])]
-        if not any(model in m or m.startswith(model) for m in models):
+        if not any(_ollama_model_matches(model, m) for m in models):
             return False, f"Model {model!r} not found in Ollama. Available: {models[:5]}"
         return True, "ok"
     except Exception as exc:
@@ -131,9 +149,15 @@ def apply_summaries(
             try:
                 from rollup.state import get_cached_summary
 
-                cached = get_cached_summary(conn, parsed.message_key, parsed.content_hash)
-            except Exception:
-                pass
+                cached = get_cached_summary(
+                    conn,
+                    parsed.message_key,
+                    parsed.content_hash,
+                    model,
+                    classified.newsletter_type,
+                )
+            except Exception as exc:
+                logger.warning("Cache read failed for %s: %s", parsed.subject, exc)
             if cached:
                 result.append(
                     DigestEntry(
@@ -143,7 +167,12 @@ def apply_summaries(
                 continue
         try:
             summary = summarize_message(classified, ollama_url, model, max_chars)
-            if conn:
+        except Exception as exc:
+            logger.warning("Summary failed for %s: %s", parsed.subject, exc)
+            result.append(_fallback_entry(entry))
+            continue
+        if conn:
+            try:
                 from rollup.state import store_summary
 
                 store_summary(
@@ -155,14 +184,13 @@ def apply_summaries(
                     summary,
                     __import__("datetime").datetime.now().astimezone(),
                 )
-            result.append(
-                DigestEntry(
-                    classified=classified, summary=summary, summary_source="ollama"
-                )
+            except Exception as exc:
+                logger.warning("Failed to cache summary for %s: %s", parsed.subject, exc)
+        result.append(
+            DigestEntry(
+                classified=classified, summary=summary, summary_source="ollama"
             )
-        except Exception as exc:
-            logger.warning("Summary failed for %s: %s", parsed.subject, exc)
-            result.append(_fallback_entry(entry))
+        )
     return result
 
 

@@ -3,9 +3,15 @@ output/
 state/
 logs/
 .venv/
+.release-test-env/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 dist/
 build/
+
+# macOS / secrets
+.DS_Store
+.env
+.env.*

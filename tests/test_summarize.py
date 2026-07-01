@@ -10,7 +10,7 @@ import pytest
 
 from rollup.classify import classify_message
 from rollup.filter import make_digest_entry
-from rollup.models import ParsedMessage
+from rollup.models import ClassifiedMessage, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.summarize import (
     OllamaError,
@@ -18,19 +18,29 @@ from rollup.summarize import (
     build_prompt,
     check_ollama_available,
     is_local_ollama,
+    summarize_message,
     validate_ollama_url,
 )
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+COMMON_SNIPPET = (PROMPTS_DIR / "_common.txt").read_text(encoding="utf-8").strip()[:40]
+
+NEWSLETTER_TYPES = (
+    "short_update",
+    "multi_section_digest",
+    "essay",
+    "link_roundup",
+    "unclassified",
+)
 
 
-def _entry(body: str = "Newsletter body text for summarisation."):
-    parsed = ParsedMessage(
+def _parsed(body: str = "Newsletter body text for summarisation.", subject: str = "Weekly Update"):
+    return ParsedMessage(
         message_key="k1",
         content_hash=compute_content_hash(body),
         folder_name="tech",
         relative_folder_path="tech",
-        subject="Weekly Update",
+        subject=subject,
         sender="news@example.com",
         date_raw="",
         date_parsed=datetime.now().astimezone(),
@@ -44,7 +54,19 @@ def _entry(body: str = "Newsletter body text for summarisation."):
         preview=body[:100],
         parse_warnings=(),
     )
-    return make_digest_entry(classify_message(parsed), no_ollama=False)
+
+
+def _classified(newsletter_type: str, body: str = "Newsletter body text for summarisation."):
+    parsed = _parsed(body)
+    return ClassifiedMessage(
+        parsed=parsed,
+        newsletter_type=newsletter_type,  # type: ignore[arg-type]
+        classification_scores=(),
+    )
+
+
+def _entry(body: str = "Newsletter body text for summarisation."):
+    return make_digest_entry(classify_message(_parsed(body)), no_ollama=False)
 
 
 def test_validate_ollama_url_local() -> None:
@@ -54,6 +76,16 @@ def test_validate_ollama_url_local() -> None:
 def test_validate_ollama_url_rejects_remote() -> None:
     with pytest.raises(OllamaError, match="not local"):
         validate_ollama_url("http://192.168.1.1:11434/api/generate", allow_remote=False)
+
+
+def test_validate_ollama_url_rejects_missing_scheme() -> None:
+    with pytest.raises(OllamaError, match="scheme"):
+        validate_ollama_url("localhost:11434/api/generate", allow_remote=False)
+
+
+def test_validate_ollama_url_rejects_missing_hostname() -> None:
+    with pytest.raises(OllamaError, match="hostname"):
+        validate_ollama_url("http:///api/generate", allow_remote=False)
 
 
 def test_validate_ollama_url_allow_remote() -> None:
@@ -67,21 +99,27 @@ def test_is_local_ollama() -> None:
 
 def test_prompt_templates_exist() -> None:
     assert (PROMPTS_DIR / "_common.txt").is_file()
-    for name in (
-        "short_update",
-        "multi_section_digest",
-        "essay",
-        "link_roundup",
-        "unclassified",
-    ):
+    for name in NEWSLETTER_TYPES:
         assert (PROMPTS_DIR / f"{name}.txt").is_file()
 
 
-def test_build_prompt_includes_common() -> None:
+def test_build_prompt_common_once() -> None:
     entry = _entry()
-    prompt = build_prompt(entry.classified, entry.classified.parsed.body_text[:1000])
-    common = (PROMPTS_DIR / "_common.txt").read_text(encoding="utf-8")
-    assert common.strip()[:40] in prompt
+    excerpt = entry.classified.parsed.body_text[:1000]
+    prompt = build_prompt(entry.classified, excerpt)
+    assert prompt.count(COMMON_SNIPPET) == 1
+    assert entry.classified.parsed.subject in prompt
+    assert excerpt in prompt
+
+
+@pytest.mark.parametrize("newsletter_type", NEWSLETTER_TYPES)
+def test_build_prompt_all_types(newsletter_type: str) -> None:
+    classified = _classified(newsletter_type)
+    excerpt = classified.parsed.body_text[:500]
+    prompt = build_prompt(classified, excerpt)
+    assert prompt.count(COMMON_SNIPPET) == 1
+    assert classified.parsed.subject in prompt
+    assert excerpt in prompt
 
 
 @patch("requests.get")
@@ -103,6 +141,45 @@ def test_check_ollama_available_model_missing(mock_get: MagicMock) -> None:
     mock_get.return_value.raise_for_status = MagicMock()
     ok, msg = check_ollama_available("http://localhost:11434/api/generate", "llama3.2:3b")
     assert ok is False
+
+
+@patch("requests.get")
+def test_check_ollama_available_bare_name_matches_tagged(mock_get: MagicMock) -> None:
+    pytest.importorskip("requests")
+    mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:latest"}]}
+    mock_get.return_value.raise_for_status = MagicMock()
+    ok, _ = check_ollama_available("http://localhost:11434/api/generate", "llama3.2")
+    assert ok is True
+
+
+@patch("requests.get")
+def test_check_ollama_available_rejects_partial_name_match(mock_get: MagicMock) -> None:
+    pytest.importorskip("requests")
+    mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
+    mock_get.return_value.raise_for_status = MagicMock()
+    ok, _ = check_ollama_available("http://localhost:11434/api/generate", "llama")
+    assert ok is False
+
+
+@patch("requests.post")
+def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
+    pytest.importorskip("requests")
+    mock_post.return_value.json.return_value = {"response": "Bullet summary"}
+    mock_post.return_value.raise_for_status = MagicMock()
+    entry = _entry()
+    result = summarize_message(
+        entry.classified,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+    )
+    assert result == "Bullet summary"
+    mock_post.assert_called_once()
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["model"] == "llama3.2:3b"
+    assert payload["stream"] is False
+    assert "prompt" in payload
+    assert entry.classified.parsed.subject in payload["prompt"]
 
 
 @patch("rollup.summarize.summarize_message")
@@ -145,7 +222,7 @@ def test_apply_summaries_fallback_when_unavailable(mock_check: MagicMock) -> Non
 def test_apply_summaries_rebuild_bypasses_cache(
     mock_check: MagicMock, mock_summarize: MagicMock, tmp_path
 ) -> None:
-    from rollup.state import get_cached_summary, init_db_with_summaries, store_summary
+    from rollup.state import init_db_with_summaries, store_summary
 
     mock_check.return_value = (True, "ok")
     mock_summarize.return_value = "Fresh summary"
@@ -184,4 +261,126 @@ def test_apply_summaries_rebuild_bypasses_cache(
         rebuild=True,
     )
     assert result2[0].summary_source == "ollama"
+    mock_summarize.assert_called_once()
+
+
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_apply_summaries_model_change_cache_miss(
+    mock_check: MagicMock, mock_summarize: MagicMock, tmp_path
+) -> None:
+    from rollup.state import init_db_with_summaries, store_summary
+
+    mock_check.return_value = (True, "ok")
+    mock_summarize.return_value = "New model summary"
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    parsed = _entry().classified.parsed
+    store_summary(
+        conn,
+        parsed.message_key,
+        parsed.content_hash,
+        "short_update",
+        "llama3.2:3b",
+        "Cached old",
+        datetime.now().astimezone(),
+    )
+    entries = [_entry()]
+    result = apply_summaries(
+        entries,
+        "http://localhost:11434/api/generate",
+        "other:7b",
+        30000,
+        allow_remote=False,
+        conn=conn,
+        rebuild=False,
+    )
+    assert result[0].summary_source == "ollama"
+    assert result[0].summary == "New model summary"
+    mock_summarize.assert_called_once()
+
+
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_apply_summaries_switching_back_to_model_a_hits_cache(
+    mock_check: MagicMock, mock_summarize: MagicMock, tmp_path
+) -> None:
+    from rollup.state import init_db_with_summaries
+
+    mock_check.return_value = (True, "ok")
+    mock_summarize.side_effect = ["Model A summary", "Model B summary"]
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    entries = [_entry()]
+    common = {
+        "ollama_url": "http://localhost:11434/api/generate",
+        "max_chars": 30000,
+        "allow_remote": False,
+        "conn": conn,
+        "rebuild": False,
+    }
+
+    result_a = apply_summaries(entries, model="llama3.2:3b", **common)
+    assert result_a[0].summary_source == "ollama"
+    assert result_a[0].summary == "Model A summary"
+
+    result_b = apply_summaries(entries, model="other:7b", **common)
+    assert result_b[0].summary_source == "ollama"
+    assert result_b[0].summary == "Model B summary"
+    assert mock_summarize.call_count == 2
+
+    mock_summarize.reset_mock()
+    result_a2 = apply_summaries(entries, model="llama3.2:3b", **common)
+    assert result_a2[0].summary_source == "cache"
+    assert result_a2[0].summary == "Model A summary"
+    mock_summarize.assert_not_called()
+
+
+@patch("rollup.state.store_summary")
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_apply_summaries_store_failure_keeps_ollama_summary(
+    mock_check: MagicMock, mock_summarize: MagicMock, mock_store: MagicMock, tmp_path
+) -> None:
+    from rollup.state import init_db_with_summaries
+
+    mock_check.return_value = (True, "ok")
+    mock_summarize.return_value = "Fresh summary"
+    mock_store.side_effect = RuntimeError("disk full")
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    entries = [_entry()]
+    result = apply_summaries(
+        entries,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+        allow_remote=False,
+        conn=conn,
+    )
+    assert result[0].summary_source == "ollama"
+    assert result[0].summary == "Fresh summary"
+
+
+@patch("rollup.state.get_cached_summary")
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_apply_summaries_cache_read_failure_continues(
+    mock_check: MagicMock, mock_summarize: MagicMock, mock_get_cached: MagicMock, tmp_path
+) -> None:
+    from rollup.state import init_db_with_summaries
+
+    mock_check.return_value = (True, "ok")
+    mock_summarize.return_value = "Fresh summary"
+    mock_get_cached.side_effect = RuntimeError("db locked")
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    entries = [_entry()]
+    result = apply_summaries(
+        entries,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+        allow_remote=False,
+        conn=conn,
+    )
+
+    assert result[0].summary_source == "ollama"
+    assert result[0].summary == "Fresh summary"
     mock_summarize.assert_called_once()

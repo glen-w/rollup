@@ -205,6 +205,15 @@ def cmd_digest(args: argparse.Namespace) -> int:
         all_messages, generated_at, config.lookback_days, config.no_ollama
     )
 
+    if not config.no_ollama and not config.dry_run:
+        from rollup.summarize import OllamaError, validate_ollama_url
+
+        try:
+            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+        except OllamaError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
     seen_keys: set[str] = set()
     conn = None
     if not config.dry_run:

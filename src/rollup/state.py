@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MVP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -21,14 +21,51 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 SUMMARIES_SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS summaries (
-    message_key TEXT PRIMARY KEY,
+    message_key TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     newsletter_type TEXT NOT NULL,
     model TEXT NOT NULL,
     summary TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (message_key, content_hash, newsletter_type, model)
 );
 """
+
+_SUMMARIES_COMPOSITE_PK = "primary key (message_key, content_hash, newsletter_type, model)"
+
+
+def _summaries_needs_migration(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    normalized = " ".join(row[0].lower().split())
+    return _SUMMARIES_COMPOSITE_PK not in normalized
+
+
+def _migrate_summaries_schema(conn: sqlite3.Connection) -> None:
+    if not _summaries_needs_migration(conn):
+        return
+    conn.executescript(
+        """
+        CREATE TABLE summaries_migrated (
+            message_key TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            newsletter_type TEXT NOT NULL,
+            model TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (message_key, content_hash, newsletter_type, model)
+        );
+        INSERT INTO summaries_migrated
+            SELECT message_key, content_hash, newsletter_type, model, summary, created_at
+            FROM summaries;
+        DROP TABLE summaries;
+        ALTER TABLE summaries_migrated RENAME TO summaries;
+        """
+    )
+    conn.commit()
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -43,6 +80,11 @@ def init_db(db_path: Path) -> sqlite3.Connection:
 def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     conn = init_db(db_path)
     conn.executescript(SUMMARIES_SCHEMA_V2)
+    _migrate_summaries_schema(conn)
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+        (SCHEMA_VERSION,),
+    )
     conn.commit()
     return conn
 
@@ -66,13 +108,19 @@ def upsert_seen_keys(
 
 
 def get_cached_summary(
-    conn: sqlite3.Connection, message_key: str, content_hash: str
+    conn: sqlite3.Connection,
+    message_key: str,
+    content_hash: str,
+    model: str,
+    newsletter_type: str,
 ) -> str | None:
     row = conn.execute(
-        "SELECT summary, content_hash FROM summaries WHERE message_key = ?",
-        (message_key,),
+        """SELECT summary FROM summaries
+           WHERE message_key = ? AND content_hash = ?
+             AND model = ? AND newsletter_type = ?""",
+        (message_key, content_hash, model, newsletter_type),
     ).fetchone()
-    if row and row[1] == content_hash:
+    if row:
         return row[0]
     return None
 
