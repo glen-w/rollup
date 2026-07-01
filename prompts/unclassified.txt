@@ -1,0 +1,10 @@
+You are creating a private digest. Do not reproduce the newsletter text. Do not include long quotations. Summarise only. Keep the output proportionate to the source.
+
+Newsletter subject: {subject}
+From: {sender}
+Type: {newsletter_type}
+
+Content excerpt:
+{body_excerpt}
+
+Provide a brief note on whether this message has usable content. If the body is empty or unclear, say so in one sentence.

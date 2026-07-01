@@ -1,0 +1,10 @@
+You are creating a private digest. Do not reproduce the newsletter text. Do not include long quotations. Summarise only. Keep the output proportionate to the source.
+
+Newsletter subject: {subject}
+From: {sender}
+Type: {newsletter_type}
+
+Content excerpt:
+{body_excerpt}
+
+Write a short overview paragraph, then grouped key items by theme. Include deadlines, events, reports, or calls to action if present. End with a "Worth opening?" note.

@@ -1,0 +1,10 @@
+You are creating a private digest. Do not reproduce the newsletter text. Do not include long quotations. Summarise only. Keep the output proportionate to the source.
+
+Newsletter subject: {subject}
+From: {sender}
+Type: {newsletter_type}
+
+Content excerpt:
+{body_excerpt}
+
+Write 2–4 elegant teaser paragraphs capturing the argument, tone, mood, stakes, and why it may be worth reading. Do not use bullet lists unless practical takeaways exist.
