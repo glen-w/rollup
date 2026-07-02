@@ -8,6 +8,9 @@ from typing import Any
 FINAL_REVIEW_PROVIDERS = frozenset({"ollama"})
 FINAL_REVIEW_PROMPT_STYLES = frozenset({"strict", "concise", "editorial"})
 FINAL_REVIEW_MAX_OUTPUT_CHARS = 16_000
+FINAL_REVIEW_DEFAULT_NUM_CTX = 32_768
+FINAL_REVIEW_RESERVED_OUTPUT_TOKENS = 2_000
+FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN = 4
 
 
 class FinalReviewConfigError(ValueError):
@@ -36,8 +39,8 @@ def _make_profile(
     prompt_style: str,
     *,
     temperature: float,
-    num_ctx: int | None = 8192,
-    timeout_seconds: int = 120,
+    num_ctx: int | None = FINAL_REVIEW_DEFAULT_NUM_CTX,
+    timeout_seconds: int = 180,
 ) -> FinalReviewProfile:
     return FinalReviewProfile(
         name=name,

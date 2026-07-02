@@ -15,14 +15,19 @@ from rollup.filter import make_digest_entry
 from rollup.final_review import (
     FINAL_REVIEW_PROMPT_VERSION,
     build_final_review_prompt,
+    build_fitted_final_review_prompt,
     build_review_corpus,
     compute_digest_fingerprint,
     compute_review_input_hash,
+    estimate_prompt_tokens,
     execute_final_review,
     parse_final_review_response,
+    prompt_exceeds_context,
     write_final_review_report,
 )
 from rollup.final_review_profiles import (
+    FINAL_REVIEW_DEFAULT_NUM_CTX,
+    FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
     FinalReviewConfigError,
     resolve_final_review_profile,
     validate_final_review_config,
@@ -160,6 +165,52 @@ def _config(tmp_path: Path, **overrides) -> Config:
     )
     base.update(overrides)
     return Config(**base)
+
+
+def test_strict_profile_uses_large_context_window() -> None:
+    profile = resolve_final_review_profile("strict")
+    assert profile.num_ctx == FINAL_REVIEW_DEFAULT_NUM_CTX
+    assert profile.timeout_seconds == 180
+
+
+def test_prompt_exceeds_context_when_prompt_is_too_large() -> None:
+    profile = resolve_final_review_profile("strict")
+    huge_prompt = "x" * (profile.num_ctx * FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN)
+    assert prompt_exceeds_context(huge_prompt, profile)
+
+
+def test_build_fitted_final_review_prompt_fits_context() -> None:
+    report = _report(
+        entries_by_folder={
+            "tech": tuple(
+                _entry(
+                    message_key=f"k{i}",
+                    subject=f"Subject {i}",
+                    summary="-" + (" detail" * 400),
+                )
+                for i in range(40)
+            )
+        }
+    )
+    profile = resolve_final_review_profile("strict")
+    _, prompt, _ = build_fitted_final_review_prompt(report, profile)
+    assert not prompt_exceeds_context(prompt, profile)
+    assert estimate_prompt_tokens(prompt) < profile.num_ctx
+
+
+def test_parse_final_review_empty_response_includes_context_hint() -> None:
+    result = parse_final_review_response(
+        "",
+        profile_name="strict",
+        model="qwen2.5:7b",
+        generated_at=datetime.now().astimezone(),
+        digest_fingerprint="abc",
+        review_input_hash="def",
+        prompt_chars=95_000,
+        num_ctx=8192,
+    )
+    assert result.review_source == "error"
+    assert "num_ctx=8192" in result.issues[0].description
 
 
 def test_build_review_corpus_ordering() -> None:
@@ -345,7 +396,7 @@ def test_final_review_cache_key_dimensions(tmp_path: Path) -> None:
         model="qwen2.5:7b",
         prompt_version=FINAL_REVIEW_PROMPT_VERSION,
         temperature=0.1,
-        num_ctx=8192,
+        num_ctx=FINAL_REVIEW_DEFAULT_NUM_CTX,
         options={"format": "json"},
         result_json='{"overall_status":"pass"}',
         created_at=datetime.now().astimezone(),
@@ -359,7 +410,7 @@ def test_final_review_cache_key_dimensions(tmp_path: Path) -> None:
         model="qwen2.5:7b",
         prompt_version=FINAL_REVIEW_PROMPT_VERSION,
         temperature=0.1,
-        num_ctx=8192,
+        num_ctx=FINAL_REVIEW_DEFAULT_NUM_CTX,
         options={"format": "json"},
     )
     assert cached is not None

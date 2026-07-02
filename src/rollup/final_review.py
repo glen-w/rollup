@@ -11,7 +11,12 @@ from datetime import datetime
 from pathlib import Path
 
 from rollup.config import Config
-from rollup.final_review_profiles import FinalReviewProfile, resolve_final_review_profile
+from rollup.final_review_profiles import (
+    FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
+    FINAL_REVIEW_RESERVED_OUTPUT_TOKENS,
+    FinalReviewProfile,
+    resolve_final_review_profile,
+)
 from rollup.models import (
     DigestEntry,
     DigestReport,
@@ -33,7 +38,8 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts" / "final_review"
 FINAL_REVIEW_PROMPT_VERSION = "final_review_v1"
 MAX_LINK_LABELS = 5
-MAX_SUMMARY_CHARS = 4000
+MAX_SUMMARY_CHARS = 1200
+FINAL_REVIEW_SUMMARY_CHAR_STEPS = (1200, 600, 300, 150)
 
 _VALID_ISSUE_TYPES = frozenset(
     {
@@ -73,12 +79,14 @@ def _link_labels_for_entry(entry: DigestEntry) -> tuple[str, ...]:
     return tuple(labels)
 
 
-def _truncate_summary(summary: str | None) -> str | None:
+def _truncate_summary(
+    summary: str | None, *, max_chars: int = MAX_SUMMARY_CHARS
+) -> str | None:
     if summary is None:
         return None
-    if len(summary) <= MAX_SUMMARY_CHARS:
+    if len(summary) <= max_chars:
         return summary
-    return summary[: MAX_SUMMARY_CHARS - 1] + "…"
+    return summary[: max_chars - 1] + "…"
 
 
 def _summary_metadata_to_dict(
@@ -90,7 +98,7 @@ def _summary_metadata_to_dict(
 
 
 def _corpus_entry_from_digest_entry(
-    entry: DigestEntry, section: str
+    entry: DigestEntry, section: str, *, max_summary_chars: int = MAX_SUMMARY_CHARS
 ) -> DigestReviewEntry:
     parsed = entry.classified.parsed
     return DigestReviewEntry(
@@ -102,18 +110,28 @@ def _corpus_entry_from_digest_entry(
         newsletter_type=entry.classified.newsletter_type,
         read_time_minutes=parsed.read_time_minutes,
         summary_source=entry.summary_source,
-        summary=_truncate_summary(entry.summary),
+        summary=_truncate_summary(entry.summary, max_chars=max_summary_chars),
         link_labels=_link_labels_for_entry(entry),
     )
 
 
-def build_review_corpus(report: DigestReport) -> DigestReviewCorpus:
+def build_review_corpus(
+    report: DigestReport, *, max_summary_chars: int = MAX_SUMMARY_CHARS
+) -> DigestReviewCorpus:
     entries: list[DigestReviewEntry] = []
     for folder, folder_entries in sorted(report.dated_by_folder.items()):
         for entry in folder_entries:
-            entries.append(_corpus_entry_from_digest_entry(entry, folder))
+            entries.append(
+                _corpus_entry_from_digest_entry(
+                    entry, folder, max_summary_chars=max_summary_chars
+                )
+            )
     for entry in report.undated:
-        entries.append(_corpus_entry_from_digest_entry(entry, "undated"))
+        entries.append(
+            _corpus_entry_from_digest_entry(
+                entry, "undated", max_summary_chars=max_summary_chars
+            )
+        )
     return DigestReviewCorpus(
         window_start=report.window_start.isoformat(),
         window_end=report.window_end.isoformat(),
@@ -183,6 +201,38 @@ def build_final_review_prompt(
         f"Digest outline:\n{outline}\n\n"
         f"Digest corpus (JSON):\n{corpus_json}"
     )
+
+
+def estimate_prompt_tokens(prompt: str) -> int:
+    return max(1, len(prompt) // FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN)
+
+
+def prompt_exceeds_context(prompt: str, profile: FinalReviewProfile) -> bool:
+    if profile.num_ctx is None:
+        return False
+    budget = profile.num_ctx - FINAL_REVIEW_RESERVED_OUTPUT_TOKENS
+    return estimate_prompt_tokens(prompt) > budget
+
+
+def build_fitted_final_review_prompt(
+    report: DigestReport, profile: FinalReviewProfile
+) -> tuple[DigestReviewCorpus, str, int]:
+    """Shrink review summaries until the prompt fits the model context window."""
+    last_corpus = build_review_corpus(report)
+    last_prompt = build_final_review_prompt(last_corpus, profile)
+    last_limit = MAX_SUMMARY_CHARS
+    for summary_limit in FINAL_REVIEW_SUMMARY_CHAR_STEPS:
+        corpus = build_review_corpus(report, max_summary_chars=summary_limit)
+        prompt = build_final_review_prompt(corpus, profile)
+        last_corpus, last_prompt, last_limit = corpus, prompt, summary_limit
+        if not prompt_exceeds_context(prompt, profile):
+            if summary_limit < MAX_SUMMARY_CHARS:
+                logger.info(
+                    "Final review: reduced summary excerpt to %d chars to fit context",
+                    summary_limit,
+                )
+            return corpus, prompt, summary_limit
+    return last_corpus, last_prompt, last_limit
 
 
 def compute_review_input_hash(
@@ -307,12 +357,41 @@ def parse_final_review_response(
     digest_fingerprint: str,
     review_input_hash: str,
     review_source: FinalReviewSource = "ollama",
+    prompt_chars: int | None = None,
+    num_ctx: int | None = None,
 ) -> FinalReviewResult:
+    stripped = raw.strip()
+    if not stripped:
+        detail = "Model returned an empty response."
+        if prompt_chars is not None and num_ctx is not None:
+            est_tokens = max(1, prompt_chars // FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN)
+            detail = (
+                f"{detail} Prompt is ~{prompt_chars} chars (~{est_tokens} est. tokens) "
+                f"with num_ctx={num_ctx}; the review input likely exceeds the context window."
+            )
+        return _error_result(
+            message=detail,
+            profile_name=profile_name,
+            model=model,
+            generated_at=generated_at,
+            digest_fingerprint=digest_fingerprint,
+            review_input_hash=review_input_hash,
+        )
     try:
         payload = json.loads(_extract_json_object(raw))
     except json.JSONDecodeError as exc:
+        preview = stripped[:120].replace("\n", " ")
+        message = f"Failed to parse final review JSON: {exc}"
+        if preview:
+            message = f"{message} Response started with: {preview!r}"
+        if prompt_chars is not None and num_ctx is not None:
+            est_tokens = max(1, prompt_chars // FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN)
+            message = (
+                f"{message} Prompt is ~{prompt_chars} chars (~{est_tokens} est. tokens) "
+                f"with num_ctx={num_ctx}."
+            )
         return _error_result(
-            message=f"Failed to parse final review JSON: {exc}",
+            message=message,
             profile_name=profile_name,
             model=model,
             generated_at=generated_at,
@@ -482,10 +561,26 @@ def execute_final_review(
         config.final_review_profile,
         model_override=config.final_review_model,
     )
-    corpus = build_review_corpus(report)
-    prompt = build_final_review_prompt(corpus, profile)
+    corpus, prompt, summary_limit = build_fitted_final_review_prompt(report, profile)
     digest_fingerprint = compute_digest_fingerprint(report)
     review_input_hash = compute_review_input_hash(corpus, profile, prompt)
+
+    if prompt_exceeds_context(prompt, profile):
+        est_tokens = estimate_prompt_tokens(prompt)
+        return _error_result(
+            message=(
+                "Final review prompt exceeds the model context window even after "
+                f"shrinking summaries to {summary_limit} chars "
+                f"(~{len(prompt)} prompt chars, ~{est_tokens} est. tokens, "
+                f"num_ctx={profile.num_ctx}). Try a smaller lookback window or "
+                "a model with a larger context."
+            ),
+            profile_name=profile.name,
+            model=profile.model,
+            generated_at=generated_at,
+            digest_fingerprint=digest_fingerprint,
+            review_input_hash=review_input_hash,
+        )
 
     if not config.rebuild_final_review and conn is not None:
         from rollup.state import get_final_review_generation
@@ -552,6 +647,8 @@ def execute_final_review(
         digest_fingerprint=digest_fingerprint,
         review_input_hash=review_input_hash,
         review_source="ollama",
+        prompt_chars=len(prompt),
+        num_ctx=profile.num_ctx,
     )
 
     if conn is not None and result.review_source == "ollama":
