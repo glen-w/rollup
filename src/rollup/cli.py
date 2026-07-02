@@ -259,6 +259,18 @@ def _print_routing_report(report) -> None:
             f"{row.newsletter_type}: profile={row.profile_name} "
             f"model={row.model} count={row.count}"
         )
+    for row in getattr(report, "anomaly_rows", ()):
+        elapsed = (
+            f"{row.elapsed_seconds:.1f}s"
+            if row.elapsed_seconds is not None
+            else "n/a"
+        )
+        stop_reason = row.stop_reason or "n/a"
+        print(
+            f'{row.status}: subject="{row.subject}" profile={row.profile_name} '
+            f"stop_reason={stop_reason} output_chars={row.output_chars} "
+            f"elapsed={elapsed} cached={str(row.cached).lower()}"
+        )
 
 
 def _validate_final_review_config(config: Config) -> None:

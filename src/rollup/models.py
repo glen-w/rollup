@@ -143,6 +143,17 @@ class DigestSummaryRouteStat:
 
 
 @dataclass(frozen=True)
+class DigestSummaryAnomalyRow:
+    subject: str
+    profile_name: str
+    status: str
+    stop_reason: str | None
+    output_chars: int
+    elapsed_seconds: float | None
+    cached: bool
+
+
+@dataclass(frozen=True)
 class DigestSummaryMetadata:
     mode: str
     profiles_used: tuple[str, ...]
@@ -154,6 +165,7 @@ class DigestSummaryMetadata:
     selected_profiles: tuple[str, ...] = ()
     output_variants: tuple[str, ...] = ()
     routing_counts: tuple[DigestSummaryRouteStat, ...] = ()
+    anomaly_rows: tuple[DigestSummaryAnomalyRow, ...] = ()
     variant_name: str | None = None
 
 

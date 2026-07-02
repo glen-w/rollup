@@ -16,13 +16,16 @@ from rollup.summarize import (
     PROMPTS_DIR,
     PROMPT_VERSION,
     OllamaError,
+    SummarizeMessageResult,
     apply_summaries,
     build_prompt,
     build_summary_cache_key_parts,
     check_ollama_available,
     clean_summary_output,
     execute_summary_plan,
+    finalize_summary_output,
     is_local_ollama,
+    is_summary_usable,
     summarize_message,
     validate_ollama_url,
 )
@@ -79,6 +82,22 @@ def _classified(
 
 def _entry(body: str = "Newsletter body text for summarisation."):
     return make_digest_entry(classify_message(_parsed(body)), no_ollama=False)
+
+
+def _generation(
+    text: str = "Bullet summary",
+    *,
+    stop_reason: str = "done",
+) -> SummarizeMessageResult:
+    return SummarizeMessageResult(
+        text=text,
+        stop_reason=stop_reason,  # type: ignore[arg-type]
+        output_chars=len(text),
+        elapsed_seconds=0.1,
+        body_chars=10,
+        prompt_chars=100,
+        link_count=0,
+    )
 
 
 def test_validate_ollama_url_local() -> None:
@@ -157,6 +176,32 @@ def test_clean_summary_output_strips_intro_lines(raw: str, expected: str) -> Non
     assert clean_summary_output(raw) == expected
 
 
+def test_is_summary_usable_rejects_non_cacheable_stop_reason() -> None:
+    assert (
+        is_summary_usable(
+            "valid text", prompt_style="rough", stop_reason="local_char_cap"
+        )
+        is False
+    )
+
+
+def test_is_summary_usable_rejects_empty_and_overlong() -> None:
+    assert is_summary_usable("   ", prompt_style="rough", stop_reason="done") is False
+    assert (
+        is_summary_usable("x" * 2000, prompt_style="rough", stop_reason="done")
+        is False
+    )
+    assert (
+        is_summary_usable("- bullet one", prompt_style="rough", stop_reason="done")
+        is True
+    )
+
+
+def test_finalize_summary_output_caps_by_style() -> None:
+    long_text = "word " * 500
+    assert len(finalize_summary_output(long_text, prompt_style="rough")) <= 1500
+
+
 def test_build_prompt_discourages_intro_filler() -> None:
     prompt = build_prompt(_entry().classified, "body excerpt")
     assert "no preamble" in prompt.lower() or "no intro" in prompt.lower()
@@ -223,7 +268,8 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
         30000,
         quiet=True,
     )
-    assert result == "Bullet summary"
+    assert result.text == "Bullet summary"
+    assert result.stop_reason == "done"
     mock_post.assert_called_once()
     payload = mock_post.call_args.kwargs["json"]
     assert payload["model"] == "llama3.2:3b"
@@ -231,6 +277,23 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
     assert "prompt" in payload
     assert entry.classified.parsed.subject in payload["prompt"]
     assert payload["options"]["temperature"] == 0.2
+
+
+@patch("requests.post")
+def test_summarize_message_passes_num_predict_from_options(mock_post: MagicMock) -> None:
+    mock_post.return_value.json.return_value = {"response": "ok"}
+    mock_post.return_value.raise_for_status = MagicMock()
+    entry = _entry()
+    summarize_message(
+        entry.classified,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+        quiet=True,
+        options={"num_predict": 256},
+    )
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["options"]["num_predict"] == 256
 
 
 @patch("requests.post")
@@ -248,7 +311,8 @@ def test_summarize_message_streams_when_not_quiet(mock_post: MagicMock) -> None:
         30000,
         quiet=False,
     )
-    assert result == "Bullet summary"
+    assert result.text == "Bullet summary"
+    assert result.stop_reason == "done"
     payload = mock_post.call_args.kwargs["json"]
     assert payload["stream"] is True
     assert mock_post.call_args.kwargs["stream"] is True
@@ -260,7 +324,7 @@ def test_apply_summaries_continues_after_one_failure(
     mock_check: MagicMock, mock_summarize: MagicMock
 ) -> None:
     mock_check.return_value = (True, "ok")
-    mock_summarize.side_effect = [RuntimeError("timeout"), "Bullet summary"]
+    mock_summarize.side_effect = [RuntimeError("timeout"), _generation()]
     entries = [_entry("body one"), _entry("body two")]
     result = apply_summaries(
         entries,
@@ -297,7 +361,7 @@ def test_apply_summaries_rebuild_bypasses_cache(
     from rollup.state import init_db_with_summaries, store_summary
 
     mock_check.return_value = (True, "ok")
-    mock_summarize.return_value = "Fresh summary"
+    mock_summarize.return_value = _generation("Fresh summary")
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     parsed = _entry().classified.parsed
     store_summary(
@@ -344,7 +408,7 @@ def test_apply_summaries_model_change_cache_miss(
     from rollup.state import init_db_with_summaries, store_summary
 
     mock_check.return_value = (True, "ok")
-    mock_summarize.return_value = "New model summary"
+    mock_summarize.return_value = _generation("New model summary")
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     parsed = _entry().classified.parsed
     store_summary(
@@ -379,7 +443,10 @@ def test_apply_summaries_switching_back_to_model_a_hits_cache(
     from rollup.state import init_db_with_summaries
 
     mock_check.return_value = (True, "ok")
-    mock_summarize.side_effect = ["Model A summary", "Model B summary"]
+    mock_summarize.side_effect = [
+        _generation("Model A summary"),
+        _generation("Model B summary"),
+    ]
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     entries = [_entry()]
     common = {
@@ -415,7 +482,7 @@ def test_apply_summaries_store_failure_keeps_ollama_summary(
     from rollup.state import init_db_with_summaries
 
     mock_check.return_value = (True, "ok")
-    mock_summarize.return_value = "Fresh summary"
+    mock_summarize.return_value = _generation("Fresh summary")
     mock_store.side_effect = RuntimeError("disk full")
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     entries = [_entry()]
@@ -443,7 +510,7 @@ def test_apply_summaries_cache_read_failure_continues(
     from rollup.state import init_db_with_summaries
 
     mock_check.return_value = (True, "ok")
-    mock_summarize.return_value = "Fresh summary"
+    mock_summarize.return_value = _generation("Fresh summary")
     mock_get_cached.side_effect = RuntimeError("db locked")
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     entries = [_entry()]

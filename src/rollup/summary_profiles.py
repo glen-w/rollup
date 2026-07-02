@@ -110,6 +110,7 @@ def _make_profile(
     num_ctx: int | None,
     timeout_seconds: int | None,
     description: str,
+    options: dict[str, Any] | None = None,
 ) -> SummaryProfile:
     return SummaryProfile(
         name=name,
@@ -119,7 +120,7 @@ def _make_profile(
         num_ctx=num_ctx,
         timeout_seconds=timeout_seconds,
         prompt_style=prompt_style,
-        options={},
+        options=dict(options or {}),
         enabled=True,
         description=description,
         created_by="builtin",
@@ -138,6 +139,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=8192,
             timeout_seconds=60,
             description="Quick rough summary for low-value or link-heavy items.",
+            options={"num_predict": 256},
         ),
         "standard": _make_profile(
             "standard",
@@ -147,6 +149,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=16384,
             timeout_seconds=120,
             description="Default balanced summary profile.",
+            options={"num_predict": 512},
         ),
         "deep": _make_profile(
             "deep",
@@ -156,6 +159,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=32768,
             timeout_seconds=240,
             description="Higher-effort synthesis for analytical or policy-heavy items.",
+            options={"num_predict": 1024},
         ),
         "max": _make_profile(
             "max",
@@ -165,6 +169,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=65536,
             timeout_seconds=600,
             description="Experimental high-effort profile for long essays and strategic reads.",
+            options={"num_predict": 2048},
         ),
     }
     return SummaryProfileSet(

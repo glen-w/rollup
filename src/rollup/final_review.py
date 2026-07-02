@@ -366,6 +366,9 @@ def call_final_review_model(
 ) -> str:
     import requests
 
+    from rollup.final_review_profiles import FINAL_REVIEW_MAX_OUTPUT_CHARS
+    from rollup.ollama_stream import consume_ollama_stream
+
     payload_options = dict(profile.options)
     payload_options.setdefault("temperature", profile.temperature)
     if profile.num_ctx is not None:
@@ -384,18 +387,16 @@ def call_final_review_model(
     )
     resp.raise_for_status()
     if use_stream:
-        parts: list[str] = []
-        for line in resp.iter_lines(decode_unicode=True):
-            if not line:
-                continue
-            data = json.loads(line)
-            chunk = data.get("response", "")
-            if chunk:
-                parts.append(chunk)
-            if data.get("done"):
-                break
-        return "".join(parts).strip()
+        stream_result = consume_ollama_stream(
+            resp,
+            max_output_chars=FINAL_REVIEW_MAX_OUTPUT_CHARS,
+            max_wall_seconds=float(profile.timeout_seconds),
+            show_progress=not quiet,
+        )
+        return stream_result.text.strip()
     data = resp.json()
+    if data.get("error"):
+        return ""
     return str(data.get("response", "")).strip()
 
 

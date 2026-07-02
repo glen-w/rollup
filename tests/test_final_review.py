@@ -363,3 +363,43 @@ def test_final_review_cache_key_dimensions(tmp_path: Path) -> None:
         options={"format": "json"},
     )
     assert cached is not None
+
+
+@patch("rollup.ollama_stream.consume_ollama_stream")
+@patch("requests.post")
+def test_final_review_uses_shared_stream_with_own_caps(
+    mock_post, mock_consume
+) -> None:
+    from unittest.mock import MagicMock
+
+    from rollup.final_review import call_final_review_model
+    from rollup.final_review_profiles import (
+        FINAL_REVIEW_MAX_OUTPUT_CHARS,
+        resolve_final_review_profile,
+    )
+    from rollup.ollama_stream import StreamResult
+
+    mock_post.return_value.raise_for_status = MagicMock()
+    mock_consume.return_value = StreamResult(
+        text='{"overall_status":"pass"}',
+        stop_reason="done",
+        output_chars=24,
+        eval_count=1,
+        elapsed_seconds=0.2,
+    )
+    profile = resolve_final_review_profile("strict")
+    result = call_final_review_model(
+        "review prompt",
+        ollama_url="http://localhost:11434/api/generate",
+        profile=profile,
+        quiet=False,
+    )
+    assert result == '{"overall_status":"pass"}'
+    mock_consume.assert_called_once()
+    assert (
+        mock_consume.call_args.kwargs["max_output_chars"]
+        == FINAL_REVIEW_MAX_OUTPUT_CHARS
+    )
+    assert mock_consume.call_args.kwargs["max_wall_seconds"] == float(
+        profile.timeout_seconds
+    )

@@ -26,6 +26,7 @@ from rollup.state import (
 from rollup.summarize import (
     PROMPT_VERSION,
     OllamaAvailabilityCache,
+    SummarizeMessageResult,
     build_summary_cache_key_parts,
     compute_summary_input_hash,
     execute_summary_plan,
@@ -161,7 +162,16 @@ def test_legacy_cache_only_for_standard_profile(tmp_path: Path) -> None:
         SummaryCliOptions(summary_profile="deep"),
     )
     with patch(
-        "rollup.summarize.summarize_message", return_value="Fresh deep summary"
+        "rollup.summarize.summarize_message",
+        return_value=SummarizeMessageResult(
+            text="Fresh deep summary",
+            stop_reason="done",
+            output_chars=18,
+            elapsed_seconds=0.1,
+            body_chars=10,
+            prompt_chars=100,
+            link_count=0,
+        ),
     ) as mock_summarize:
         with patch(
             "rollup.summarize.check_ollama_available", return_value=(True, "ok")
@@ -292,7 +302,15 @@ def test_execute_summary_plan_checks_each_model_once(
     mock_check: MagicMock, mock_summarize: MagicMock, tmp_path: Path
 ) -> None:
     mock_check.return_value = (True, "ok")
-    mock_summarize.return_value = "Summary"
+    mock_summarize.return_value = SummarizeMessageResult(
+        text="Summary",
+        stop_reason="done",
+        output_chars=7,
+        elapsed_seconds=0.1,
+        body_chars=10,
+        prompt_chars=100,
+        link_count=0,
+    )
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     entries = [_entry("one", "essay"), _entry("two", "link_roundup")]
     plan = resolve_summary_plan(
@@ -382,3 +400,52 @@ def test_canonical_provider_options_stable_for_nested_dicts() -> None:
         summary_input_hash="input-hash",
     )
     assert key_a == key_b
+
+
+@patch("rollup.state.store_summary_generation")
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_overlong_stream_fallback_not_cached_reported(
+    mock_check: MagicMock,
+    mock_summarize: MagicMock,
+    mock_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_check.return_value = (True, "ok")
+    mock_summarize.return_value = SummarizeMessageResult(
+        text="x" * 2000,
+        stop_reason="local_char_cap",
+        output_chars=2000,
+        elapsed_seconds=1.5,
+        body_chars=120,
+        prompt_chars=450,
+        link_count=3,
+    )
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    entry = _entry("body text for overlong stream test", "link_roundup")
+    plan = resolve_summary_plan(
+        [entry],
+        get_builtin_summary_profile_set(),
+        SummaryCliOptions(summary_type_routing=True),
+    )
+    execution = execute_summary_plan(
+        entries=[entry],
+        plan=plan,
+        ollama_url="http://localhost:11434/api/generate",
+        default_model="llama3.2:3b",
+        max_chars=30000,
+        allow_remote=False,
+        conn=conn,
+        rebuild=True,
+    )
+    result = execution.entries_by_variant["default"][0]
+    assert result.summary_source == "preview_fallback"
+    mock_store.assert_not_called()
+    metadata = execution.summary_metadata_by_variant["default"]
+    assert metadata.summaries_fallback == 1
+    assert len(metadata.anomaly_rows) == 1
+    anomaly = metadata.anomaly_rows[0]
+    assert anomaly.stop_reason == "local_char_cap"
+    assert anomaly.status == "fallback"
+    assert anomaly.cached is False
+    assert anomaly.output_chars == len(result.summary or "")

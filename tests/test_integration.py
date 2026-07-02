@@ -12,6 +12,21 @@ FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "Newsletters.sbd"
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
+def _mock_summarize_message(classified, *args, **kwargs):
+    from rollup.summarize import SummarizeMessageResult
+
+    text = f"MOCK: {classified.parsed.subject}"
+    return SummarizeMessageResult(
+        text=text,
+        stop_reason="done",
+        output_chars=len(text),
+        elapsed_seconds=0.1,
+        body_chars=len(classified.parsed.body_text),
+        prompt_chars=100,
+        link_count=len(classified.parsed.links),
+    )
+
+
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "rollup", *args],
@@ -452,7 +467,7 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
 
     def mock_summarize(classified, *args, **kwargs):
         summarize_calls["count"] += 1
-        return f"MOCK: {classified.parsed.subject}"
+        return _mock_summarize_message(classified, *args, **kwargs)
 
     def tracking_apply(entries, *args, **kwargs):
         result = real_apply_summaries(entries, *args, **kwargs)
@@ -634,7 +649,7 @@ def test_digest_summary_variants_writes_multiple_outputs(
     )
     monkeypatch.setattr(
         "rollup.summarize.summarize_message",
-        lambda classified, *args, **kwargs: f"MOCK: {classified.parsed.subject}",
+        _mock_summarize_message,
     )
     parser = cli.build_parser()
     args = parser.parse_args(

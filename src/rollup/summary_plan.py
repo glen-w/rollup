@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Literal
 
 from rollup.models import DigestEntry
+from rollup.ollama_stream import StreamStopReason
 from rollup.summary_profiles import (
     DisabledSummaryProfileError,
     SummaryProfile,
@@ -66,6 +67,7 @@ class SummaryPlan:
 @dataclass(frozen=True)
 class SummaryResult:
     message_key: str
+    subject: str
     newsletter_type: str
     profile_name: str
     provider: str
@@ -77,7 +79,23 @@ class SummaryResult:
     elapsed_seconds: float | None
     input_char_count: int
     output_char_count: int
+    body_chars: int
+    prompt_chars: int
+    link_count: int
+    stop_reason: StreamStopReason | None
+    cached: bool
     variant_name: str
+
+
+@dataclass(frozen=True)
+class SummaryAnomalyRow:
+    subject: str
+    profile_name: str
+    status: SummaryResultStatus
+    stop_reason: StreamStopReason | None
+    output_chars: int
+    elapsed_seconds: float | None
+    cached: bool
 
 
 @dataclass(frozen=True)
@@ -114,6 +132,7 @@ class SummaryExecutionReport:
     summaries_errors: int
     routing_counts: tuple[SummaryRoutingCount, ...]
     performance_rows: tuple[SummaryPerformanceRow, ...] = ()
+    anomaly_rows: tuple[SummaryAnomalyRow, ...] = ()
 
 
 @dataclass
@@ -181,7 +200,30 @@ class SummaryExecutionCollector:
                 )
             ),
             performance_rows=tuple(self.performance_rows),
+            anomaly_rows=tuple(self._anomaly_rows()),
         )
+
+    def _anomaly_rows(self) -> list[SummaryAnomalyRow]:
+        rows: list[SummaryAnomalyRow] = []
+        for result in self.results:
+            if result.status not in {"fallback", "error"}:
+                if result.stop_reason is None or result.stop_reason in {
+                    "done",
+                    "provider_length",
+                }:
+                    continue
+            rows.append(
+                SummaryAnomalyRow(
+                    subject=result.subject,
+                    profile_name=result.profile_name,
+                    status=result.status,
+                    stop_reason=result.stop_reason,
+                    output_chars=result.output_char_count,
+                    elapsed_seconds=result.elapsed_seconds,
+                    cached=result.cached,
+                )
+            )
+        return rows
 
 
 def _resolve_profile(
@@ -302,6 +344,7 @@ def timed_result(
     *,
     start: float,
     message_key: str,
+    subject: str = "",
     newsletter_type: str,
     profile_name: str,
     provider: str,
@@ -311,12 +354,19 @@ def timed_result(
     summary_text: str | None,
     error_message: str | None,
     input_char_count: int,
+    body_chars: int = 0,
+    prompt_chars: int = 0,
+    link_count: int = 0,
+    stop_reason: StreamStopReason | None = None,
+    cached: bool = False,
     variant_name: str,
 ) -> SummaryResult:
     """Create a SummaryResult with elapsed timing pre-populated."""
     output_char_count = len(summary_text or "")
+    is_cached = cached or status in {"cache", "legacy_cache"}
     return SummaryResult(
         message_key=message_key,
+        subject=subject,
         newsletter_type=newsletter_type,
         profile_name=profile_name,
         provider=provider,
@@ -328,5 +378,10 @@ def timed_result(
         elapsed_seconds=perf_counter() - start,
         input_char_count=input_char_count,
         output_char_count=output_char_count,
+        body_chars=body_chars,
+        prompt_chars=prompt_chars,
+        link_count=link_count,
+        stop_reason=stop_reason,
+        cached=is_cached,
         variant_name=variant_name,
     )

@@ -6,25 +6,36 @@ import hashlib
 import json
 import logging
 import re
-import sys
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from urllib.parse import urlparse
 
 from rollup.cache_keys import canonicalize_provider_options
 from rollup.models import ClassifiedMessage, DigestEntry
+from rollup.models import DigestSummaryAnomalyRow, DigestSummaryMetadata, DigestSummaryRouteStat
+from rollup.ollama_stream import (
+    StreamStopReason,
+    consume_ollama_stream,
+    is_stop_reason_cacheable,
+)
 from rollup.summary_plan import (
     SummaryExecutionCollector,
     SummaryJob,
     SummaryPlan,
     timed_result,
 )
-from rollup.models import DigestSummaryMetadata, DigestSummaryRouteStat
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROMPT_VERSION = 2
+
+MAX_OUTPUT_CHARS_BY_STYLE = {
+    "rough": 1500,
+    "standard": 3000,
+    "deep": 6000,
+}
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 PROMPT_STYLE_INSTRUCTIONS = {
@@ -69,6 +80,59 @@ def clean_summary_output(text: str) -> str:
             continue
         break
     return "\n".join(lines).strip()
+
+
+def max_output_chars_for_style(prompt_style: str) -> int:
+    return MAX_OUTPUT_CHARS_BY_STYLE.get(
+        prompt_style, MAX_OUTPUT_CHARS_BY_STYLE["standard"]
+    )
+
+
+def _has_extreme_repetition(text: str, *, window: int = 40, min_repeats: int = 5) -> bool:
+    if len(text) < window * min_repeats:
+        return False
+    tail = text[-window * min_repeats :]
+    segment = tail[-window:]
+    return tail.count(segment) >= min_repeats
+
+
+def finalize_summary_output(text: str, *, prompt_style: str) -> str:
+    cleaned = clean_summary_output(text)
+    cap = max_output_chars_for_style(prompt_style)
+    if len(cleaned) > cap:
+        return cleaned[: cap - 1] + "…"
+    return cleaned
+
+
+def is_summary_usable(
+    text: str, *, prompt_style: str, stop_reason: StreamStopReason
+) -> bool:
+    if not is_stop_reason_cacheable(stop_reason):
+        return False
+    cleaned = clean_summary_output(text)
+    if not cleaned.strip():
+        return False
+    if len(cleaned) > max_output_chars_for_style(prompt_style):
+        return False
+    if _has_extreme_repetition(cleaned):
+        return False
+    return True
+
+
+def _link_count(parsed) -> int:
+    structured = len(getattr(parsed, "link_items", ()) or ())
+    return max(structured, len(parsed.links), parsed.html_link_count)
+
+
+@dataclass(frozen=True)
+class SummarizeMessageResult:
+    text: str
+    stop_reason: StreamStopReason
+    output_chars: int
+    elapsed_seconds: float
+    body_chars: int
+    prompt_chars: int
+    link_count: int
 
 
 class OllamaError(Exception):
@@ -158,29 +222,6 @@ def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _consume_ollama_stream(resp, *, show_progress: bool) -> str:
-    parts: list[str] = []
-    for line in resp.iter_lines(decode_unicode=True):
-        if not line:
-            continue
-        data = json.loads(line)
-        chunk = data.get("response", "")
-        if chunk:
-            parts.append(chunk)
-            if show_progress:
-                total = sum(len(part) for part in parts)
-                sys.stderr.write(f"\r  generating… {total} chars")
-                sys.stderr.flush()
-        if data.get("done"):
-            if show_progress:
-                eval_count = data.get("eval_count")
-                suffix = f", {eval_count} tokens" if eval_count else ""
-                sys.stderr.write(f"\r  generated{suffix}\n")
-                sys.stderr.flush()
-            break
-    return clean_summary_output("".join(parts))
-
-
 def summarize_message(
     classified: ClassifiedMessage,
     ollama_url: str,
@@ -193,32 +234,82 @@ def summarize_message(
     temperature: float = 0.2,
     num_ctx: int | None = None,
     quiet: bool = False,
-) -> str:
+) -> SummarizeMessageResult:
     import requests
 
-    excerpt = classified.parsed.body_text[:max_chars]
+    parsed = classified.parsed
+    excerpt = parsed.body_text[:max_chars]
     prompt = build_prompt(classified, excerpt, prompt_style=prompt_style)
+    body_chars = len(excerpt)
+    prompt_chars = len(prompt)
+    link_count = _link_count(parsed)
     payload_options = dict(options or {})
     payload_options.setdefault("temperature", temperature)
     if num_ctx is not None:
         payload_options.setdefault("num_ctx", num_ctx)
+    max_output_chars = max_output_chars_for_style(prompt_style)
+    started = perf_counter()
     use_stream = not quiet
-    resp = requests.post(
-        ollama_url,
-        json={
-            "model": model,
-            "prompt": prompt,
-            "stream": use_stream,
-            "options": payload_options,
-        },
-        timeout=timeout,
-        stream=use_stream,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.post(
+            ollama_url,
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": use_stream,
+                "options": payload_options,
+            },
+            timeout=timeout,
+            stream=use_stream,
+        )
+        resp.raise_for_status()
+    except Exception:
+        raise
     if use_stream:
-        return _consume_ollama_stream(resp, show_progress=True)
+        stream_result = consume_ollama_stream(
+            resp,
+            max_output_chars=max_output_chars,
+            max_wall_seconds=float(timeout),
+            show_progress=not quiet,
+            started_at=started,
+        )
+        text = finalize_summary_output(stream_result.text, prompt_style=prompt_style)
+        return SummarizeMessageResult(
+            text=text,
+            stop_reason=stream_result.stop_reason,
+            output_chars=len(text),
+            elapsed_seconds=stream_result.elapsed_seconds,
+            body_chars=body_chars,
+            prompt_chars=prompt_chars,
+            link_count=link_count,
+        )
     data = resp.json()
-    return clean_summary_output(data.get("response", ""))
+    if data.get("error"):
+        return SummarizeMessageResult(
+            text="",
+            stop_reason="http_error",
+            output_chars=0,
+            elapsed_seconds=perf_counter() - started,
+            body_chars=body_chars,
+            prompt_chars=prompt_chars,
+            link_count=link_count,
+        )
+    done_reason = str(data.get("done_reason", "") or "")
+    stop_reason: StreamStopReason = (
+        "provider_length" if done_reason == "length" else "done"
+    )
+    text = finalize_summary_output(
+        str(data.get("response", "")), prompt_style=prompt_style
+    )
+    return SummarizeMessageResult(
+        text=text,
+        stop_reason=stop_reason,
+        output_chars=len(text),
+        elapsed_seconds=perf_counter() - started,
+        body_chars=body_chars,
+        prompt_chars=prompt_chars,
+        link_count=link_count,
+    )
 
 
 def compute_summary_input_hash(
@@ -351,13 +442,27 @@ def apply_summaries(
             model,
         )
         try:
-            summary = summarize_message(
+            generation = summarize_message(
                 classified, ollama_url, model, max_chars, quiet=quiet
             )
         except Exception as exc:
             logger.warning("Summary failed for %s: %s", parsed.subject, exc)
             result.append(_fallback_entry(entry))
             continue
+        if not is_summary_usable(
+            generation.text,
+            prompt_style="standard",
+            stop_reason=generation.stop_reason,
+        ):
+            logger.warning(
+                "Summary unusable for %s: stop_reason=%s output_chars=%d",
+                parsed.subject,
+                generation.stop_reason,
+                generation.output_chars,
+            )
+            result.append(_fallback_entry(entry))
+            continue
+        summary = generation.text
         if conn:
             try:
                 from rollup.state import store_summary
@@ -437,6 +542,7 @@ def execute_summary_plan(
                     timed_result(
                         start=perf_counter(),
                         message_key=job.message_key,
+                        subject=parsed.subject,
                         newsletter_type=job.canonical_newsletter_type,
                         profile_name=job.profile_name,
                         provider=job.provider,
@@ -453,6 +559,11 @@ def execute_summary_plan(
             start = perf_counter()
             input_excerpt = parsed.body_text[:max_chars]
             input_char_count = len(input_excerpt)
+            body_chars = input_char_count
+            prompt_chars = len(
+                build_prompt(classified, input_excerpt, prompt_style=job.prompt_style)
+            )
+            link_count = _link_count(parsed)
             model = job.model or default_model
             summary_input_hash = compute_summary_input_hash(
                 classified,
@@ -499,6 +610,7 @@ def execute_summary_plan(
                             timed_result(
                                 start=start,
                                 message_key=job.message_key,
+                                subject=parsed.subject,
                                 newsletter_type=job.canonical_newsletter_type,
                                 profile_name=job.profile_name,
                                 provider=job.provider,
@@ -508,6 +620,11 @@ def execute_summary_plan(
                                 summary_text=cached,
                                 error_message=None,
                                 input_char_count=input_char_count,
+                                body_chars=body_chars,
+                                prompt_chars=prompt_chars,
+                                link_count=link_count,
+                                stop_reason="done",
+                                cached=True,
                                 variant_name=variant_name,
                             )
                         )
@@ -538,6 +655,7 @@ def execute_summary_plan(
                                 timed_result(
                                     start=start,
                                     message_key=job.message_key,
+                                    subject=parsed.subject,
                                     newsletter_type=job.canonical_newsletter_type,
                                     profile_name=job.profile_name,
                                     provider=job.provider,
@@ -547,6 +665,11 @@ def execute_summary_plan(
                                     summary_text=legacy,
                                     error_message=None,
                                     input_char_count=input_char_count,
+                                    body_chars=body_chars,
+                                    prompt_chars=prompt_chars,
+                                    link_count=link_count,
+                                    stop_reason="done",
+                                    cached=True,
                                     variant_name=variant_name,
                                 )
                             )
@@ -563,6 +686,7 @@ def execute_summary_plan(
                     timed_result(
                         start=start,
                         message_key=job.message_key,
+                        subject=parsed.subject,
                         newsletter_type=job.canonical_newsletter_type,
                         profile_name=job.profile_name,
                         provider=job.provider,
@@ -572,20 +696,28 @@ def execute_summary_plan(
                         summary_text=fallback.summary,
                         error_message=error_message,
                         input_char_count=input_char_count,
+                        body_chars=body_chars,
+                        prompt_chars=prompt_chars,
+                        link_count=link_count,
+                        stop_reason="http_error",
                         variant_name=variant_name,
                     )
                 )
                 continue
             logger.info(
-                "Ollama [%d/%d] summarising: %r (model=%s, profile=%s)",
+                "Ollama [%d/%d] summarising: %r (model=%s, profile=%s, "
+                "body_chars=%d, prompt_chars=%d, link_count=%d)",
                 job_index,
                 total_jobs,
                 parsed.subject,
                 model,
                 job.profile_name,
+                body_chars,
+                prompt_chars,
+                link_count,
             )
             try:
-                summary = summarize_message(
+                generation = summarize_message(
                     classified,
                     ollama_url,
                     model,
@@ -605,6 +737,7 @@ def execute_summary_plan(
                     timed_result(
                         start=start,
                         message_key=job.message_key,
+                        subject=parsed.subject,
                         newsletter_type=job.canonical_newsletter_type,
                         profile_name=job.profile_name,
                         provider=job.provider,
@@ -614,10 +747,54 @@ def execute_summary_plan(
                         summary_text=fallback.summary,
                         error_message=str(exc),
                         input_char_count=input_char_count,
+                        body_chars=body_chars,
+                        prompt_chars=prompt_chars,
+                        link_count=link_count,
+                        stop_reason="http_error",
                         variant_name=variant_name,
                     )
                 )
                 continue
+            if not is_summary_usable(
+                generation.text,
+                prompt_style=job.prompt_style,
+                stop_reason=generation.stop_reason,
+            ):
+                logger.warning(
+                    "Summary unusable for %r (profile=%s): stop_reason=%s "
+                    "output_chars=%d",
+                    parsed.subject,
+                    job.profile_name,
+                    generation.stop_reason,
+                    generation.output_chars,
+                )
+                fallback = _fallback_entry(entry)
+                rendered_entries.append(fallback)
+                collector.record(
+                    timed_result(
+                        start=start,
+                        message_key=job.message_key,
+                        subject=parsed.subject,
+                        newsletter_type=job.canonical_newsletter_type,
+                        profile_name=job.profile_name,
+                        provider=job.provider,
+                        model=model,
+                        prompt_style=job.prompt_style,
+                        status="fallback",
+                        summary_text=fallback.summary,
+                        error_message=(
+                            f"unusable summary (stop_reason={generation.stop_reason})"
+                        ),
+                        input_char_count=input_char_count,
+                        body_chars=body_chars,
+                        prompt_chars=prompt_chars,
+                        link_count=link_count,
+                        stop_reason=generation.stop_reason,
+                        variant_name=variant_name,
+                    )
+                )
+                continue
+            summary = generation.text
             if conn:
                 try:
                     from rollup.state import store_summary_generation
@@ -653,6 +830,7 @@ def execute_summary_plan(
                 timed_result(
                     start=start,
                     message_key=job.message_key,
+                    subject=parsed.subject,
                     newsletter_type=job.canonical_newsletter_type,
                     profile_name=job.profile_name,
                     provider=job.provider,
@@ -662,6 +840,10 @@ def execute_summary_plan(
                     summary_text=summary,
                     error_message=None,
                     input_char_count=input_char_count,
+                    body_chars=body_chars,
+                    prompt_chars=prompt_chars,
+                    link_count=link_count,
+                    stop_reason=generation.stop_reason,
                     variant_name=variant_name,
                 )
             )
@@ -685,6 +867,18 @@ def execute_summary_plan(
                     count=row.count,
                 )
                 for row in report.routing_counts
+            ),
+            anomaly_rows=tuple(
+                DigestSummaryAnomalyRow(
+                    subject=row.subject,
+                    profile_name=row.profile_name,
+                    status=row.status,
+                    stop_reason=row.stop_reason,
+                    output_chars=row.output_chars,
+                    elapsed_seconds=row.elapsed_seconds,
+                    cached=row.cached,
+                )
+                for row in report.anomaly_rows
             ),
             variant_name=None if variant_name == "default" else variant_name,
         )

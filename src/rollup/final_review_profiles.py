@@ -7,6 +7,7 @@ from typing import Any
 
 FINAL_REVIEW_PROVIDERS = frozenset({"ollama"})
 FINAL_REVIEW_PROMPT_STYLES = frozenset({"strict", "concise", "editorial"})
+FINAL_REVIEW_MAX_OUTPUT_CHARS = 16_000
 
 
 class FinalReviewConfigError(ValueError):
