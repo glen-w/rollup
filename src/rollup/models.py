@@ -121,6 +121,29 @@ class DigestEntry:
 
 
 @dataclass(frozen=True)
+class DigestSummaryRouteStat:
+    newsletter_type: str
+    profile_name: str
+    model: str
+    count: int
+
+
+@dataclass(frozen=True)
+class DigestSummaryMetadata:
+    mode: str
+    profiles_used: tuple[str, ...]
+    models_used: tuple[str, ...]
+    summaries_ollama: int
+    summaries_cache: int
+    summaries_fallback: int
+    summaries_errors: int
+    selected_profiles: tuple[str, ...] = ()
+    output_variants: tuple[str, ...] = ()
+    routing_counts: tuple[DigestSummaryRouteStat, ...] = ()
+    variant_name: str | None = None
+
+
+@dataclass(frozen=True)
 class DigestStats:
     folders_scanned: int
     messages_parsed: int
@@ -133,6 +156,7 @@ class DigestStats:
     summaries_ollama: int
     summaries_cache: int
     summaries_fallback: int
+    summaries_errors: int = 0
 
 
 @dataclass(frozen=True)
@@ -144,3 +168,4 @@ class DigestReport:
     dated_by_folder: dict[str, tuple[DigestEntry, ...]]
     undated: tuple[DigestEntry, ...]
     stats: DigestStats
+    summary_metadata: DigestSummaryMetadata | None = None

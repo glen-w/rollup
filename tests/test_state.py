@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import pytest
 
 from rollup.state import init_db, load_seen_keys, upsert_seen_keys
 

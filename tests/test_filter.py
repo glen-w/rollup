@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
 
 from rollup.config import compute_date_window
 from rollup.discovery import iter_mbox_files

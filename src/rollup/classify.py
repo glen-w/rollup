@@ -46,8 +46,12 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
 
         word_count = _word_count(parsed.body_text)
         structured_link_count = len(getattr(parsed, "link_items", ()) or ())
-        link_count = max(structured_link_count, len(parsed.links), parsed.html_link_count)
-        heading_count = max(_heading_count_text(parsed.body_text), parsed.html_heading_count)
+        link_count = max(
+            structured_link_count, len(parsed.links), parsed.html_link_count
+        )
+        heading_count = max(
+            _heading_count_text(parsed.body_text), parsed.html_heading_count
+        )
         bullet_count = _bullet_count(parsed.body_text)
         ratio = link_count / max(word_count, 1)
 
@@ -61,12 +65,19 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
         if link_count >= LINK_ROUNDUP_MIN_LINKS and ratio > LINK_ROUNDUP_MIN_RATIO:
             scores["link_roundup"] = 0.9
         if heading_count >= MULTI_SECTION_MIN_HEADINGS or (
-            bullet_count > MULTI_SECTION_MIN_BULLETS and word_count > MULTI_SECTION_MIN_WORDS
+            bullet_count > MULTI_SECTION_MIN_BULLETS
+            and word_count > MULTI_SECTION_MIN_WORDS
         ):
             scores["multi_section_digest"] = 0.85
-        elif word_count < SHORT_UPDATE_MAX_WORDS and link_count < SHORT_UPDATE_MAX_LINKS:
+        elif (
+            word_count < SHORT_UPDATE_MAX_WORDS and link_count < SHORT_UPDATE_MAX_LINKS
+        ):
             scores["short_update"] = 0.85
-        if word_count > ESSAY_MIN_WORDS and link_count < ESSAY_MAX_LINKS and bullet_count < 5:
+        if (
+            word_count > ESSAY_MIN_WORDS
+            and link_count < ESSAY_MAX_LINKS
+            and bullet_count < 5
+        ):
             scores["essay"] = 0.8
 
         best_type: NewsletterType = max(scores, key=lambda k: scores[k])  # type: ignore[arg-type]

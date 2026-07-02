@@ -49,6 +49,8 @@ def test_digest_help_lists_ollama_flags() -> None:
     assert "--no-ollama" in result.stdout
     assert "--ollama" in result.stdout
     assert "--dry-run" in result.stdout
+    assert "--summary-profile" in result.stdout
+    assert "--summary-variants" in result.stdout
 
 
 def test_digest_default_no_ollama(tmp_path: Path) -> None:

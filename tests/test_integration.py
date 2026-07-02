@@ -48,7 +48,10 @@ def test_digest_no_ollama_fixture(tmp_path: Path) -> None:
     html_files = list(output.glob("*-newsletter-digest.html"))
     assert len(md_files) == 1
     assert len(html_files) == 1
-    assert "Undated" in md_files[0].read_text(encoding="utf-8") or "undated" in md_files[0].read_text(encoding="utf-8").lower()
+    assert (
+        "Undated" in md_files[0].read_text(encoding="utf-8")
+        or "undated" in md_files[0].read_text(encoding="utf-8").lower()
+    )
 
 
 def test_digest_dry_run_no_writes(tmp_path: Path) -> None:
@@ -142,7 +145,11 @@ def test_digest_exclude_folder(tmp_path: Path) -> None:
         str(tmp_path / "mail"),
     )
     assert result.returncode == 0
-    md = list(output.glob("*-newsletter-digest.md"))[0].read_text(encoding="utf-8").lower()
+    md = (
+        list(output.glob("*-newsletter-digest.md"))[0]
+        .read_text(encoding="utf-8")
+        .lower()
+    )
     assert "hoops" not in md
 
 
@@ -417,13 +424,17 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
         captured_entries.extend(result)
         return result
 
-    monkeypatch.setattr("rollup.summarize.check_ollama_available", lambda *a, **k: (True, "ok"))
+    monkeypatch.setattr(
+        "rollup.summarize.check_ollama_available", lambda *a, **k: (True, "ok")
+    )
     monkeypatch.setattr("rollup.summarize.summarize_message", mock_summarize)
     monkeypatch.setattr("rollup.summarize.apply_summaries", tracking_apply)
 
     parser = cli.build_parser()
     args = parser.parse_args(
-        _digest_args(tmp_path, "--ollama", "--folder", "tech", "--lookback-days", "36500")
+        _digest_args(
+            tmp_path, "--ollama", "--folder", "tech", "--lookback-days", "36500"
+        )
     )
 
     import io
@@ -455,7 +466,7 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
     import sqlite3
 
     conn = sqlite3.connect(tmp_path / "state" / "rollup.db")
-    count = conn.execute("SELECT COUNT(*) FROM summaries").fetchone()[0]
+    count = conn.execute("SELECT COUNT(*) FROM summary_generations").fetchone()[0]
     conn.close()
     assert count >= ollama1
 
@@ -501,7 +512,9 @@ def test_digest_ollama_rejects_remote_url(tmp_path: Path, monkeypatch, capsys) -
     from rollup import cli
 
     def fail_if_called(*args, **kwargs):
-        raise AssertionError("Should not reach Ollama network/cache after URL validation")
+        raise AssertionError(
+            "Should not reach Ollama network/cache after URL validation"
+        )
 
     monkeypatch.setattr("rollup.summarize.check_ollama_available", fail_if_called)
     monkeypatch.setattr("rollup.summarize.summarize_message", fail_if_called)
@@ -525,7 +538,9 @@ def test_digest_ollama_rejects_remote_url(tmp_path: Path, monkeypatch, capsys) -
 
 
 @pytest.mark.parametrize("ollama_flag", [[], ["--no-ollama"]])
-def test_digest_default_path_skips_ollama(tmp_path: Path, monkeypatch, ollama_flag: list[str]) -> None:
+def test_digest_default_path_skips_ollama(
+    tmp_path: Path, monkeypatch, ollama_flag: list[str]
+) -> None:
     from rollup import cli
 
     def fail_if_called(*args, **kwargs):
@@ -540,3 +555,66 @@ def test_digest_default_path_skips_ollama(tmp_path: Path, monkeypatch, ollama_fl
     args = parser.parse_args(_digest_args(tmp_path, *extra))
     rc = cli.cmd_digest(args)
     assert rc == 0
+
+
+def test_list_newsletter_types(tmp_path: Path) -> None:
+    result = _run(
+        "digest",
+        "--list-newsletter-types",
+        "--dry-run",
+        "--output-dir",
+        str(tmp_path / "output"),
+        "--state-dir",
+        str(tmp_path / "state"),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0
+    assert "unclassified" in result.stdout
+
+
+def test_list_summary_profiles(tmp_path: Path) -> None:
+    result = _run(
+        "digest",
+        "--list-summary-profiles",
+        "--dry-run",
+        "--output-dir",
+        str(tmp_path / "output"),
+        "--state-dir",
+        str(tmp_path / "state"),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0
+    assert "rough:" in result.stdout
+
+
+def test_digest_summary_variants_writes_multiple_outputs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from rollup import cli
+
+    monkeypatch.setattr(
+        "rollup.summarize.check_ollama_available", lambda *a, **k: (True, "ok")
+    )
+    monkeypatch.setattr(
+        "rollup.summarize.summarize_message",
+        lambda classified, *args, **kwargs: f"MOCK: {classified.parsed.subject}",
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(
+            tmp_path,
+            "--ollama",
+            "--summary-variants",
+            "rough,deep",
+            "--folder",
+            "tech",
+            "--lookback-days",
+            "36500",
+        )
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 0
+    assert list((tmp_path / "output").glob("*-newsletter-digest.rough.md"))
+    assert list((tmp_path / "output").glob("*-newsletter-digest.deep.md"))

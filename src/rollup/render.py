@@ -7,7 +7,11 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from rollup.links import prepare_links_for_render, render_link_html, render_link_markdown
+from rollup.links import (
+    prepare_links_for_render,
+    render_link_html,
+    render_link_markdown,
+)
 from rollup.models import LinkItem
 from rollup.models import DigestEntry, DigestReport, DigestStats
 
@@ -31,20 +35,103 @@ def render_stats_block(stats: DigestStats) -> str:
         f"Deduped messages: {stats.deduped_messages}\n"
         f"Parse errors: {stats.parse_errors}\n"
         f"Summaries: Ollama {stats.summaries_ollama} · "
-        f"cache {stats.summaries_cache} · fallback {stats.summaries_fallback}"
+        f"cache {stats.summaries_cache} · fallback {stats.summaries_fallback} · "
+        f"errors {stats.summaries_errors}"
     )
+
+
+def _render_summary_metadata_md(report: DigestReport) -> list[str]:
+    metadata = report.summary_metadata
+    if metadata is None:
+        return []
+    if metadata.variant_name:
+        lines = [
+            "## Summary Variant",
+            "",
+            f"- **Profile:** {metadata.variant_name}",
+            f"- **Models used:** {', '.join(metadata.models_used) or 'none'}",
+            f"- **Summaries:** Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
+            "",
+        ]
+    else:
+        lines = [
+            "## Summary Routing",
+            "",
+            f"- **Mode:** {metadata.mode}",
+            f"- **Profiles used:** {', '.join(metadata.profiles_used) or 'none'}",
+            f"- **Models used:** {', '.join(metadata.models_used) or 'none'}",
+            f"- **Summaries:** Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
+            "",
+        ]
+    if metadata.routing_counts:
+        lines.extend(["```", "type | profile | model | count"])
+        for row in metadata.routing_counts:
+            lines.append(
+                f"{row.newsletter_type} | {row.profile_name} | {row.model} | {row.count}"
+            )
+        lines.extend(["```", ""])
+    return lines
+
+
+def _render_summary_metadata_html(report: DigestReport) -> str:
+    metadata = report.summary_metadata
+    if metadata is None:
+        return ""
+    title = "Summary Variant" if metadata.variant_name else "Summary Routing"
+    items = []
+    if metadata.variant_name:
+        items.append(
+            f"<li><strong>Profile:</strong> {html_module.escape(metadata.variant_name)}</li>"
+        )
+    else:
+        items.append(
+            f"<li><strong>Mode:</strong> {html_module.escape(metadata.mode)}</li>"
+        )
+        items.append(
+            f"<li><strong>Profiles used:</strong> {html_module.escape(', '.join(metadata.profiles_used) or 'none')}</li>"
+        )
+    items.append(
+        f"<li><strong>Models used:</strong> {html_module.escape(', '.join(metadata.models_used) or 'none')}</li>"
+    )
+    items.append(
+        "<li><strong>Summaries:</strong> "
+        f"Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · "
+        f"fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}</li>"
+    )
+    table = ""
+    if metadata.routing_counts:
+        rows = "".join(
+            "<tr>"
+            f"<td>{html_module.escape(row.newsletter_type)}</td>"
+            f"<td>{html_module.escape(row.profile_name)}</td>"
+            f"<td>{html_module.escape(row.model)}</td>"
+            f"<td>{row.count}</td>"
+            "</tr>"
+            for row in metadata.routing_counts
+        )
+        table = (
+            "<table><thead><tr><th>Type</th><th>Profile</th><th>Model</th><th>Count</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+    return f"<section class='summary-metadata'><h2>{title}</h2><ul>{''.join(items)}</ul>{table}</section>"
 
 
 def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
-    link_items = list(p.link_items) if getattr(p, "link_items", ()) else [
-        LinkItem(href=href, text=None, context=None, source_index=index)
-        for index, href in enumerate(p.links)
-    ]
+    link_items = (
+        list(p.link_items)
+        if getattr(p, "link_items", ())
+        else [
+            LinkItem(href=href, text=None, context=None, source_index=index)
+            for index, href in enumerate(p.links)
+        ]
+    )
     max_main = min(5, max_display_links)
     max_other = max(0, max_display_links - max_main)
-    bundle = prepare_links_for_render(link_items, max_main=max_main, max_other=max_other)
+    bundle = prepare_links_for_render(
+        link_items, max_main=max_main, max_other=max_other
+    )
     lines = [
         f"### {p.subject}",
         "",
@@ -86,6 +173,7 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
         "```",
         "",
     ]
+    lines.extend(_render_summary_metadata_md(report))
     for folder, entries in sorted(report.dated_by_folder.items()):
         lines.append(f"## {folder}")
         lines.append("")
@@ -102,13 +190,19 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
 def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
-    link_items = list(p.link_items) if getattr(p, "link_items", ()) else [
-        LinkItem(href=href, text=None, context=None, source_index=index)
-        for index, href in enumerate(p.links)
-    ]
+    link_items = (
+        list(p.link_items)
+        if getattr(p, "link_items", ())
+        else [
+            LinkItem(href=href, text=None, context=None, source_index=index)
+            for index, href in enumerate(p.links)
+        ]
+    )
     max_main = min(5, max_display_links)
     max_other = max(0, max_display_links - max_main)
-    bundle = prepare_links_for_render(link_items, max_main=max_main, max_other=max_other)
+    bundle = prepare_links_for_render(
+        link_items, max_main=max_main, max_other=max_other
+    )
     summary_line = (
         f"{html_module.escape(p.subject)} — {html_module.escape(p.sender)} — "
         f"{html_module.escape(_format_date(p.date_parsed))} — "
@@ -152,10 +246,13 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         ".summary{white-space:pre-wrap;}",
         ".link-domain{color:#666;font-size:0.9em;}",
         ".other-links{border:none;padding:0;margin-top:0.5rem;}",
+        ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
+        ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",
         "</style></head><body>",
         f"<h1>Newsletter Digest — {gen_date}</h1>",
         f"<p><em>Week of {ws} to {we} · {total} newsletters</em></p>",
         f"<div class='stats'>{html_module.escape(render_stats_block(report.stats))}</div>",
+        _render_summary_metadata_html(report),
     ]
     for folder, entries in sorted(report.dated_by_folder.items()):
         body_parts.append(f"<h2>{html_module.escape(folder)}</h2>")
@@ -184,15 +281,17 @@ def atomic_write_digest(
     generated_at: datetime,
     markdown: str,
     html_content: str,
+    variant_name: str | None = None,
 ) -> tuple[Path, Path]:
     """Write MD and HTML atomically via temp files + rename."""
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stale_temps(output_dir)
     date_str = generated_at.strftime("%Y-%m-%d")
-    final_md = output_dir / f"{date_str}-newsletter-digest.md"
-    final_html = output_dir / f"{date_str}-newsletter-digest.html"
-    tmp_md = output_dir / f".tmp-{date_str}-newsletter-digest.md"
-    tmp_html = output_dir / f".tmp-{date_str}-newsletter-digest.html"
+    suffix = f".{variant_name}" if variant_name else ""
+    final_md = output_dir / f"{date_str}-newsletter-digest{suffix}.md"
+    final_html = output_dir / f"{date_str}-newsletter-digest{suffix}.html"
+    tmp_md = output_dir / f".tmp-{date_str}-newsletter-digest{suffix}.md"
+    tmp_html = output_dir / f".tmp-{date_str}-newsletter-digest{suffix}.html"
 
     paths_to_clean = (tmp_md, tmp_html, final_md, final_html)
 

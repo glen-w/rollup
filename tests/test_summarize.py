@@ -13,14 +13,19 @@ from rollup.filter import make_digest_entry
 from rollup.models import ClassifiedMessage, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.summarize import (
+    PROMPT_VERSION,
     OllamaError,
     apply_summaries,
     build_prompt,
+    build_summary_cache_key_parts,
     check_ollama_available,
+    execute_summary_plan,
     is_local_ollama,
     summarize_message,
     validate_ollama_url,
 )
+from rollup.summary_plan import SummaryCliOptions, resolve_summary_plan
+from rollup.summary_profiles import get_builtin_summary_profile_set
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 COMMON_SNIPPET = (PROMPTS_DIR / "_common.txt").read_text(encoding="utf-8").strip()[:40]
@@ -34,7 +39,10 @@ NEWSLETTER_TYPES = (
 )
 
 
-def _parsed(body: str = "Newsletter body text for summarisation.", subject: str = "Weekly Update"):
+def _parsed(
+    body: str = "Newsletter body text for summarisation.",
+    subject: str = "Weekly Update",
+):
     return ParsedMessage(
         message_key="k1",
         content_hash=compute_content_hash(body),
@@ -57,7 +65,9 @@ def _parsed(body: str = "Newsletter body text for summarisation.", subject: str 
     )
 
 
-def _classified(newsletter_type: str, body: str = "Newsletter body text for summarisation."):
+def _classified(
+    newsletter_type: str, body: str = "Newsletter body text for summarisation."
+):
     parsed = _parsed(body)
     return ClassifiedMessage(
         parsed=parsed,
@@ -113,6 +123,14 @@ def test_build_prompt_common_once() -> None:
     assert excerpt in prompt
 
 
+def test_build_prompt_style_changes_prompt() -> None:
+    entry = _entry()
+    excerpt = entry.classified.parsed.body_text[:1000]
+    rough = build_prompt(entry.classified, excerpt, prompt_style="rough")
+    deep = build_prompt(entry.classified, excerpt, prompt_style="deep")
+    assert rough != deep
+
+
 @pytest.mark.parametrize("newsletter_type", NEWSLETTER_TYPES)
 def test_build_prompt_all_types(newsletter_type: str) -> None:
     classified = _classified(newsletter_type)
@@ -128,7 +146,9 @@ def test_check_ollama_available_model_found(mock_get: MagicMock) -> None:
     pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
     mock_get.return_value.raise_for_status = MagicMock()
-    ok, msg = check_ollama_available("http://localhost:11434/api/generate", "llama3.2:3b")
+    ok, msg = check_ollama_available(
+        "http://localhost:11434/api/generate", "llama3.2:3b"
+    )
     assert ok is True
     mock_get.assert_called_once()
     assert "/api/tags" in mock_get.call_args[0][0]
@@ -140,7 +160,9 @@ def test_check_ollama_available_model_missing(mock_get: MagicMock) -> None:
     pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "other:7b"}]}
     mock_get.return_value.raise_for_status = MagicMock()
-    ok, msg = check_ollama_available("http://localhost:11434/api/generate", "llama3.2:3b")
+    ok, msg = check_ollama_available(
+        "http://localhost:11434/api/generate", "llama3.2:3b"
+    )
     assert ok is False
 
 
@@ -181,6 +203,7 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
     assert payload["stream"] is False
     assert "prompt" in payload
     assert entry.classified.parsed.subject in payload["prompt"]
+    assert payload["options"]["temperature"] == 0.2
 
 
 @patch("rollup.summarize.summarize_message")
@@ -364,7 +387,10 @@ def test_apply_summaries_store_failure_keeps_ollama_summary(
 @patch("rollup.summarize.summarize_message")
 @patch("rollup.summarize.check_ollama_available")
 def test_apply_summaries_cache_read_failure_continues(
-    mock_check: MagicMock, mock_summarize: MagicMock, mock_get_cached: MagicMock, tmp_path
+    mock_check: MagicMock,
+    mock_summarize: MagicMock,
+    mock_get_cached: MagicMock,
+    tmp_path,
 ) -> None:
     from rollup.state import init_db_with_summaries
 
@@ -385,3 +411,81 @@ def test_apply_summaries_cache_read_failure_continues(
     assert result[0].summary_source == "ollama"
     assert result[0].summary == "Fresh summary"
     mock_summarize.assert_called_once()
+
+
+@patch("rollup.summarize.summarize_message")
+def test_execute_summary_plan_legacy_cache_reused(
+    mock_summarize: MagicMock, tmp_path
+) -> None:
+    from rollup.state import init_db_with_summaries, store_summary
+
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    entry = _entry()
+    parsed = entry.classified.parsed
+    store_summary(
+        conn,
+        parsed.message_key,
+        parsed.content_hash,
+        entry.classified.newsletter_type,
+        "qwen2.5:7b",
+        "Legacy summary",
+        datetime.now().astimezone(),
+    )
+    plan = resolve_summary_plan(
+        [entry],
+        get_builtin_summary_profile_set(),
+        SummaryCliOptions(summary_profile="standard"),
+    )
+    execution = execute_summary_plan(
+        entries=[entry],
+        plan=plan,
+        ollama_url="http://localhost:11434/api/generate",
+        default_model="llama3.2:3b",
+        max_chars=30000,
+        allow_remote=False,
+        conn=conn,
+    )
+    assert execution.entries_by_variant["default"][0].summary == "Legacy summary"
+    mock_summarize.assert_not_called()
+
+
+@patch("rollup.summarize.check_ollama_available")
+def test_execute_summary_plan_missing_model_falls_back(mock_check: MagicMock) -> None:
+    mock_check.return_value = (False, "missing")
+    entry = _entry()
+    plan = resolve_summary_plan(
+        [entry],
+        get_builtin_summary_profile_set(),
+        SummaryCliOptions(summary_profile="standard"),
+    )
+    execution = execute_summary_plan(
+        entries=[entry],
+        plan=plan,
+        ollama_url="http://localhost:11434/api/generate",
+        default_model="llama3.2:3b",
+        max_chars=30000,
+        allow_remote=False,
+    )
+    result = execution.entries_by_variant["default"][0]
+    assert result.summary_source == "preview_fallback"
+
+
+def test_summary_cache_key_parts_change_with_options() -> None:
+    common = dict(
+        message_key="k1",
+        content_hash="hash1",
+        newsletter_type="short_update",
+        provider="ollama",
+        profile_name="rough",
+        model="llama3.2:3b",
+        prompt_style="rough",
+        prompt_version=PROMPT_VERSION,
+        temperature=0.2,
+        num_ctx=8192,
+        options={"top_p": 0.9},
+        summary_input_hash="input-hash-1",
+    )
+    base = build_summary_cache_key_parts(**common)
+    assert base != build_summary_cache_key_parts(
+        **{**common, "options": {"top_p": 0.8}}
+    )

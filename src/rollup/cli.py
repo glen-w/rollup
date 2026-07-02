@@ -31,12 +31,23 @@ from rollup.filter import (
     build_digest_entries,
     count_summary_sources,
     group_dated_by_folder,
-    make_digest_entry,
 )
 from rollup.models import DigestReport, DigestStats
 from rollup.parse import parse_mbox_folder
-from rollup.render import atomic_write_digest, render_html, render_markdown, render_stats_block
+from rollup.render import (
+    atomic_write_digest,
+    render_html,
+    render_markdown,
+    render_stats_block,
+)
 from rollup.safety import SafetyError, assert_safe_write_paths, validate_read_root
+from rollup.summary_plan import SummaryCliOptions, resolve_summary_plan
+from rollup.summary_profiles import (
+    get_canonical_newsletter_types,
+    list_summary_profiles as list_summary_profile_infos,
+    load_summary_profile_set,
+    require_valid_summary_profile_set,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +77,15 @@ def _resolve_no_ollama(args: argparse.Namespace) -> bool:
 
 
 def _build_config(args: argparse.Namespace) -> Config:
+    variants_raw = getattr(args, "summary_variants", "") or ""
+    summary_variants = tuple(v.strip() for v in variants_raw.split(",") if v.strip())
+    summary_type_routing = getattr(args, "summary_type_routing", None)
+    if summary_type_routing is None:
+        summary_type_routing = bool(
+            getattr(args, "ollama", False)
+            and not getattr(args, "summary_profile", None)
+            and not summary_variants
+        )
     return Config(
         root=Path(args.root),
         mail_root=Path(args.mail_root),
@@ -85,6 +105,16 @@ def _build_config(args: argparse.Namespace) -> Config:
         ollama_url=getattr(args, "ollama_url", DEFAULT_OLLAMA_URL),
         ollama_model=getattr(args, "ollama_model", DEFAULT_OLLAMA_MODEL),
         allow_remote_ollama=getattr(args, "allow_remote_ollama", False),
+        summary_profile=getattr(args, "summary_profile", None),
+        summary_variants=summary_variants,
+        summary_type_routing=summary_type_routing,
+        summary_profile_set_path=getattr(args, "summary_profile_set", None),
+        export_summary_profile_set_path=getattr(
+            args, "export_summary_profile_set", None
+        ),
+        list_summary_profiles=getattr(args, "list_summary_profiles", False),
+        list_newsletter_types=getattr(args, "list_newsletter_types", False),
+        summary_routing_report=getattr(args, "summary_routing_report", False),
         verbose=getattr(args, "verbose", False),
     )
 
@@ -114,8 +144,80 @@ def _validate_config(config: Config, json_out: Path | None = None) -> list[str]:
             config.output_dir / f".tmp-{digest_date}-newsletter-digest.html",
         ]
     )
+    for variant in config.summary_variants:
+        writable.extend(
+            [
+                config.output_dir / f"{digest_date}-newsletter-digest.{variant}.md",
+                config.output_dir / f"{digest_date}-newsletter-digest.{variant}.html",
+                config.output_dir
+                / f".tmp-{digest_date}-newsletter-digest.{variant}.md",
+                config.output_dir
+                / f".tmp-{digest_date}-newsletter-digest.{variant}.html",
+            ]
+        )
+    if config.export_summary_profile_set_path:
+        writable.append(Path(config.export_summary_profile_set_path))
     assert_safe_write_paths(config.mail_root, *writable)
     return warnings
+
+
+def _load_and_validate_profile_set(config: Config):
+    profile_set = load_summary_profile_set(config.summary_profile_set_path)
+    return require_valid_summary_profile_set(
+        profile_set, get_canonical_newsletter_types()
+    )
+
+
+def _print_summary_profile_listing(profile_set) -> None:
+    for info in list_summary_profile_infos(profile_set):
+        print(
+            f"{info.name}: provider={info.provider} model={info.model} "
+            f"prompt_style={info.prompt_style} temperature={info.temperature}"
+        )
+
+
+def _print_newsletter_types() -> None:
+    for newsletter_type in get_canonical_newsletter_types():
+        print(newsletter_type)
+
+
+def _print_routing_report(report) -> None:
+    if report.mode == "variants":
+        print(f"Summary variants: {', '.join(report.output_variants)}")
+    else:
+        print(f"Summary routing mode: {report.mode}")
+    if report.profiles_used:
+        print(f"Profiles used: {', '.join(report.profiles_used)}")
+    if report.models_used:
+        print(f"Models used: {', '.join(report.models_used)}")
+    for row in report.routing_counts:
+        print(
+            f"{row.newsletter_type}: profile={row.profile_name} "
+            f"model={row.model} count={row.count}"
+        )
+
+
+def _build_digest_report(
+    *,
+    generated_at: datetime,
+    lookback_days: int,
+    window_start: datetime,
+    window_end: datetime,
+    dated_entries,
+    undated_entries,
+    stats: DigestStats,
+    summary_metadata,
+) -> DigestReport:
+    return DigestReport(
+        generated_at=generated_at,
+        lookback_days=lookback_days,
+        window_start=window_start,
+        window_end=window_end,
+        dated_by_folder=group_dated_by_folder(dated_entries),
+        undated=tuple(undated_entries),
+        stats=stats,
+        summary_metadata=summary_metadata,
+    )
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
@@ -172,7 +274,24 @@ def cmd_digest(args: argparse.Namespace) -> int:
     for w in warnings:
         print(w, file=sys.stderr)
 
-    _setup_logging(config.verbose, config.log_dir if not config.dry_run else None, config.dry_run)
+    _setup_logging(
+        config.verbose, config.log_dir if not config.dry_run else None, config.dry_run
+    )
+    profile_set = _load_and_validate_profile_set(config)
+    if config.list_newsletter_types:
+        _print_newsletter_types()
+        return 0
+    if config.list_summary_profiles:
+        _print_summary_profile_listing(profile_set)
+        return 0
+    if config.export_summary_profile_set_path:
+        from rollup.summary_profiles import export_summary_profile_set
+
+        export_summary_profile_set(profile_set, config.export_summary_profile_set_path)
+        print(
+            f"Exported summary profile set to {config.export_summary_profile_set_path}"
+        )
+        return 0
     generated_at = datetime.now().astimezone()
     window_start, window_end = compute_date_window(generated_at, config.lookback_days)
 
@@ -231,27 +350,42 @@ def cmd_digest(args: argparse.Namespace) -> int:
         undated_entries, seen_keys, config.include_seen_undated
     )
 
-    # Ollama summarisation
+    summary_metadata = None
+    rendered_variants: dict[str, tuple[list, list]] = {}
     if not config.no_ollama and not config.dry_run:
-        from rollup.summarize import apply_summaries
+        from rollup.summarize import execute_summary_plan
 
-        dated_entries = apply_summaries(
-            dated_entries,
-            config.ollama_url,
-            config.ollama_model,
-            config.max_chars_for_llm,
-            config.allow_remote_ollama,
+        cli_options = SummaryCliOptions(
+            summary_profile=config.summary_profile,
+            summary_variants=config.summary_variants,
+            summary_type_routing=config.summary_type_routing,
+        )
+        all_entries = dated_entries + undated_to_render
+        plan = resolve_summary_plan(all_entries, profile_set, cli_options)
+        execution = execute_summary_plan(
+            entries=all_entries,
+            plan=plan,
+            ollama_url=config.ollama_url,
+            default_model=config.ollama_model,
+            max_chars=config.max_chars_for_llm,
+            allow_remote=config.allow_remote_ollama,
             conn=conn,
             rebuild=config.rebuild_summaries,
         )
-        undated_to_render = apply_summaries(
-            undated_to_render,
-            config.ollama_url,
-            config.ollama_model,
-            config.max_chars_for_llm,
-            config.allow_remote_ollama,
-            conn=conn,
-            rebuild=config.rebuild_summaries,
+        dated_count = len(dated_entries)
+        for variant_name, rendered in execution.entries_by_variant.items():
+            rendered_variants[variant_name] = (
+                rendered[:dated_count],
+                rendered[dated_count:],
+            )
+        default_variant_name = (
+            "default"
+            if "default" in rendered_variants
+            else next(iter(rendered_variants))
+        )
+        dated_entries, undated_to_render = rendered_variants[default_variant_name]
+        summary_metadata = execution.summary_metadata_by_variant.get(
+            default_variant_name
         )
 
     all_rendered = dated_entries + undated_to_render
@@ -269,33 +403,88 @@ def cmd_digest(args: argparse.Namespace) -> int:
         summaries_ollama=ollama_c,
         summaries_cache=cache_c,
         summaries_fallback=fallback_c,
+        summaries_errors=summary_metadata.summaries_errors if summary_metadata else 0,
     )
 
-    report = DigestReport(
+    report = _build_digest_report(
         generated_at=generated_at,
         lookback_days=config.lookback_days,
         window_start=window_start,
         window_end=window_end,
-        dated_by_folder=group_dated_by_folder(dated_entries),
-        undated=tuple(undated_to_render),
+        dated_entries=dated_entries,
+        undated_entries=undated_to_render,
         stats=stats,
+        summary_metadata=summary_metadata,
     )
 
     print(render_stats_block(stats))
+    if summary_metadata and config.summary_routing_report:
+        _print_routing_report(summary_metadata)
 
     if config.dry_run:
         logger.info("Dry run — no files written, no state updated")
         return 0
 
-    md = render_markdown(report, config.max_display_links)
-    html_content = render_html(report, config.max_display_links)
-
     try:
-        md_path, html_path = atomic_write_digest(
-            config.output_dir, generated_at, md, html_content
-        )
-        logger.info("Wrote %s", md_path)
-        logger.info("Wrote %s", html_path)
+        if rendered_variants and any(name != "default" for name in rendered_variants):
+            for variant_name, (
+                variant_dated,
+                variant_undated,
+            ) in rendered_variants.items():
+                variant_metadata = execution.summary_metadata_by_variant.get(
+                    variant_name
+                )
+                variant_stats = DigestStats(
+                    folders_scanned=stats.folders_scanned,
+                    messages_parsed=stats.messages_parsed,
+                    dated_included=len(variant_dated),
+                    undated_needing_review=len(variant_undated),
+                    skipped_outside_window=stats.skipped_outside_window,
+                    skipped_seen_undated=stats.skipped_seen_undated,
+                    deduped_messages=stats.deduped_messages,
+                    parse_errors=stats.parse_errors,
+                    summaries_ollama=variant_metadata.summaries_ollama
+                    if variant_metadata
+                    else 0,
+                    summaries_cache=variant_metadata.summaries_cache
+                    if variant_metadata
+                    else 0,
+                    summaries_fallback=variant_metadata.summaries_fallback
+                    if variant_metadata
+                    else 0,
+                    summaries_errors=variant_metadata.summaries_errors
+                    if variant_metadata
+                    else 0,
+                )
+                variant_report = _build_digest_report(
+                    generated_at=generated_at,
+                    lookback_days=config.lookback_days,
+                    window_start=window_start,
+                    window_end=window_end,
+                    dated_entries=variant_dated,
+                    undated_entries=variant_undated,
+                    stats=variant_stats,
+                    summary_metadata=variant_metadata,
+                )
+                md = render_markdown(variant_report, config.max_display_links)
+                html_content = render_html(variant_report, config.max_display_links)
+                md_path, html_path = atomic_write_digest(
+                    config.output_dir,
+                    generated_at,
+                    md,
+                    html_content,
+                    variant_name=variant_name,
+                )
+                logger.info("Wrote %s", md_path)
+                logger.info("Wrote %s", html_path)
+        else:
+            md = render_markdown(report, config.max_display_links)
+            html_content = render_html(report, config.max_display_links)
+            md_path, html_path = atomic_write_digest(
+                config.output_dir, generated_at, md, html_content
+            )
+            logger.info("Wrote %s", md_path)
+            logger.info("Wrote %s", html_path)
 
         if conn is not None:
             from rollup.state import upsert_seen_keys
@@ -319,7 +508,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="rollup",
         description="Local read-only Thunderbird newsletter digest",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser(
@@ -360,6 +551,25 @@ def build_parser() -> argparse.ArgumentParser:
     dig.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     dig.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL)
     dig.add_argument("--allow-remote-ollama", action="store_true", default=False)
+    dig.add_argument("--summary-profile")
+    dig.add_argument("--summary-variants")
+    dig.add_argument("--summary-profile-set")
+    dig.add_argument("--export-summary-profile-set")
+    dig.add_argument("--list-summary-profiles", action="store_true", default=False)
+    dig.add_argument("--list-newsletter-types", action="store_true", default=False)
+    dig.add_argument("--summary-routing-report", action="store_true", default=False)
+    type_routing_group = dig.add_mutually_exclusive_group()
+    type_routing_group.add_argument(
+        "--summary-type-routing",
+        dest="summary_type_routing",
+        action="store_true",
+        default=None,
+    )
+    type_routing_group.add_argument(
+        "--no-summary-type-routing",
+        dest="summary_type_routing",
+        action="store_false",
+    )
 
     return parser
 
@@ -370,8 +580,12 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     p.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
     p.add_argument("--log-dir", default=str(DEFAULT_LOG_DIR))
-    p.add_argument("--folder", action="append", help="Include only this folder (repeatable)")
-    p.add_argument("--exclude-folder", action="append", help="Exclude folder (repeatable)")
+    p.add_argument(
+        "--folder", action="append", help="Include only this folder (repeatable)"
+    )
+    p.add_argument(
+        "--exclude-folder", action="append", help="Exclude folder (repeatable)"
+    )
     p.add_argument("--verbose", action="store_true", default=False)
 
 

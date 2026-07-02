@@ -100,15 +100,17 @@ def make_digest_entry(
                 summary=parsed.preview,
                 summary_source="preview_fallback",
             )
-        return DigestEntry(
-            classified=classified, summary=None, summary_source="none"
-        )
+        return DigestEntry(classified=classified, summary=None, summary_source="none")
     return DigestEntry(
-        classified=classified, summary=summary, summary_source=summary_source or "ollama"
+        classified=classified,
+        summary=summary,
+        summary_source=summary_source or "ollama",
     )
 
 
-def group_dated_by_folder(entries: list[DigestEntry]) -> dict[str, tuple[DigestEntry, ...]]:
+def group_dated_by_folder(
+    entries: list[DigestEntry],
+) -> dict[str, tuple[DigestEntry, ...]]:
     folders: dict[str, list[DigestEntry]] = {}
     for entry in entries:
         folder = entry.classified.parsed.folder_name
@@ -132,10 +134,12 @@ def build_digest_entries(
     undated_sorted = _sort_undated(undated_msgs)
 
     dated_entries = [
-        make_digest_entry(classify_message(m), no_ollama=no_ollama) for m in dated_sorted
+        make_digest_entry(classify_message(m), no_ollama=no_ollama)
+        for m in dated_sorted
     ]
     undated_entries = [
-        make_digest_entry(classify_message(m), no_ollama=no_ollama) for m in undated_sorted
+        make_digest_entry(classify_message(m), no_ollama=no_ollama)
+        for m in undated_sorted
     ]
     return dated_entries, undated_entries, skipped, dedup_count
 

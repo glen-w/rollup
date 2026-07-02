@@ -40,6 +40,14 @@ class Config:
     ollama_url: str
     ollama_model: str
     allow_remote_ollama: bool
+    summary_profile: str | None
+    summary_variants: tuple[str, ...]
+    summary_type_routing: bool
+    summary_profile_set_path: str | None
+    export_summary_profile_set_path: str | None
+    list_summary_profiles: bool
+    list_newsletter_types: bool
+    summary_routing_report: bool
     verbose: bool
 
     @property
@@ -55,7 +63,9 @@ def compute_date_window(
         local_tz = datetime.now().astimezone().tzinfo
         generated_at = generated_at.replace(tzinfo=local_tz)
     local_date = generated_at.date()
-    window_end = datetime.combine(local_date, time(23, 59, 59, 999999), generated_at.tzinfo)
+    window_end = datetime.combine(
+        local_date, time(23, 59, 59, 999999), generated_at.tzinfo
+    )
     start_date = local_date - timedelta(days=lookback_days - 1)
     window_start = datetime.combine(start_date, time.min, generated_at.tzinfo)
     return window_start, window_end

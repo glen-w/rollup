@@ -70,7 +70,10 @@ def test_w3c_xhtml_is_junk() -> None:
 def test_sendgrid_wrapper_uses_anchor_text_before_falling_back() -> None:
     href = "https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456"
     assert classify_link(href, text="Report") == "document_pdf"
-    assert classify_link(href, text="Register", context="Register for the webinar") == "registration"
+    assert (
+        classify_link(href, text="Register", context="Register for the webinar")
+        == "registration"
+    )
     assert classify_link(href, text="Article") == "content"
     assert classify_link(href, text="click") == "unknown"
 
@@ -78,11 +81,16 @@ def test_sendgrid_wrapper_uses_anchor_text_before_falling_back() -> None:
 def test_substack_c_wrapper_uses_anchor_text_before_falling_back() -> None:
     href = "https://newsletter.substack.com/c/abc123"
     assert classify_link(href, text="Article") == "content"
-    assert classify_link(href, text="Register", context="Register for the event") == "registration"
+    assert (
+        classify_link(href, text="Register", context="Register for the event")
+        == "registration"
+    )
     assert classify_link(href, text="here") == "unknown"
 
 
-def test_google_calendar_variants_collapse_for_display_but_keep_original_hrefs() -> None:
+def test_google_calendar_variants_collapse_for_display_but_keep_original_hrefs() -> (
+    None
+):
     links = [
         LinkItem(
             href="https://calendar.google.com/calendar/event?action=RESPOND&text=Demo&dates=20260702T100000Z/20260702T110000Z&rst=1",
@@ -120,7 +128,10 @@ def test_teams_event_labelled_correctly() -> None:
 def test_pdf_label_uses_heuristics_only() -> None:
     href = "https://example.org/download?file=annual-report.pdf"
     assert classify_link(href, text="Annual report") == "document_pdf"
-    assert label_link(href, text="https://example.org/download?file=annual-report.pdf") == "Open PDF"
+    assert (
+        label_link(href, text="https://example.org/download?file=annual-report.pdf")
+        == "Open PDF"
+    )
 
 
 def test_author_profile_classified_correctly() -> None:
@@ -133,13 +144,18 @@ def test_exact_duplicate_hrefs_collapse_for_display() -> None:
     link = LinkItem("https://example.com/story", "Read more", None, 0)
     bundle = prepare_links_for_render([link, LinkItem(link.href, "Read more", None, 1)])
     assert len(bundle.main_links) == 1
-    assert any(hidden.hidden_reason == "duplicate_for_display" for hidden in bundle.hidden_links)
+    assert any(
+        hidden.hidden_reason == "duplicate_for_display"
+        for hidden in bundle.hidden_links
+    )
 
 
 def test_prepare_links_separates_other_and_hidden_links() -> None:
     links = [
         LinkItem("https://example.com/post/1", "Read article", None, 0),
-        LinkItem("https://calendar.google.com/calendar/event?action=VIEW", None, None, 1),
+        LinkItem(
+            "https://calendar.google.com/calendar/event?action=VIEW", None, None, 1
+        ),
         LinkItem("https://example.com/preferences", "Manage preferences", None, 2),
     ]
     bundle = prepare_links_for_render(links, max_main=1, max_other=5)

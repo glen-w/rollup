@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from rollup.safety import SafetyError, assert_safe_write_paths, is_inside, validate_read_root
+from rollup.safety import (
+    SafetyError,
+    assert_safe_write_paths,
+    is_inside,
+    validate_read_root,
+)
 
 
 def test_is_inside_child_in_parent(tmp_path: Path) -> None:
@@ -102,7 +105,15 @@ def test_validate_read_root_equals_state_dir(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "bad_path_name",
-    ["output", "state", "rollup.db", "digest.md", "digest.html", "tmp.md", "inventory.json"],
+    [
+        "output",
+        "state",
+        "rollup.db",
+        "digest.md",
+        "digest.html",
+        "tmp.md",
+        "inventory.json",
+    ],
 )
 def test_assert_safe_write_paths_rejects_various_inside_paths(
     tmp_path: Path, bad_path_name: str

@@ -153,7 +153,9 @@ def dedupe_key_for_display(href: str, category: LinkCategory | None = None) -> s
     return normalized
 
 
-def classify_link(href: str, text: str | None = None, context: str | None = None) -> LinkCategory:
+def classify_link(
+    href: str, text: str | None = None, context: str | None = None
+) -> LinkCategory:
     parsed = urlparse(href.strip())
     host = parsed.netloc.lower()
     path = parsed.path.lower()
@@ -171,7 +173,11 @@ def classify_link(href: str, text: str | None = None, context: str | None = None
         return "tracking_pixel"
     if ".substackcdn.com" in host and path.endswith(".gif"):
         return "tracking_pixel"
-    if "unsubscribe" in combined or "manage preferences" in combined or "preferences" in path:
+    if (
+        "unsubscribe" in combined
+        or "manage preferences" in combined
+        or "preferences" in path
+    ):
         return "unsubscribe_preferences"
     if any(term in combined for term in ("comment", "like", "share")) or any(
         term in path for term in ("/comment", "/comments", "/share", "/like")
@@ -188,11 +194,26 @@ def classify_link(href: str, text: str | None = None, context: str | None = None
             return "registration"
         if path.startswith("/j/"):
             return "event"
-    if "youtube.com" in host or "youtu.be" in host or "vimeo.com" in host or "podcast" in host:
+    if (
+        "youtube.com" in host
+        or "youtu.be" in host
+        or "vimeo.com" in host
+        or "podcast" in host
+    ):
         return "video_audio"
-    if path.endswith(".pdf") or ".pdf" in query or " pdf" in f" {combined} " or "report" in combined:
+    if (
+        path.endswith(".pdf")
+        or ".pdf" in query
+        or " pdf" in f" {combined} "
+        or "report" in combined
+    ):
         return "document_pdf"
-    if "profile" in path or "/author/" in path or "/authors/" in path or "/user/" in path:
+    if (
+        "profile" in path
+        or "/author/" in path
+        or "/authors/" in path
+        or "/user/" in path
+    ):
         return "author_profile"
     if host.endswith("substack.com") and path == "/app-link/post":
         return "primary_content"
@@ -212,7 +233,10 @@ def classify_link(href: str, text: str | None = None, context: str | None = None
 
 
 def label_link(
-    href: str, text: str | None = None, category: LinkCategory | None = None, context: str | None = None
+    href: str,
+    text: str | None = None,
+    category: LinkCategory | None = None,
+    context: str | None = None,
 ) -> str:
     meaningful = clean_anchor_text(text)
     if meaningful:
@@ -279,7 +303,9 @@ def classify_links(links: list[LinkItem]) -> list[ClassifiedLink]:
                 text=item.text,
                 context=item.context,
                 source_index=item.source_index,
-                label=label_link(item.href, text=item.text, category=category, context=item.context),
+                label=label_link(
+                    item.href, text=item.text, category=category, context=item.context
+                ),
                 domain=domain_for_display(item.href),
                 category=category,
                 priority=PRIORITY_BY_CATEGORY[category],
@@ -303,14 +329,24 @@ def prepare_links_for_render(
     for link in sorted(classified, key=lambda item: (item.priority, item.source_index)):
         if link.category in HIDDEN_CATEGORIES:
             hidden_links.append(
-                ClassifiedLink(**{**link.__dict__, "hidden_reason": link.category, "is_main": False})
+                ClassifiedLink(
+                    **{
+                        **link.__dict__,
+                        "hidden_reason": link.category,
+                        "is_main": False,
+                    }
+                )
             )
             continue
 
         if link.dedupe_key in seen_display_keys:
             hidden_links.append(
                 ClassifiedLink(
-                    **{**link.__dict__, "hidden_reason": "duplicate_for_display", "is_main": False}
+                    **{
+                        **link.__dict__,
+                        "hidden_reason": "duplicate_for_display",
+                        "is_main": False,
+                    }
                 )
             )
             continue
@@ -323,7 +359,9 @@ def prepare_links_for_render(
             other_links.append(ClassifiedLink(**{**link.__dict__, "is_main": False}))
             continue
         hidden_links.append(
-            ClassifiedLink(**{**link.__dict__, "hidden_reason": "over_limit", "is_main": False})
+            ClassifiedLink(
+                **{**link.__dict__, "hidden_reason": "over_limit", "is_main": False}
+            )
         )
 
     return LinkRenderBundle(
@@ -334,11 +372,7 @@ def prepare_links_for_render(
 
 
 def render_link_markdown(link: ClassifiedLink) -> str:
-    label = (
-        link.label.replace("\\", "\\\\")
-        .replace("[", r"\[")
-        .replace("]", r"\]")
-    )
+    label = link.label.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
     return f"- [{label}]({link.href})"
 
 

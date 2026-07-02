@@ -11,7 +11,13 @@ import pytest
 from rollup.classify import classify_message
 from rollup.config import compute_date_window
 from rollup.filter import make_digest_entry
-from rollup.models import DigestReport, DigestStats, LinkItem
+from rollup.models import (
+    DigestReport,
+    DigestStats,
+    DigestSummaryMetadata,
+    DigestSummaryRouteStat,
+    LinkItem,
+)
 from rollup.parse import compute_content_hash
 from rollup.models import ParsedMessage
 from rollup.render import (
@@ -72,6 +78,23 @@ def _report() -> DigestReport:
         dated_by_folder={"tech": (entry,)},
         undated=(),
         stats=stats,
+        summary_metadata=DigestSummaryMetadata(
+            mode="type_routed",
+            profiles_used=("rough", "deep"),
+            models_used=("llama3.2:3b", "gpt-oss:20b"),
+            summaries_ollama=0,
+            summaries_cache=0,
+            summaries_fallback=1,
+            summaries_errors=0,
+            routing_counts=(
+                DigestSummaryRouteStat(
+                    newsletter_type="short_update",
+                    profile_name="rough",
+                    model="llama3.2:3b",
+                    count=1,
+                ),
+            ),
+        ),
     )
 
 
@@ -79,6 +102,7 @@ def test_render_markdown_contains_subject() -> None:
     md = render_markdown(_report(), 8)
     assert "Test Subject" in md
     assert "## tech" in md
+    assert "## Summary Routing" in md
 
 
 def test_render_html_escapes_content() -> None:
@@ -86,11 +110,13 @@ def test_render_html_escapes_content() -> None:
     html = render_html(report, 8)
     assert "<script>" not in html
     assert "Test Subject" in html
+    assert "Summary Routing" in html
 
 
 def test_stats_block() -> None:
     block = render_stats_block(_report().stats)
     assert "Folders scanned: 1" in block
+    assert "errors 0" in block
 
 
 def test_atomic_write(tmp_path: Path) -> None:
@@ -99,6 +125,15 @@ def test_atomic_write(tmp_path: Path) -> None:
     assert md_path.exists()
     assert html_path.exists()
     assert not list(tmp_path.glob(".tmp-*"))
+
+
+def test_atomic_write_variant_name(tmp_path: Path) -> None:
+    now = datetime.now().astimezone()
+    md_path, html_path = atomic_write_digest(
+        tmp_path, now, "# Test\n", "<html></html>", variant_name="deep"
+    )
+    assert md_path.name.endswith(".deep.md")
+    assert html_path.name.endswith(".deep.html")
 
 
 def test_cleanup_stale_temps(tmp_path: Path) -> None:
@@ -272,7 +307,9 @@ def test_render_hides_raw_url_as_visible_text() -> None:
         html_heading_count=0,
         html_link_count=0,
         html_section_break_count=0,
-        links=("https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",),
+        links=(
+            "https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",
+        ),
         link_items=(
             LinkItem(
                 "https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",
@@ -298,7 +335,10 @@ def test_render_hides_raw_url_as_visible_text() -> None:
     )
     md = render_markdown(report, 8)
     html = render_html(report, 8)
-    assert "[Open post](https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc)" in md
+    assert (
+        "[Open post](https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc)"
+        in md
+    )
     assert ">https://substack.com/app-link/post?" not in html
 
 
@@ -318,7 +358,9 @@ def test_render_markdown_escapes_link_labels_without_changing_href() -> None:
         html_link_count=0,
         html_section_break_count=0,
         links=("https://example.com/report?x=1&y=2",),
-        link_items=(LinkItem("https://example.com/report?x=1&y=2", "[Report]", None, 0),),
+        link_items=(
+            LinkItem("https://example.com/report?x=1&y=2", "[Report]", None, 0),
+        ),
         read_time_minutes=1,
         preview="escape body",
         parse_warnings=(),
@@ -374,7 +416,12 @@ def test_render_wrapper_links_keep_clean_visible_text_and_original_hrefs() -> No
                 "Register for the webinar",
                 1,
             ),
-            LinkItem("https://newsletter.substack.com/c/article123", "Article", "Featured story", 2),
+            LinkItem(
+                "https://newsletter.substack.com/c/article123",
+                "Article",
+                "Featured story",
+                2,
+            ),
         ),
         read_time_minutes=1,
         preview="wrapper body",
@@ -394,7 +441,9 @@ def test_render_wrapper_links_keep_clean_visible_text_and_original_hrefs() -> No
     md = render_markdown(report, 8)
     html = render_html(report, 8)
     assert "[Report](https://u14608870.ct.sendgrid.net/ls/click?upn=report123)" in md
-    assert "[Register](https://u14608870.ct.sendgrid.net/ls/click?upn=register123)" in md
+    assert (
+        "[Register](https://u14608870.ct.sendgrid.net/ls/click?upn=register123)" in md
+    )
     assert "[Article](https://newsletter.substack.com/c/article123)" in md
     assert ">Report<" in html
     assert ">Register<" in html
@@ -433,7 +482,9 @@ def test_render_other_links_in_secondary_section_only() -> None:
             LinkItem("https://example.com/post/3", "Read article 3", None, 2),
             LinkItem("https://example.com/post/4", "Read article 4", None, 3),
             LinkItem("https://example.com/post/5", "Read article 5", None, 4),
-            LinkItem("https://calendar.google.com/calendar/event?action=VIEW", None, None, 5),
+            LinkItem(
+                "https://calendar.google.com/calendar/event?action=VIEW", None, None, 5
+            ),
         ),
         read_time_minutes=1,
         preview="other body",

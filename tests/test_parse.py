@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
-import pytest
 
 from rollup.discovery import iter_mbox_files
 from rollup.parse import (
@@ -61,7 +60,9 @@ def test_parse_html_message() -> None:
     msg["Subject"] = "HTML"
     msg["From"] = "b@example.com"
     msg["Message-ID"] = "<html@example.com>"
-    msg.add_alternative("<html><body><h1>Title</h1><p>Content</p></body></html>", subtype="html")
+    msg.add_alternative(
+        "<html><body><h1>Title</h1><p>Content</p></body></html>", subtype="html"
+    )
     parsed = parse_message(msg, "test", "test", 200_000, 8)
     assert parsed.html_heading_count >= 1
     assert parsed.body_text
@@ -88,7 +89,9 @@ def test_links_preserve_raw_extracted_duplicates() -> None:
     msg = EmailMessage()
     msg["Subject"] = "Links"
     msg["From"] = "a@example.com"
-    html = '<a href="https://example.com/a">a</a> <a href="https://example.com/a">dup</a>'
+    html = (
+        '<a href="https://example.com/a">a</a> <a href="https://example.com/a">dup</a>'
+    )
     msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
     parsed = parse_message(msg, "t", "t", 200_000, 8)
     assert len(parsed.links) == 2
@@ -117,9 +120,11 @@ def test_parse_does_not_truncate_extracted_links() -> None:
     msg = EmailMessage()
     msg["Subject"] = "Many Links"
     msg["From"] = "a@example.com"
-    html = "<html><body>" + "".join(
-        f'<a href="https://example.com/{i}">Link {i}</a>' for i in range(12)
-    ) + "</body></html>"
+    html = (
+        "<html><body>"
+        + "".join(f'<a href="https://example.com/{i}">Link {i}</a>' for i in range(12))
+        + "</body></html>"
+    )
     msg.add_alternative(html, subtype="html")
     parsed = parse_message(msg, "t", "t", 200_000, 3)
     assert len(parsed.links) == 12
@@ -164,7 +169,9 @@ def test_parse_skips_attachment() -> None:
     msg["From"] = "a@example.com"
     msg["Message-ID"] = "<attach@example.com>"
     msg.set_content("visible body")
-    msg.add_attachment(b"secret", maintype="application", subtype="octet-stream", filename="x.bin")
+    msg.add_attachment(
+        b"secret", maintype="application", subtype="octet-stream", filename="x.bin"
+    )
     parsed = parse_message(msg, "t", "t", 200_000, 8)
     assert "visible body" in parsed.body_text
     assert "secret" not in parsed.body_text

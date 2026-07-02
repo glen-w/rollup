@@ -132,7 +132,10 @@ def main() -> None:
                 "Tech Roundup",
                 "tech@example.com",
                 "<html><body><h1>Links</h1>"
-                + "".join(f'<a href="https://example.com/{i}">Link {i}</a> ' for i in range(12))
+                + "".join(
+                    f'<a href="https://example.com/{i}">Link {i}</a> '
+                    for i in range(12)
+                )
                 + "<p>Some prose about tech.</p></body></html>",
                 "<tech1@example.com>",
                 recent,
@@ -185,11 +188,24 @@ def main() -> None:
     essay_body = " ".join(["This is a long essay paragraph about ideas."] * 200)
     _write_mbox(
         classify_dir / "essay",
-        [_plain_msg("Long Essay", "essay@example.com", essay_body, "<essay@example.com>", recent)],
+        [
+            _plain_msg(
+                "Long Essay",
+                "essay@example.com",
+                essay_body,
+                "<essay@example.com>",
+                recent,
+            )
+        ],
     )
-    links_html = "<html><body>" + "".join(
-        f'<a href="https://news.example/{i}">Story {i}</a> word ' for i in range(15)
-    ) + "text " * 50 + "</body></html>"
+    links_html = (
+        "<html><body>"
+        + "".join(
+            f'<a href="https://news.example/{i}">Story {i}</a> word ' for i in range(15)
+        )
+        + "text " * 50
+        + "</body></html>"
+    )
     _write_mbox(
         classify_dir / "link_roundup",
         [
@@ -220,7 +236,9 @@ def main() -> None:
     _write_mbox(classify_dir / "unclassified_empty", [])
 
     # Undated message in misc
-    undated = _plain_msg("No Date Newsletter", "nodate@example.com", "This has no date header.")
+    undated = _plain_msg(
+        "No Date Newsletter", "nodate@example.com", "This has no date header."
+    )
     undated.__delitem__("Date")
     _append_to_mbox(FIXTURE_ROOT / "misc", [undated])
 

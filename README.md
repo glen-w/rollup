@@ -75,6 +75,9 @@ With Ollama (requires `.[ollama]` extra, local Ollama running, and explicit `--o
 ```bash
 python -m rollup digest --ollama
 python -m rollup digest --ollama --rebuild-summaries
+python -m rollup digest --ollama --summary-profile deep
+python -m rollup digest --ollama --summary-type-routing
+python -m rollup digest --ollama --summary-variants rough,deep
 ```
 
 ## Live-run checklist
@@ -122,13 +125,91 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--ollama` | Explicit opt-in to enable local Ollama summarisation |
 | `--dry-run` | No output files, state DB, logs, or Ollama calls |
 
+## Summary profiles
+
+Rollup now includes built-in summary profiles:
+
+- `rough` -> `llama3.2:3b`
+- `standard` -> `qwen2.5:7b`
+- `deep` -> `gpt-oss:20b`
+- `max` -> `qwen3.6:27b`
+
+These are defaults, not hard requirements. Rollup does not validate local model installation at config-load time. If a model is missing at runtime, Rollup falls back gracefully and reports the issue. Pull models explicitly:
+
+```bash
+ollama pull llama3.2:3b
+ollama pull qwen2.5:7b
+ollama pull gpt-oss:20b
+ollama pull qwen3.6:27b
+```
+
+List built-in or configured profiles:
+
+```bash
+python -m rollup digest --list-summary-profiles
+python -m rollup digest --list-newsletter-types
+```
+
+## Summary routing modes
+
+Single profile for the whole digest:
+
+```bash
+python -m rollup digest --ollama --summary-profile deep
+```
+
+Per-type routing for one mixed-model digest:
+
+```bash
+python -m rollup digest --ollama --summary-type-routing
+```
+
+Whole-digest comparison variants from one parsed/classified/filtered input set:
+
+```bash
+python -m rollup digest --ollama --summary-variants rough,deep
+```
+
+Variant mode writes one output set per profile by inserting `.{profile}` before the extension, for example:
+
+- `2026-07-02-newsletter-digest.rough.md`
+- `2026-07-02-newsletter-digest.rough.html`
+- `2026-07-02-newsletter-digest.deep.md`
+- `2026-07-02-newsletter-digest.deep.html`
+
+## Summary profile sets
+
+Profile sets can be loaded from or exported to JSON:
+
+```bash
+python -m rollup digest --export-summary-profile-set ./output/summary_profiles.json
+python -m rollup digest --ollama --summary-profile-set ./output/summary_profiles.json
+```
+
+The serialized profile set includes:
+
+- built-in or user-defined profiles
+- default and fallback profile names
+- per-type routes keyed by canonical classifier labels
+- `schema_version` for future migrations
+
+Canonical newsletter classifier labels are:
+
+- `short_update`
+- `multi_section_digest`
+- `essay`
+- `link_roundup`
+- `unclassified`
+
 ## Prompt templates
 
 Ollama prompts live under `prompts/`. Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`).
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the `summaries` table is added via `CREATE TABLE IF NOT EXISTS` on the first `--ollama` run. New databases record schema version 2 via `INSERT OR IGNORE` during any non-dry-run digest; the first `--ollama` run upgrades an existing v1 row to 2 with `INSERT OR REPLACE`.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. New databases record schema version 3 during non-dry-run initialization.
+
+Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, and generation options. Legacy cache rows remain readable when applicable.
 
 ## Ollama validation (live)
 
@@ -156,6 +237,31 @@ python -m rollup digest --ollama --folder tech --lookback-days 7
 
 # Full digest after smoke passes
 python -m rollup digest --ollama
+```
+
+## Summary routing report
+
+Use `--summary-routing-report` to print a compact routing/model usage summary after a run.
+
+Rendered digests also include compact summary metadata showing:
+
+- routing mode or active variant
+- profiles used
+- models used
+- summary source counts
+- optional compact type/profile/model counts
+
+## Benchmark local models
+
+Use the stdlib-only benchmark helper to compare local Ollama-compatible models on the same prompts:
+
+```bash
+python scripts/benchmark_ollama_models.py \
+  --models llama3.2:3b,qwen2.5:7b,gpt-oss:20b,qwen3.6:27b \
+  --runs 2 \
+  --num-ctx 16384 \
+  --out benchmarks/ollama_benchmark.json \
+  --markdown-out benchmarks/ollama_benchmark.md
 ```
 
 ## Project layout

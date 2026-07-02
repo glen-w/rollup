@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from rollup.classify import classify_message
-from rollup.discovery import iter_mbox_files
 from rollup.parse import parse_mbox_folder
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "Newsletters.sbd"

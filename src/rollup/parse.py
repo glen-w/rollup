@@ -6,8 +6,8 @@ import hashlib
 import logging
 import mailbox
 import re
+from collections.abc import Iterator
 from datetime import datetime
-from email import policy
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -151,7 +151,9 @@ def _extract_links_from_html(html: str) -> list[LinkItem]:
                 LinkItem(
                     href=href,
                     text=_context_snippet(tag.get_text(" ", strip=True), max_len=80),
-                    context=_context_snippet(tag.parent.get_text(" ", strip=True) if tag.parent else None),
+                    context=_context_snippet(
+                        tag.parent.get_text(" ", strip=True) if tag.parent else None
+                    ),
                     source_index=source_index,
                 )
             )
@@ -175,7 +177,9 @@ def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[Li
                 LinkItem(
                     href=href,
                     text=None,
-                    context=_context_snippet(text[max(0, match.start() - 80) : match.end() + 80]),
+                    context=_context_snippet(
+                        text[max(0, match.start() - 80) : match.end() + 80]
+                    ),
                     source_index=start_index + offset,
                 )
             )
@@ -191,7 +195,9 @@ def _extract_links_from_plain_text(text: str, start_index: int = 0) -> list[Link
             LinkItem(
                 href=href,
                 text=None,
-                context=_context_snippet(text[max(0, match.start() - 80) : match.end() + 80]),
+                context=_context_snippet(
+                    text[max(0, match.start() - 80) : match.end() + 80]
+                ),
                 source_index=start_index + offset,
             )
         )
@@ -297,8 +303,8 @@ def parse_message(
         body_text = body_text[:max_body_chars]
 
     if html_raw:
-        html_heading_count, html_link_count, html_section_break_count = _extract_html_features(
-            html_raw
+        html_heading_count, html_link_count, html_section_break_count = (
+            _extract_html_features(html_raw)
         )
     else:
         html_heading_count = html_link_count = html_section_break_count = 0
