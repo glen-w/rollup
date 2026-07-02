@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import html as html_module
 import logging
+import re
 from datetime import datetime
+from email.utils import parseaddr
 from pathlib import Path
 
 from rollup.links import (
@@ -17,11 +19,103 @@ from rollup.models import DigestEntry, DigestReport, DigestStats
 
 logger = logging.getLogger(__name__)
 
+FOLDER_EMOJI: dict[str, str] = {
+    "brainfood": "🧠",
+    "enviro": "🌲",
+    "hoops": "🏀",
+    "tech": "💻",
+    "misc": "📬",
+    "trackerwall": "📰",
+}
+
 
 def _format_date(dt: datetime | None) -> str:
     if dt is None:
         return "undated"
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _display_sender(sender: str) -> str:
+    """Return a human-readable sender name without the email address."""
+    name, addr = parseaddr(sender)
+    display = name.strip()
+    if display:
+        return display
+    if addr:
+        return addr.split("@", 1)[0]
+    return sender.strip() or "(unknown)"
+
+
+def _folder_display_name(folder: str) -> str:
+    emoji = FOLDER_EMOJI.get(folder.lower())
+    if emoji:
+        return f"{emoji} {folder}"
+    return folder
+
+
+def _format_read_time(minutes: int) -> str:
+    return f"🕐 {minutes} min"
+
+
+_INLINE_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline_summary_markdown(text: str) -> str:
+    return _INLINE_BOLD_RE.sub(r"<strong>\1</strong>", text)
+
+
+def _render_summary_html(text: str) -> str:
+    """Render a small subset of markdown used in LLM summaries."""
+    lines = text.splitlines()
+    parts: list[str] = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped:
+            i += 1
+            continue
+        if stripped.startswith("### "):
+            heading = _inline_summary_markdown(html_module.escape(stripped[4:]))
+            parts.append(f"<h3>{heading}</h3>")
+        elif stripped.startswith("## "):
+            heading = _inline_summary_markdown(html_module.escape(stripped[3:]))
+            parts.append(f"<h3>{heading}</h3>")
+        elif stripped.startswith("# "):
+            heading = _inline_summary_markdown(html_module.escape(stripped[2:]))
+            parts.append(f"<h3>{heading}</h3>")
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            items: list[str] = []
+            while i < len(lines):
+                item = lines[i].strip()
+                if item.startswith("- ") or item.startswith("* "):
+                    item_text = _inline_summary_markdown(html_module.escape(item[2:]))
+                    items.append(f"<li>{item_text}</li>")
+                    i += 1
+                else:
+                    break
+            parts.append("<ul>" + "".join(items) + "</ul>")
+            continue
+        else:
+            para_lines = [stripped]
+            i += 1
+            while i < len(lines):
+                item = lines[i].strip()
+                if (
+                    not item
+                    or item.startswith("#")
+                    or item.startswith("- ")
+                    or item.startswith("* ")
+                ):
+                    break
+                para_lines.append(item)
+                i += 1
+            paragraph = _inline_summary_markdown(
+                html_module.escape(" ".join(para_lines))
+            )
+            parts.append(f"<p>{paragraph}</p>")
+            continue
+        i += 1
+    return "".join(parts)
 
 
 def render_stats_block(stats: DigestStats) -> str:
@@ -136,8 +230,8 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
         f"### {p.subject}",
         "",
         f"- **From:** {p.sender} · **Date:** {_format_date(p.date_parsed)} · "
-        f"**Read:** {p.read_time_minutes} min · **Type:** {ntype}",
-        f"- **Folder:** {p.folder_name}",
+        f"**Read:** {_format_read_time(p.read_time_minutes)} · **Type:** {ntype}",
+        f"- **Folder:** {_folder_display_name(p.folder_name)}",
         "",
     ]
     if entry.summary:
@@ -175,7 +269,7 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
     ]
     lines.extend(_render_summary_metadata_md(report))
     for folder, entries in sorted(report.dated_by_folder.items()):
-        lines.append(f"## {folder}")
+        lines.append(f"## {_folder_display_name(folder)}")
         lines.append("")
         for entry in entries:
             lines.append(_render_entry_md(entry, max_display_links))
@@ -204,15 +298,18 @@ def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
         link_items, max_main=max_main, max_other=max_other
     )
     summary_line = (
-        f"{html_module.escape(p.subject)} — {html_module.escape(p.sender)} — "
+        f"{html_module.escape(p.subject)} — {html_module.escape(_display_sender(p.sender))} — "
         f"{html_module.escape(_format_date(p.date_parsed))} — "
-        f"{p.read_time_minutes} min — {ntype}"
+        f"{_format_read_time(p.read_time_minutes)} — {ntype}"
     )
     parts = [f"<details><summary>{summary_line}</summary><div class='card-body'>"]
-    parts.append(f"<p><strong>Folder:</strong> {html_module.escape(p.folder_name)}</p>")
+    parts.append(
+        f"<p><strong>Folder:</strong> {html_module.escape(_folder_display_name(p.folder_name))}</p>"
+    )
     if entry.summary:
-        summary_text = html_module.escape(entry.summary)
-        parts.append(f"<p class='summary'>{summary_text}</p>")
+        parts.append(
+            f"<div class='summary'>{_render_summary_html(entry.summary)}</div>"
+        )
     if bundle.main_links:
         parts.append("<p><strong>Key links:</strong></p>")
         parts.append("<ul>")
@@ -243,7 +340,10 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         "summary{cursor:pointer;font-weight:600;}",
         "#undated{border-color:#c90;background:#fffbe6;}",
         ".stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}",
-        ".summary{white-space:pre-wrap;}",
+        ".summary h3{font-size:1rem;margin:1rem 0 0.35rem;font-weight:600;}",
+        ".summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}",
+        ".summary li{margin:0.2rem 0;}",
+        ".summary p{margin:0.5rem 0;}",
         ".link-domain{color:#666;font-size:0.9em;}",
         ".other-links{border:none;padding:0;margin-top:0.5rem;}",
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
@@ -255,7 +355,9 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         _render_summary_metadata_html(report),
     ]
     for folder, entries in sorted(report.dated_by_folder.items()):
-        body_parts.append(f"<h2>{html_module.escape(folder)}</h2>")
+        body_parts.append(
+            f"<h2>{html_module.escape(_folder_display_name(folder))}</h2>"
+        )
         for entry in entries:
             body_parts.append(_render_entry_html(entry, max_display_links))
     if report.undated:

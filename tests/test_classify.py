@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from rollup.classify import classify_message
-from rollup.parse import parse_mbox_folder
+from rollup.models import LinkItem, ParsedMessage
+from rollup.parse import compute_content_hash, parse_mbox_folder
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "Newsletters.sbd"
 CLASSIFY_ROOT = FIXTURE_ROOT / "classify.sbd"
@@ -68,3 +70,45 @@ def test_classify_unclassified_empty() -> None:
 def test_classification_scores_immutable() -> None:
     result = _parse_folder("short_update")
     assert isinstance(result.classification_scores, tuple)
+
+
+def _parsed_message(body: str, *, links: tuple[str, ...] = ()) -> ParsedMessage:
+    link_items = tuple(
+        LinkItem(href=href, text=None, context=None, source_index=index)
+        for index, href in enumerate(links)
+    )
+    return ParsedMessage(
+        message_key="classify-test",
+        content_hash=compute_content_hash(body),
+        folder_name="classify/test",
+        relative_folder_path="classify/test",
+        subject="Notes from a burning Paris",
+        sender="Sarah Wilson <sarah@example.com>",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text=body,
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=len(links),
+        html_section_break_count=0,
+        links=links,
+        link_items=link_items,
+        read_time_minutes=8,
+        preview=body[:100],
+        parse_warnings=(),
+    )
+
+
+def test_long_personal_story_with_footer_links_is_essay() -> None:
+    body = " ".join(["Personal reflection on Paris, grief, and what matters."] * 220)
+    links = tuple(f"https://substack.com/share/{i}" for i in range(12))
+    result = classify_message(_parsed_message(body, links=links))
+    assert result.newsletter_type == "essay"
+    assert result.classification_scores[0][0] == "essay"
+
+
+def test_link_roundup_still_detects_link_heavy_short_posts() -> None:
+    body = " ".join(["Brief intro."] * 20)
+    links = tuple(f"https://news.example/{i}" for i in range(12))
+    result = classify_message(_parsed_message(body, links=links))
+    assert result.newsletter_type == "link_roundup"

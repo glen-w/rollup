@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from time import perf_counter
@@ -23,23 +24,51 @@ from rollup.models import DigestSummaryMetadata, DigestSummaryRouteStat
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 PROMPT_STYLE_INSTRUCTIONS = {
     "rough": (
-        "Write a short, fast, direct summary in 1-3 bullets. "
+        "Write 1-3 bullets. Start with the first bullet on line 1 — no intro sentence. "
         "Focus on what this is and whether it is worth clicking."
     ),
     "standard": (
-        "Write a concise but useful summary in 2-5 bullets. "
+        "Write 2-5 bullets. Start with the first bullet on line 1 — no intro sentence. "
         "Cover key facts, implications, and useful links where available."
     ),
     "deep": (
-        "Write a higher-effort compact synthesis. Preserve nuance, caveats, dates, and numbers. "
+        "Write a compact synthesis in bullets or short paragraphs. "
+        "Start with substance on line 1 — no intro sentence. "
+        "Preserve nuance, caveats, dates, and numbers. "
         "Distinguish news from opinion and explain why it matters."
     ),
 }
+
+_INTRO_LINE_RE = re.compile(
+    r"^(?:"
+    r"here(?:'s| is| are)\s+(?:a\s+)?(?:brief\s+)?(?:\d+[- ]?)?(?:bullet\s+)?"
+    r"(?:summary|overview|digest|roundup)\b[^.!?]*[.:!]?\s*$|"
+    r"below\s+is\s+(?:a\s+)?(?:brief\s+)?(?:summary|overview)\b[^.!?]*[.:!]?\s*$|"
+    r"(?:summary|key\s+points?|main\s+points?|highlights?|takeaways?)\s*:?\s*$|"
+    r"in\s+(?:this\s+)?(?:newsletter|email|message)\b[^.!?]*[.:!]?\s*$"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def clean_summary_output(text: str) -> str:
+    """Drop leading meta lines such as 'Here's a summary in 2 bullets:'."""
+    lines = text.strip().splitlines()
+    while lines:
+        stripped = lines[0].strip()
+        if not stripped:
+            lines.pop(0)
+            continue
+        if _INTRO_LINE_RE.match(stripped):
+            lines.pop(0)
+            continue
+        break
+    return "\n".join(lines).strip()
 
 
 class OllamaError(Exception):
@@ -152,7 +181,7 @@ def _consume_ollama_stream(resp, *, show_progress: bool) -> str:
                 sys.stderr.write(f"\r  generated{suffix}\n")
                 sys.stderr.flush()
             break
-    return "".join(parts).strip()
+    return clean_summary_output("".join(parts))
 
 
 def summarize_message(
@@ -192,7 +221,7 @@ def summarize_message(
     if use_stream:
         return _consume_ollama_stream(resp, show_progress=True)
     data = resp.json()
-    return data.get("response", "").strip()
+    return clean_summary_output(data.get("response", ""))
 
 
 def compute_summary_input_hash(

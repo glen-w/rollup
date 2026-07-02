@@ -20,6 +20,7 @@ from rollup.summarize import (
     build_prompt,
     build_summary_cache_key_parts,
     check_ollama_available,
+    clean_summary_output,
     execute_summary_plan,
     is_local_ollama,
     summarize_message,
@@ -130,6 +131,36 @@ def test_build_prompt_style_changes_prompt() -> None:
     rough = build_prompt(entry.classified, excerpt, prompt_style="rough")
     deep = build_prompt(entry.classified, excerpt, prompt_style="deep")
     assert rough != deep
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "Here's a summary of the newsletter in 2 bullets:\n- Point one\n- Point two",
+            "- Point one\n- Point two",
+        ),
+        (
+            "Summary:\n\n- First item",
+            "- First item",
+        ),
+        (
+            "Key points:\n- Alpha\n- Beta",
+            "- Alpha\n- Beta",
+        ),
+        (
+            "- Already clean\n- Second bullet",
+            "- Already clean\n- Second bullet",
+        ),
+    ],
+)
+def test_clean_summary_output_strips_intro_lines(raw: str, expected: str) -> None:
+    assert clean_summary_output(raw) == expected
+
+
+def test_build_prompt_discourages_intro_filler() -> None:
+    prompt = build_prompt(_entry().classified, "body excerpt")
+    assert "no preamble" in prompt.lower() or "no intro" in prompt.lower()
 
 
 @pytest.mark.parametrize("newsletter_type", NEWSLETTER_TYPES)

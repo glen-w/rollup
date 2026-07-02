@@ -30,7 +30,6 @@ PRIMARY_CATEGORIES: tuple[LinkCategory, ...] = (
     "content",
     "calendar",
     "author_profile",
-    "unknown",
 )
 HIDDEN_CATEGORIES: tuple[LinkCategory, ...] = (
     "tracking_pixel",
@@ -61,6 +60,22 @@ GENERIC_ANCHOR_TEXT = {
     "here",
     "click",
 }
+EMAIL_ADMIN_HOST_RE = re.compile(r"\.list-manage\d*\.com$", re.IGNORECASE)
+PREFERENCE_ANCHOR_TERMS = (
+    "unsubscribe",
+    "manage preferences",
+    "manage your preferences",
+    "update your preferences",
+    "update preferences",
+    "email preferences",
+    "subscription preferences",
+    "preference center",
+    "manage subscription",
+    "manage your subscription",
+    "view in browser",
+    "view online",
+    "view as web page",
+)
 
 
 def clean_anchor_text(text: str | None) -> str | None:
@@ -91,6 +106,24 @@ def is_raw_url_text(text: str | None) -> bool:
     if not cleaned:
         return False
     return bool(URLISH_TEXT_RE.match(cleaned))
+
+
+def is_email_admin_host(host: str) -> bool:
+    host = host.lower()
+    if EMAIL_ADMIN_HOST_RE.search(host):
+        return True
+    return host.endswith("campaign-archive.com")
+
+
+def is_preference_anchor_text(combined: str) -> bool:
+    if any(term in combined for term in PREFERENCE_ANCHOR_TERMS):
+        return True
+    if "preferences" in combined and any(
+        marker in combined
+        for marker in ("manage", "update", "email", "subscription", "your")
+    ):
+        return True
+    return False
 
 
 def domain_for_display(href: str) -> str | None:
@@ -173,11 +206,9 @@ def classify_link(
         return "tracking_pixel"
     if ".substackcdn.com" in host and path.endswith(".gif"):
         return "tracking_pixel"
-    if (
-        "unsubscribe" in combined
-        or "manage preferences" in combined
-        or "preferences" in path
-    ):
+    if is_email_admin_host(host):
+        return "unsubscribe_preferences"
+    if is_preference_anchor_text(combined) or "preferences" in path:
         return "unsubscribe_preferences"
     if any(term in combined for term in ("comment", "like", "share")) or any(
         term in path for term in ("/comment", "/comments", "/share", "/like")

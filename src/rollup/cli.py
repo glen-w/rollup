@@ -455,18 +455,18 @@ def cmd_digest(args: argparse.Namespace) -> int:
                     skipped_seen_undated=stats.skipped_seen_undated,
                     deduped_messages=stats.deduped_messages,
                     parse_errors=stats.parse_errors,
-                    summaries_ollama=variant_metadata.summaries_ollama
-                    if variant_metadata
-                    else 0,
-                    summaries_cache=variant_metadata.summaries_cache
-                    if variant_metadata
-                    else 0,
-                    summaries_fallback=variant_metadata.summaries_fallback
-                    if variant_metadata
-                    else 0,
-                    summaries_errors=variant_metadata.summaries_errors
-                    if variant_metadata
-                    else 0,
+                    summaries_ollama=(
+                        variant_metadata.summaries_ollama if variant_metadata else 0
+                    ),
+                    summaries_cache=(
+                        variant_metadata.summaries_cache if variant_metadata else 0
+                    ),
+                    summaries_fallback=(
+                        variant_metadata.summaries_fallback if variant_metadata else 0
+                    ),
+                    summaries_errors=(
+                        variant_metadata.summaries_errors if variant_metadata else 0
+                    ),
                 )
                 variant_report = _build_digest_report(
                     generated_at=generated_at,

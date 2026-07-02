@@ -5,4 +5,4 @@ Type: {newsletter_type}
 Content excerpt:
 {body_excerpt}
 
-Write 2–4 elegant teaser paragraphs capturing the argument, tone, mood, stakes, and why it may be worth reading. Do not use bullet lists unless practical takeaways exist.
+Write 2–4 elegant teaser paragraphs capturing the argument, tone, mood, stakes, and why it may be worth reading. Start with the first paragraph — no intro line. Do not use bullet lists unless practical takeaways exist.

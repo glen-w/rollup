@@ -8,14 +8,21 @@ from rollup.models import ClassifiedMessage, NewsletterType, ParsedMessage
 
 # Tunable thresholds
 LINK_ROUNDUP_MIN_LINKS = 8
-LINK_ROUNDUP_MIN_RATIO = 0.02
+LINK_ROUNDUP_MIN_RATIO = 0.03
+LINK_ROUNDUP_MAX_WORDS = 1000
 SHORT_UPDATE_MAX_WORDS = 400
 SHORT_UPDATE_MAX_LINKS = 5
 ESSAY_MIN_WORDS = 1200
-ESSAY_MAX_LINKS = 8
+ESSAY_MAX_LINK_RATIO = 0.03
 MULTI_SECTION_MIN_HEADINGS = 3
 MULTI_SECTION_MIN_BULLETS = 10
 MULTI_SECTION_MIN_WORDS = 600
+TYPE_PRIORITY: tuple[NewsletterType, ...] = (
+    "essay",
+    "multi_section_digest",
+    "short_update",
+    "link_roundup",
+)
 
 HEADING_LINE_RE = re.compile(r"^#{1,3}\s", re.MULTILINE)
 BULLET_RE = re.compile(r"^[\-\*•]\s", re.MULTILINE)
@@ -31,6 +38,16 @@ def _bullet_count(text: str) -> int:
 
 def _heading_count_text(text: str) -> int:
     return len(HEADING_LINE_RE.findall(text))
+
+
+def _pick_best_type(scores: dict[str, float]) -> NewsletterType:
+    best_score = max(scores.values())
+    if best_score == 0.0:
+        return "multi_section_digest"
+    for newsletter_type in TYPE_PRIORITY:
+        if scores[newsletter_type] == best_score:
+            return newsletter_type
+    return max(scores, key=lambda k: scores[k])  # type: ignore[arg-type]
 
 
 def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
@@ -62,7 +79,11 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
             "multi_section_digest": 0.0,
         }
 
-        if link_count >= LINK_ROUNDUP_MIN_LINKS and ratio > LINK_ROUNDUP_MIN_RATIO:
+        if (
+            link_count >= LINK_ROUNDUP_MIN_LINKS
+            and ratio > LINK_ROUNDUP_MIN_RATIO
+            and word_count < LINK_ROUNDUP_MAX_WORDS
+        ):
             scores["link_roundup"] = 0.9
         if heading_count >= MULTI_SECTION_MIN_HEADINGS or (
             bullet_count > MULTI_SECTION_MIN_BULLETS
@@ -75,12 +96,12 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
             scores["short_update"] = 0.85
         if (
             word_count > ESSAY_MIN_WORDS
-            and link_count < ESSAY_MAX_LINKS
             and bullet_count < 5
+            and ratio < ESSAY_MAX_LINK_RATIO
         ):
-            scores["essay"] = 0.8
+            scores["essay"] = 0.85
 
-        best_type: NewsletterType = max(scores, key=lambda k: scores[k])  # type: ignore[arg-type]
+        best_type = _pick_best_type(scores)
         if scores[best_type] == 0.0:
             best_type = "multi_section_digest"
             scores["multi_section_digest"] = 0.5

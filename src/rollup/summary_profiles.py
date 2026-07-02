@@ -303,9 +303,11 @@ def validate_summary_profile_set(
                 ValidationIssue(
                     code="unknown_profile_reference",
                     message=f"Profile {profile_name!r} is not defined.",
-                    path="default_profile"
-                    if profile_name == profile_set.default_profile
-                    else "fallback_profile",
+                    path=(
+                        "default_profile"
+                        if profile_name == profile_set.default_profile
+                        else "fallback_profile"
+                    ),
                 )
             )
         elif profile_name:
@@ -313,9 +315,11 @@ def validate_summary_profile_set(
             if profile is not None and not profile.enabled:
                 issues.append(
                     _disabled_profile_issue(
-                        "default_profile"
-                        if profile_name == profile_set.default_profile
-                        else "fallback_profile",
+                        (
+                            "default_profile"
+                            if profile_name == profile_set.default_profile
+                            else "fallback_profile"
+                        ),
                         profile_name,
                     )
                 )

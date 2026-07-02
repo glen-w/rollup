@@ -5,4 +5,4 @@ Type: {newsletter_type}
 Content excerpt:
 {body_excerpt}
 
-Group links and stories by theme. Highlight 3–5 links worth opening with one-line descriptions each.
+Group links and stories by theme. Highlight 3–5 links worth opening with one-line descriptions each. Start with the first item — no intro line.

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-
 SCHEMA_VERSION = 4
 
 MVP_SCHEMA = """
@@ -117,8 +116,7 @@ def _summaries_needs_migration(conn: sqlite3.Connection) -> bool:
 def _migrate_summaries_schema(conn: sqlite3.Connection) -> None:
     if not _summaries_needs_migration(conn):
         return
-    conn.executescript(
-        """
+    conn.executescript("""
         CREATE TABLE summaries_migrated (
             message_key TEXT NOT NULL,
             content_hash TEXT NOT NULL,
@@ -133,8 +131,7 @@ def _migrate_summaries_schema(conn: sqlite3.Connection) -> None:
             FROM summaries;
         DROP TABLE summaries;
         ALTER TABLE summaries_migrated RENAME TO summaries;
-        """
-    )
+        """)
     conn.commit()
 
 
@@ -151,11 +148,9 @@ def _summary_generations_needs_v4_migration(conn: sqlite3.Connection) -> bool:
 def _migrate_summary_generations_v4(conn: sqlite3.Connection) -> None:
     if not _summary_generations_needs_v4_migration(conn):
         return
-    conn.executescript(
-        """
+    conn.executescript("""
         DROP TABLE IF EXISTS summary_generations;
-        """
-    )
+        """)
     conn.executescript(SUMMARIES_SCHEMA_V4)
     conn.commit()
 

@@ -164,6 +164,43 @@ def test_prepare_links_separates_other_and_hidden_links() -> None:
     assert bundle.hidden_links[0].category == "unsubscribe_preferences"
 
 
+def test_mailchimp_preference_link_is_hidden() -> None:
+    href = "https://highseasalliance.us9.list-manage.com/profile?u=abc&id=def"
+    assert (
+        classify_link(href, text="update your preferences") == "unsubscribe_preferences"
+    )
+    bundle = prepare_links_for_render(
+        [
+            LinkItem("https://example.com/article", "Read article", None, 0),
+            LinkItem(href, "update your preferences", None, 1),
+        ],
+        max_main=5,
+        max_other=5,
+    )
+    assert len(bundle.main_links) == 1
+    assert bundle.main_links[0].label == "Read article"
+    assert all(
+        link.category == "unsubscribe_preferences" for link in bundle.hidden_links
+    )
+
+
+def test_unknown_links_are_not_promoted_to_key_links() -> None:
+    bundle = prepare_links_for_render(
+        [
+            LinkItem("https://example.com/story", "Read article", None, 0),
+            LinkItem(
+                "https://u14608870.ct.sendgrid.net/ls/click?upn=abc", "click", None, 1
+            ),
+        ],
+        max_main=5,
+        max_other=5,
+    )
+    assert len(bundle.main_links) == 1
+    assert bundle.main_links[0].category == "content"
+    assert len(bundle.other_links) == 1
+    assert bundle.other_links[0].category == "unknown"
+
+
 def test_classify_links_preserves_original_href() -> None:
     href = "https://example.com/post?token=secret&utm_source=email"
     classified = classify_links([LinkItem(href, "Open", None, 0)])

@@ -5,4 +5,4 @@ Type: {newsletter_type}
 Content excerpt:
 {body_excerpt}
 
-Provide a brief note on whether this message has usable content. If the body is empty or unclear, say so in one sentence.
+Provide a brief note on whether this message has usable content. If the body is empty or unclear, say so in one sentence. Start directly with the note — no intro line.

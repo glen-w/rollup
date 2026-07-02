@@ -101,8 +101,16 @@ def _report() -> DigestReport:
 def test_render_markdown_contains_subject() -> None:
     md = render_markdown(_report(), 8)
     assert "Test Subject" in md
-    assert "## tech" in md
+    assert "## 💻 tech" in md
     assert "## Summary Routing" in md
+
+
+def test_render_uses_folder_and_read_time_emojis() -> None:
+    md = render_markdown(_report(), 8)
+    html = render_html(_report(), 8)
+    assert "🕐 2 min" in md
+    assert "🕐 2 min" in html
+    assert "**Folder:** 💻 tech" in md
 
 
 def test_render_html_escapes_content() -> None:
@@ -111,6 +119,44 @@ def test_render_html_escapes_content() -> None:
     assert "<script>" not in html
     assert "Test Subject" in html
     assert "Summary Routing" in html
+
+
+def test_render_html_title_bar_omits_sender_email() -> None:
+    parsed = ParsedMessage(
+        message_key="k1",
+        content_hash=compute_content_hash("body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Welcome to Can't Get Much Higher!",
+        sender="Chris Dalla Riva <chrisdallariva@substack.com>",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=(),
+        link_items=(),
+        read_time_minutes=3,
+        preview="body",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    assert "Chris Dalla Riva" in html
+    assert "chrisdallariva@substack.com" not in html
 
 
 def test_stats_block() -> None:
@@ -280,8 +326,34 @@ def test_render_html_summary_pre_wrap() -> None:
         stats=stats,
     )
     html = render_html(report, 8)
-    assert "white-space:pre-wrap" in html
-    assert "Para one" in html
+    assert "<p>Para one</p>" in html
+    assert "<p>Para two</p>" in html
+
+
+def test_render_html_summary_renders_markdown() -> None:
+    entry = _entry()
+    entry = make_digest_entry(
+        entry.classified,
+        no_ollama=True,
+        summary="### Key Themes:\n\n- **Victor Wembanyama's Development:**\n- Second point",
+        summary_source="preview_fallback",
+    )
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    assert "<h3>Key Themes:</h3>" in html
+    assert "<strong>Victor Wembanyama&#x27;s Development:</strong>" in html
+    assert "### Key Themes:" not in html
+    assert "**Victor Wembanyama" not in html
 
 
 def test_render_clickable_links() -> None:

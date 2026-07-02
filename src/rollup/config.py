@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
-
 DEFAULT_MAIL_ROOT = Path("/Users/89298/email/gmail")
 DEFAULT_NEWSLETTER_ROOT = DEFAULT_MAIL_ROOT / "Newsletters.sbd"
 DEFAULT_OUTPUT_DIR = Path("./output")

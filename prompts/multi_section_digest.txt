@@ -5,4 +5,4 @@ Type: {newsletter_type}
 Content excerpt:
 {body_excerpt}
 
-Write a short overview paragraph, then grouped key items by theme. Include deadlines, events, reports, or calls to action if present. End with a "Worth opening?" note.
+Write a short overview paragraph, then grouped key items by theme. Include deadlines, events, reports, or calls to action if present. End with a "Worth opening?" note. Start with the overview — no intro line before it.
