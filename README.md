@@ -85,7 +85,7 @@ python -m rollup digest --ollama --summary-routing-report
 python -m rollup digest --ollama --summary-routing-report
 ```
 
-`--ollama` alone enables **type routing by default**. Each newsletter type is summarized with the profile/model mapped in the built-in profile set (for example, `essay` → `deep` / `gpt-oss:20b`, `link_roundup` → `rough` / `llama3.2:3b`). Use `--summary-routing-report` to print which profiles and models were used.
+`--ollama` alone enables **type routing by default**. Each newsletter type is summarized with the profile/model mapped in the built-in profile set (for example, `essay` → `max` / `qwen3.6:27b`, `link_roundup` → `rough` / `llama3.2:3b`). Use `--summary-routing-report` to print which profiles and models were used.
 
 More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](CHANGELOG.md)
 
@@ -162,14 +162,65 @@ Final review does **not** require `--ollama`. It calls Ollama independently when
 
 Rollup includes built-in summary profiles:
 
-| Profile | Model | Use case |
-|---------|-------|----------|
-| `rough` | `llama3.2:3b` | Fast summaries for short updates and link roundups |
-| `standard` | `qwen2.5:7b` | Default balanced profile |
-| `deep` | `gpt-oss:20b` | Higher-effort synthesis for essays and analysis |
-| `max` | `qwen3.6:27b` | Experimental high-effort profile for long reads |
+| Profile | Model | `num_predict` | `think` | Use case |
+|---------|-------|---------------|---------|----------|
+| `rough` | `llama3.2:3b` | 256 | `false` | Fast summaries for short updates and link roundups |
+| `standard` | `qwen2.5:7b` | 512 | `false` | Default balanced profile |
+| `deep` | `gpt-oss:20b` | 1024 | `false` | Higher-effort synthesis for analytical or policy-heavy items |
+| `max` | `qwen3.6:27b` | 2048 | `false` | Highest-effort profile for long essays (default route) |
 
 These are defaults, not hard requirements. Rollup does not validate local model installation at config-load time. If a model is missing at runtime, Rollup falls back gracefully and reports the issue in the stats block.
+
+### Ollama generation settings (`think` and `num_predict`)
+
+Each summary profile exposes two generation controls for Ollama summarisation:
+
+| Field | Default | Sent to Ollama as | Purpose |
+|-------|---------|-------------------|---------|
+| `think` | `false` | Top-level `"think": false` on `/api/generate` | Disables Qwen3-family **thinking mode**. When thinking is on, the model can spend the entire token budget on internal reasoning (`thinking` field) and return an empty `response` — which Rollup treats as a failed summary. |
+| `num_predict` | `2048` | `options.num_predict` | Maximum number of tokens the model may generate for one summary. Lower values are faster; higher values leave more room for long syntheses. |
+
+**Defaults:** new profiles inherit `think: false` and `num_predict: 2048` unless you override them. The built-in tiered profiles above keep smaller `num_predict` values on `rough` / `standard` / `deep` for speed.
+
+**Configure in a profile set JSON** (preferred):
+
+```json
+{
+  "profiles": {
+    "max": {
+      "provider": "ollama",
+      "model": "qwen3.6:27b",
+      "prompt_style": "deep",
+      "temperature": 0.2,
+      "num_ctx": 65536,
+      "timeout_seconds": 600,
+      "num_predict": 2048,
+      "think": false,
+      "options": {}
+    }
+  }
+}
+```
+
+**Important:** set `think` and `num_predict` as **profile fields**, not inside `options`. Ollama expects `think` at the top level of the request body; placing it inside `options` is silently ignored and thinking stays enabled on Qwen3 models. Rollup validates profile sets and rejects `think` / `num_predict` nested under `options`.
+
+**Legacy imports:** if an older exported profile set stored `num_predict` or `think` inside `options`, Rollup migrates those values to the profile fields on load.
+
+**Cache behaviour:** summary cache keys include both `num_predict` (via `options_json`) and `think` (via an internal cache identity marker). Changing either field causes a cache miss for that profile — you do not need `--rebuild-summaries` unless you want to refresh everything.
+
+**When to enable thinking:** leave `think: false` for digest summarisation. Thinking models are useful for open-ended reasoning tasks, but Rollup prompts are structured extraction/synthesis jobs where visible output should start immediately.
+
+List configured values:
+
+```bash
+python -m rollup digest --list-summary-profiles
+```
+
+Example line:
+
+```text
+max: provider=ollama model=qwen3.6:27b prompt_style=deep temperature=0.2 num_predict=2048 think=False
+```
 
 Pull the built-in models explicitly:
 
@@ -205,7 +256,7 @@ Default per-type routes in the built-in profile set:
 | `short_update` | `rough` | `llama3.2:3b` |
 | `link_roundup` | `rough` | `llama3.2:3b` |
 | `multi_section_digest` | `standard` | `qwen2.5:7b` |
-| `essay` | `deep` | `gpt-oss:20b` |
+| `essay` | `max` | `qwen3.6:27b` |
 | `unclassified` | `standard` | `qwen2.5:7b` |
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md#digest-with-ollama-recommended-full-run) for runnable routing examples.
@@ -223,7 +274,7 @@ Profile sets can be loaded from or exported to JSON. See [docs/EXAMPLES.md](docs
 
 The serialized profile set includes:
 
-- built-in or user-defined profiles
+- built-in or user-defined profiles (`model`, `prompt_style`, `temperature`, `num_ctx`, `timeout_seconds`, **`num_predict`**, **`think`**, and any extra Ollama `options`)
 - default and fallback profile names
 - per-type routes keyed by canonical classifier labels
 - `schema_version` for future migrations
@@ -244,7 +295,7 @@ Summary cache entries are stored in SQLite during summarisation (before digest f
 
 Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. New databases record **schema version 5** during non-dry-run initialization.
 
-Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, and generation options. Legacy cache rows remain readable when applicable.
+Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, generation options (including `num_predict`), and the profile's `think` setting. Legacy cache rows remain readable when applicable.
 
 ## Ollama validation (live)
 

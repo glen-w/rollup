@@ -13,6 +13,10 @@ SUMMARY_PROFILE_SCHEMA_VERSION = 1
 SUMMARY_PROVIDERS = frozenset({"ollama"})
 PROMPT_STYLES = frozenset({"rough", "standard", "deep"})
 ROUTING_RESERVED_KEYS = frozenset({"default"})
+DEFAULT_NUM_PREDICT = 2048
+DEFAULT_THINK = False
+OLLAMA_OPTIONS_RESERVED_KEYS = frozenset({"num_predict", "think"})
+CACHE_THINK_IDENTITY_KEY = "__rollup_think__"
 
 
 class SummaryConfigError(ValueError):
@@ -40,6 +44,8 @@ class SummaryProfile:
     num_ctx: int | None = None
     timeout_seconds: int | None = None
     prompt_style: str = "standard"
+    num_predict: int = DEFAULT_NUM_PREDICT
+    think: bool = DEFAULT_THINK
     options: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     description: str | None = None
@@ -83,6 +89,8 @@ class SummaryProfileInfo:
     temperature: float
     num_ctx: int | None
     timeout_seconds: int | None
+    num_predict: int
+    think: bool
     enabled: bool
     description: str | None
     created_by: str | None
@@ -110,6 +118,8 @@ def _make_profile(
     num_ctx: int | None,
     timeout_seconds: int | None,
     description: str,
+    num_predict: int = DEFAULT_NUM_PREDICT,
+    think: bool = DEFAULT_THINK,
     options: dict[str, Any] | None = None,
 ) -> SummaryProfile:
     return SummaryProfile(
@@ -120,12 +130,34 @@ def _make_profile(
         num_ctx=num_ctx,
         timeout_seconds=timeout_seconds,
         prompt_style=prompt_style,
+        num_predict=num_predict,
+        think=think,
         options=dict(options or {}),
         enabled=True,
         description=description,
         created_by="builtin",
         version=1,
     )
+
+
+def resolve_profile_ollama_options(profile: SummaryProfile) -> dict[str, Any]:
+    """Build the Ollama `options` object for a profile."""
+    opts = {
+        key: value
+        for key, value in profile.options.items()
+        if key not in OLLAMA_OPTIONS_RESERVED_KEYS
+    }
+    opts["num_predict"] = profile.num_predict
+    return opts
+
+
+def summary_job_options_for_cache(
+    options: dict[str, Any], *, think: bool
+) -> dict[str, Any]:
+    """Extend generation options with cache identity for `think`."""
+    cached = dict(options)
+    cached[CACHE_THINK_IDENTITY_KEY] = think
+    return cached
 
 
 def get_builtin_summary_profile_set() -> SummaryProfileSet:
@@ -139,7 +171,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=8192,
             timeout_seconds=60,
             description="Quick rough summary for low-value or link-heavy items.",
-            options={"num_predict": 256},
+            num_predict=256,
         ),
         "standard": _make_profile(
             "standard",
@@ -149,7 +181,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=16384,
             timeout_seconds=120,
             description="Default balanced summary profile.",
-            options={"num_predict": 512},
+            num_predict=512,
         ),
         "deep": _make_profile(
             "deep",
@@ -159,7 +191,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=32768,
             timeout_seconds=240,
             description="Higher-effort synthesis for analytical or policy-heavy items.",
-            options={"num_predict": 1024},
+            num_predict=1024,
         ),
         "max": _make_profile(
             "max",
@@ -168,8 +200,9 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             temperature=0.2,
             num_ctx=65536,
             timeout_seconds=600,
-            description="Experimental high-effort profile for long essays and strategic reads.",
-            options={"num_predict": 2048},
+            description="Highest-effort profile for long essays and strategic reads.",
+            num_predict=DEFAULT_NUM_PREDICT,
+            think=DEFAULT_THINK,
         ),
     }
     return SummaryProfileSet(
@@ -180,7 +213,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             "short_update": "rough",
             "link_roundup": "rough",
             "multi_section_digest": "standard",
-            "essay": "deep",
+            "essay": "max",
             "unclassified": "standard",
         },
         name="builtin",
@@ -190,6 +223,19 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
 
 
 def _profile_from_dict(name: str, raw: dict[str, Any]) -> SummaryProfile:
+    options = dict(raw.get("options", {}))
+    num_predict_raw = raw.get("num_predict")
+    if num_predict_raw is None:
+        num_predict_raw = options.pop("num_predict", DEFAULT_NUM_PREDICT)
+    else:
+        options.pop("num_predict", None)
+    think_raw = raw.get("think")
+    if think_raw is None:
+        think_raw = options.pop("think", DEFAULT_THINK)
+    else:
+        options.pop("think", None)
+    for reserved_key in OLLAMA_OPTIONS_RESERVED_KEYS:
+        options.pop(reserved_key, None)
     return SummaryProfile(
         name=name,
         provider=str(raw.get("provider", "ollama")),
@@ -198,7 +244,9 @@ def _profile_from_dict(name: str, raw: dict[str, Any]) -> SummaryProfile:
         num_ctx=raw.get("num_ctx"),
         timeout_seconds=raw.get("timeout_seconds"),
         prompt_style=str(raw.get("prompt_style", "standard")),
-        options=dict(raw.get("options", {})),
+        num_predict=int(num_predict_raw),
+        think=bool(think_raw),
+        options=options,
         enabled=bool(raw.get("enabled", True)),
         description=raw.get("description"),
         created_by=raw.get("created_by"),
@@ -353,6 +401,26 @@ def validate_summary_profile_set(
                     path=f"profiles.{name}.prompt_style",
                 )
             )
+        if profile.num_predict < 1:
+            issues.append(
+                ValidationIssue(
+                    code="invalid_num_predict",
+                    message=f"Profile {name!r} must define num_predict >= 1.",
+                    path=f"profiles.{name}.num_predict",
+                )
+            )
+        misplaced = OLLAMA_OPTIONS_RESERVED_KEYS.intersection(profile.options)
+        if misplaced:
+            issues.append(
+                ValidationIssue(
+                    code="reserved_option_key",
+                    message=(
+                        f"Profile {name!r} must set {sorted(misplaced)!r} as profile "
+                        "fields, not inside options."
+                    ),
+                    path=f"profiles.{name}.options",
+                )
+            )
     for route_key, profile_name in profile_set.type_routes.items():
         if route_key not in known_types and route_key not in ROUTING_RESERVED_KEYS:
             issues.append(
@@ -402,6 +470,8 @@ def list_summary_profiles(profile_set: SummaryProfileSet) -> list[SummaryProfile
             temperature=profile.temperature,
             num_ctx=profile.num_ctx,
             timeout_seconds=profile.timeout_seconds,
+            num_predict=profile.num_predict,
+            think=profile.think,
             enabled=profile.enabled,
             description=profile.description,
             created_by=profile.created_by,

@@ -236,7 +236,8 @@ def _print_summary_profile_listing(profile_set) -> None:
     for info in list_summary_profile_infos(profile_set):
         print(
             f"{info.name}: provider={info.provider} model={info.model} "
-            f"prompt_style={info.prompt_style} temperature={info.temperature}"
+            f"prompt_style={info.prompt_style} temperature={info.temperature} "
+            f"num_predict={info.num_predict} think={info.think}"
         )
 
 

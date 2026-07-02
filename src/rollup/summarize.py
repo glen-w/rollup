@@ -25,6 +25,7 @@ from rollup.summary_plan import (
     SummaryPlan,
     timed_result,
 )
+from rollup.summary_profiles import summary_job_options_for_cache
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,30 @@ def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def build_ollama_generate_payload(
+    *,
+    model: str,
+    prompt: str,
+    stream: bool,
+    options: dict[str, object] | None,
+    temperature: float,
+    num_ctx: int | None,
+    think: bool,
+) -> dict[str, object]:
+    """Build an Ollama /api/generate request body."""
+    payload_options: dict[str, object] = dict(options or {})
+    payload_options.setdefault("temperature", temperature)
+    if num_ctx is not None:
+        payload_options.setdefault("num_ctx", num_ctx)
+    return {
+        "model": model,
+        "prompt": prompt,
+        "stream": stream,
+        "options": payload_options,
+        "think": think,
+    }
+
+
 def summarize_message(
     classified: ClassifiedMessage,
     ollama_url: str,
@@ -233,6 +258,7 @@ def summarize_message(
     options: dict[str, object] | None = None,
     temperature: float = 0.2,
     num_ctx: int | None = None,
+    think: bool = False,
     quiet: bool = False,
 ) -> SummarizeMessageResult:
     import requests
@@ -243,22 +269,22 @@ def summarize_message(
     body_chars = len(excerpt)
     prompt_chars = len(prompt)
     link_count = _link_count(parsed)
-    payload_options = dict(options or {})
-    payload_options.setdefault("temperature", temperature)
-    if num_ctx is not None:
-        payload_options.setdefault("num_ctx", num_ctx)
     max_output_chars = max_output_chars_for_style(prompt_style)
     started = perf_counter()
     use_stream = not quiet
+    payload = build_ollama_generate_payload(
+        model=model,
+        prompt=prompt,
+        stream=use_stream,
+        options=options,
+        temperature=temperature,
+        num_ctx=num_ctx,
+        think=think,
+    )
     try:
         resp = requests.post(
             ollama_url,
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": use_stream,
-                "options": payload_options,
-            },
+            json=payload,
             timeout=timeout,
             stream=use_stream,
         )
@@ -577,6 +603,9 @@ def execute_summary_plan(
                         get_cached_summary_generation,
                     )
 
+                    cache_options = summary_job_options_for_cache(
+                        job.options, think=job.think
+                    )
                     cached = get_cached_summary_generation(
                         conn,
                         message_key=parsed.message_key,
@@ -589,7 +618,7 @@ def execute_summary_plan(
                         prompt_version=PROMPT_VERSION,
                         temperature=job.temperature,
                         num_ctx=job.num_ctx,
-                        options=job.options,
+                        options=cache_options,
                         summary_input_hash=summary_input_hash,
                     )
                     if cached:
@@ -727,6 +756,7 @@ def execute_summary_plan(
                     options=job.options,
                     temperature=job.temperature,
                     num_ctx=job.num_ctx,
+                    think=job.think,
                     quiet=quiet,
                 )
             except Exception as exc:
@@ -812,7 +842,9 @@ def execute_summary_plan(
                         prompt_version=PROMPT_VERSION,
                         temperature=job.temperature,
                         num_ctx=job.num_ctx,
-                        options=job.options,
+                        options=summary_job_options_for_cache(
+                            job.options, think=job.think
+                        ),
                         summary_input_hash=summary_input_hash,
                         summary=summary,
                         created_at=_dt.datetime.now().astimezone(),

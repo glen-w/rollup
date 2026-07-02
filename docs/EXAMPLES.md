@@ -117,6 +117,49 @@ python -m rollup digest --export-summary-profile-set ./output/summary_profiles.j
 python -m rollup digest --ollama --summary-profile-set ./output/summary_profiles.json --summary-routing-report
 ```
 
+Each profile supports Ollama generation fields:
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `num_predict` | `2048` | Max generated tokens (`options.num_predict` in the Ollama request) |
+| `think` | `false` | Top-level Ollama `think` flag; keep `false` for Qwen3 summarisation |
+| `options` | `{}` | Additional Ollama model options (temperature is set separately via `temperature`) |
+
+Example fragment after export — adjust model names and generation settings:
+
+```json
+{
+  "schema_version": 1,
+  "default_profile": "standard",
+  "profiles": {
+    "max": {
+      "provider": "ollama",
+      "model": "qwen3.6:27b",
+      "prompt_style": "deep",
+      "temperature": 0.2,
+      "num_ctx": 65536,
+      "timeout_seconds": 600,
+      "num_predict": 2048,
+      "think": false,
+      "enabled": true,
+      "description": "Long essays",
+      "options": {}
+    }
+  },
+  "type_routes": {
+    "essay": "max"
+  }
+}
+```
+
+Do **not** put `think` or `num_predict` inside `options` — Ollama ignores `think` there on `/api/generate`, which causes empty summaries on thinking models.
+
+Inspect loaded profiles:
+
+```bash
+python -m rollup digest --list-summary-profiles
+```
+
 Example model pulls for the built-in profile set:
 
 ```bash

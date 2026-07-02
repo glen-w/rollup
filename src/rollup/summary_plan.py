@@ -13,6 +13,7 @@ from rollup.summary_profiles import (
     SummaryProfile,
     SummaryProfileSet,
     UnknownSummaryProfileError,
+    resolve_profile_ollama_options,
 )
 
 SummaryRoutingMode = Literal[
@@ -49,6 +50,7 @@ class SummaryJob:
     provider: str
     model: str
     options: dict[str, object]
+    think: bool
     temperature: float
     num_ctx: int | None
     timeout_seconds: int | None
@@ -264,7 +266,8 @@ def _build_job(
         prompt_style=profile.prompt_style,
         provider=profile.provider,
         model=profile.model,
-        options=dict(profile.options),
+        options=resolve_profile_ollama_options(profile),
+        think=profile.think,
         temperature=profile.temperature,
         num_ctx=profile.num_ctx,
         timeout_seconds=profile.timeout_seconds,

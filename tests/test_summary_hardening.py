@@ -329,7 +329,7 @@ def test_execute_summary_plan_checks_each_model_once(
         rebuild=True,
     )
     models_checked = {call.args[1] for call in mock_check.call_args_list}
-    assert models_checked == {"gpt-oss:20b", "llama3.2:3b"}
+    assert models_checked == {"qwen3.6:27b", "llama3.2:3b"}
     assert mock_check.call_count == 2
 
 

@@ -280,6 +280,43 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
 
 
 @patch("requests.post")
+def test_summarize_message_passes_think_top_level_default_false(
+    mock_post: MagicMock,
+) -> None:
+    mock_post.return_value.json.return_value = {"response": "ok"}
+    mock_post.return_value.raise_for_status = MagicMock()
+    entry = _entry()
+    summarize_message(
+        entry.classified,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+        quiet=True,
+    )
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["think"] is False
+
+
+@patch("requests.post")
+def test_summarize_message_passes_think_top_level_when_enabled(
+    mock_post: MagicMock,
+) -> None:
+    mock_post.return_value.json.return_value = {"response": "ok"}
+    mock_post.return_value.raise_for_status = MagicMock()
+    entry = _entry()
+    summarize_message(
+        entry.classified,
+        "http://localhost:11434/api/generate",
+        "qwen3.6:27b",
+        30000,
+        quiet=True,
+        think=True,
+    )
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["think"] is True
+
+
+@patch("requests.post")
 def test_summarize_message_passes_num_predict_from_options(mock_post: MagicMock) -> None:
     mock_post.return_value.json.return_value = {"response": "ok"}
     mock_post.return_value.raise_for_status = MagicMock()
