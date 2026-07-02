@@ -49,6 +49,7 @@ class Config:
     list_newsletter_types: bool
     summary_routing_report: bool
     verbose: bool
+    quiet: bool
 
     @property
     def db_path(self) -> Path:

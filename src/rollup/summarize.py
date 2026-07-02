@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sys
 from pathlib import Path
 from time import perf_counter
 from urllib.parse import urlparse
@@ -131,6 +132,29 @@ def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _consume_ollama_stream(resp, *, show_progress: bool) -> str:
+    parts: list[str] = []
+    for line in resp.iter_lines(decode_unicode=True):
+        if not line:
+            continue
+        data = json.loads(line)
+        chunk = data.get("response", "")
+        if chunk:
+            parts.append(chunk)
+            if show_progress:
+                total = sum(len(part) for part in parts)
+                sys.stderr.write(f"\r  generating… {total} chars")
+                sys.stderr.flush()
+        if data.get("done"):
+            if show_progress:
+                eval_count = data.get("eval_count")
+                suffix = f", {eval_count} tokens" if eval_count else ""
+                sys.stderr.write(f"\r  generated{suffix}\n")
+                sys.stderr.flush()
+            break
+    return "".join(parts).strip()
+
+
 def summarize_message(
     classified: ClassifiedMessage,
     ollama_url: str,
@@ -142,6 +166,7 @@ def summarize_message(
     options: dict[str, object] | None = None,
     temperature: float = 0.2,
     num_ctx: int | None = None,
+    quiet: bool = False,
 ) -> str:
     import requests
 
@@ -151,17 +176,21 @@ def summarize_message(
     payload_options.setdefault("temperature", temperature)
     if num_ctx is not None:
         payload_options.setdefault("num_ctx", num_ctx)
+    use_stream = not quiet
     resp = requests.post(
         ollama_url,
         json={
             "model": model,
             "prompt": prompt,
-            "stream": False,
+            "stream": use_stream,
             "options": payload_options,
         },
         timeout=timeout,
+        stream=use_stream,
     )
     resp.raise_for_status()
+    if use_stream:
+        return _consume_ollama_stream(resp, show_progress=True)
     data = resp.json()
     return data.get("response", "").strip()
 
@@ -241,6 +270,8 @@ def apply_summaries(
     allow_remote: bool,
     conn=None,
     rebuild: bool = False,
+    *,
+    quiet: bool = False,
 ) -> list[DigestEntry]:
     """Apply Ollama summaries to digest entries with cache support."""
     validate_ollama_url(ollama_url, allow_remote)
@@ -253,7 +284,8 @@ def apply_summaries(
         return [_fallback_entry(e) for e in entries]
 
     result: list[DigestEntry] = []
-    for entry in entries:
+    total = len(entries)
+    for index, entry in enumerate(entries, start=1):
         classified = entry.classified
         parsed = classified.parsed
         if not parsed.body_text.strip():
@@ -276,14 +308,26 @@ def apply_summaries(
             except Exception as exc:
                 logger.warning("Cache read failed for %s: %s", parsed.subject, exc)
             if cached:
+                logger.debug(
+                    "Ollama [%d/%d] cache hit: %r", index, total, parsed.subject
+                )
                 result.append(
                     DigestEntry(
                         classified=classified, summary=cached, summary_source="cache"
                     )
                 )
                 continue
+        logger.info(
+            "Ollama [%d/%d] summarising: %r (model=%s)",
+            index,
+            total,
+            parsed.subject,
+            model,
+        )
         try:
-            summary = summarize_message(classified, ollama_url, model, max_chars)
+            summary = summarize_message(
+                classified, ollama_url, model, max_chars, quiet=quiet
+            )
         except Exception as exc:
             logger.warning("Summary failed for %s: %s", parsed.subject, exc)
             result.append(_fallback_entry(entry))
@@ -331,6 +375,7 @@ def execute_summary_plan(
     allow_remote: bool,
     conn=None,
     rebuild: bool = False,
+    quiet: bool = False,
 ) -> SummaryExecutionOutput:
     """Execute a summary plan without re-running parse/classify/filter."""
     validate_ollama_url(ollama_url, allow_remote)
@@ -345,7 +390,14 @@ def execute_summary_plan(
         jobs = list(plan.jobs_by_variant.get(variant_name, ()))
         collector = SummaryExecutionCollector()
         rendered_entries: list[DigestEntry] = []
-        for job in jobs:
+        total_jobs = len(jobs)
+        if total_jobs:
+            logger.info(
+                "Ollama: processing %d summary jobs (variant=%s)",
+                total_jobs,
+                variant_name,
+            )
+        for job_index, job in enumerate(jobs, start=1):
             entry = entries_by_key[job.message_key]
             classified = entry.classified
             parsed = classified.parsed
@@ -404,6 +456,12 @@ def execute_summary_plan(
                         summary_input_hash=summary_input_hash,
                     )
                     if cached:
+                        logger.debug(
+                            "Ollama [%d/%d] cache hit: %r",
+                            job_index,
+                            total_jobs,
+                            parsed.subject,
+                        )
                         rendered_entries.append(
                             DigestEntry(
                                 classified=classified,
@@ -437,6 +495,12 @@ def execute_summary_plan(
                             classified.newsletter_type,
                         )
                         if legacy:
+                            logger.debug(
+                                "Ollama [%d/%d] legacy cache hit: %r",
+                                job_index,
+                                total_jobs,
+                                parsed.subject,
+                            )
                             rendered_entries.append(
                                 DigestEntry(
                                     classified=classified,
@@ -486,6 +550,14 @@ def execute_summary_plan(
                     )
                 )
                 continue
+            logger.info(
+                "Ollama [%d/%d] summarising: %r (model=%s, profile=%s)",
+                job_index,
+                total_jobs,
+                parsed.subject,
+                model,
+                job.profile_name,
+            )
             try:
                 summary = summarize_message(
                     classified,
@@ -497,6 +569,7 @@ def execute_summary_plan(
                     options=job.options,
                     temperature=job.temperature,
                     num_ctx=job.num_ctx,
+                    quiet=quiet,
                 )
             except Exception as exc:
                 logger.warning("Summary failed for %s: %s", parsed.subject, exc)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -195,6 +196,7 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
         "http://localhost:11434/api/generate",
         "llama3.2:3b",
         30000,
+        quiet=True,
     )
     assert result == "Bullet summary"
     mock_post.assert_called_once()
@@ -204,6 +206,28 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
     assert "prompt" in payload
     assert entry.classified.parsed.subject in payload["prompt"]
     assert payload["options"]["temperature"] == 0.2
+
+
+@patch("requests.post")
+def test_summarize_message_streams_when_not_quiet(mock_post: MagicMock) -> None:
+    pytest.importorskip("requests")
+    mock_post.return_value.raise_for_status = MagicMock()
+    mock_post.return_value.iter_lines.return_value = [
+        json.dumps({"response": "Bullet ", "done": False}),
+        json.dumps({"response": "summary", "done": True, "eval_count": 2}),
+    ]
+    entry = _entry()
+    result = summarize_message(
+        entry.classified,
+        "http://localhost:11434/api/generate",
+        "llama3.2:3b",
+        30000,
+        quiet=False,
+    )
+    assert result == "Bullet summary"
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["stream"] is True
+    assert mock_post.call_args.kwargs["stream"] is True
 
 
 @patch("rollup.summarize.summarize_message")

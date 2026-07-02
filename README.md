@@ -46,39 +46,32 @@ python -m rollup digest --root tests/fixtures/Newsletters.sbd --dry-run
 python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama --folder tech
 ```
 
+## Quick start (live mail with Ollama)
+
+From the project root, with Ollama running locally:
+
+```bash
+source .venv/bin/activate
+pip install -e ".[ollama]"
+python -m rollup digest --list-summary-profiles
+python -m rollup digest --ollama --summary-routing-report
+```
+
+**Recommended full run** (all folders, 7-day lookback, per-type model routing):
+
+```bash
+python -m rollup digest --ollama --summary-routing-report
+```
+
+`--ollama` alone enables **type routing by default**. Each newsletter type is summarized with the profile/model mapped in the built-in profile set (for example, `essay` → `deep` / `gpt-oss:20b`, `link_roundup` → `rough` / `llama3.2:3b`). Use `--summary-routing-report` to print which profiles and models were used.
+
+More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
+
 ## Commands
 
-### Inventory
+Rollup exposes two subcommands: `inventory` (discover folders and counts) and `digest` (generate Markdown + HTML output).
 
-Discover mbox folders and message counts (no body parsing):
-
-```bash
-python -m rollup inventory
-python -m rollup inventory --root tests/fixtures/Newsletters.sbd
-python -m rollup inventory --json-out ./output/inventory.json
-```
-
-### Digest
-
-Generate weekly digest (Markdown + HTML in `./output/`):
-
-```bash
-python -m rollup digest --no-ollama
-python -m rollup digest --lookback-days 7
-python -m rollup digest --dry-run
-python -m rollup digest --folder tech --exclude-folder hoops
-python -m rollup digest --include-seen-undated
-```
-
-With Ollama (requires `.[ollama]` extra, local Ollama running, and explicit `--ollama`):
-
-```bash
-python -m rollup digest --ollama
-python -m rollup digest --ollama --rebuild-summaries
-python -m rollup digest --ollama --summary-profile deep
-python -m rollup digest --ollama --summary-type-routing
-python -m rollup digest --ollama --summary-variants rough,deep
-```
+Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no-ollama`, and the summary routing flags documented below. See [docs/EXAMPLES.md](docs/EXAMPLES.md) for copy-paste command recipes covering inventory, digest modes, Ollama routing, smoke tests, benchmarks, and fixture workflows.
 
 ## Live-run checklist
 
@@ -107,7 +100,9 @@ python -m rollup digest --ollama --summary-variants rough,deep
 8. Enable Ollama (local loopback only by default; explicit opt-in):
    ```bash
    pip install -e ".[ollama]"
-   python -m rollup digest --ollama
+   python -m rollup digest --list-summary-profiles
+   python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
+   python -m rollup digest --ollama --summary-routing-report
    ```
 
 ## Configuration
@@ -123,18 +118,29 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--lookback-days` | `7` |
 | `--no-ollama` | `True` (MVP default; no network) |
 | `--ollama` | Explicit opt-in to enable local Ollama summarisation |
+| `--summary-profile` | Force one profile for every message (disables default type routing) |
+| `--summary-type-routing` | Route by newsletter type (default when `--ollama` is passed) |
+| `--no-summary-type-routing` | Disable per-type routing; use `standard` profile instead |
+| `--summary-variants` | Comma-separated profiles; writes one digest per profile |
+| `--summary-profile-set` | Load profiles/routes from JSON |
+| `--summary-routing-report` | Print profile/model usage after the run |
+| `--rebuild-summaries` | Bypass summary cache |
 | `--dry-run` | No output files, state DB, logs, or Ollama calls |
 
 ## Summary profiles
 
-Rollup now includes built-in summary profiles:
+Rollup includes built-in summary profiles:
 
-- `rough` -> `llama3.2:3b`
-- `standard` -> `qwen2.5:7b`
-- `deep` -> `gpt-oss:20b`
-- `max` -> `qwen3.6:27b`
+| Profile | Model | Use case |
+|---------|-------|----------|
+| `rough` | `llama3.2:3b` | Fast summaries for short updates and link roundups |
+| `standard` | `qwen2.5:7b` | Default balanced profile |
+| `deep` | `gpt-oss:20b` | Higher-effort synthesis for essays and analysis |
+| `max` | `qwen3.6:27b` | Experimental high-effort profile for long reads |
 
-These are defaults, not hard requirements. Rollup does not validate local model installation at config-load time. If a model is missing at runtime, Rollup falls back gracefully and reports the issue. Pull models explicitly:
+These are defaults, not hard requirements. Rollup does not validate local model installation at config-load time. If a model is missing at runtime, Rollup falls back gracefully and reports the issue in the stats block.
+
+Pull the built-in models explicitly:
 
 ```bash
 ollama pull llama3.2:3b
@@ -142,6 +148,8 @@ ollama pull qwen2.5:7b
 ollama pull gpt-oss:20b
 ollama pull qwen3.6:27b
 ```
+
+If your local Ollama library uses different model names, export the built-in profile set, edit the `model` fields, and pass `--summary-profile-set`. See [docs/EXAMPLES.md](docs/EXAMPLES.md#custom-profile-sets).
 
 List built-in or configured profiles:
 
@@ -152,23 +160,24 @@ python -m rollup digest --list-newsletter-types
 
 ## Summary routing modes
 
-Single profile for the whole digest:
+Routing precedence:
 
-```bash
-python -m rollup digest --ollama --summary-profile deep
-```
+1. `--summary-variants` — compare whole-digest outputs across profiles
+2. `--summary-profile` — one profile for every message
+3. `--summary-type-routing` (or `--ollama` alone) — per-type routing from the profile set
+4. otherwise — `standard` profile
 
-Per-type routing for one mixed-model digest:
+Default per-type routes in the built-in profile set:
 
-```bash
-python -m rollup digest --ollama --summary-type-routing
-```
+| Newsletter type | Profile | Model |
+|-----------------|---------|-------|
+| `short_update` | `rough` | `llama3.2:3b` |
+| `link_roundup` | `rough` | `llama3.2:3b` |
+| `multi_section_digest` | `standard` | `qwen2.5:7b` |
+| `essay` | `deep` | `gpt-oss:20b` |
+| `unclassified` | `standard` | `qwen2.5:7b` |
 
-Whole-digest comparison variants from one parsed/classified/filtered input set:
-
-```bash
-python -m rollup digest --ollama --summary-variants rough,deep
-```
+See [docs/EXAMPLES.md](docs/EXAMPLES.md#digest-with-ollama-recommended-full-run) for runnable routing examples.
 
 Variant mode writes one output set per profile by inserting `.{profile}` before the extension, for example:
 
@@ -179,12 +188,7 @@ Variant mode writes one output set per profile by inserting `.{profile}` before 
 
 ## Summary profile sets
 
-Profile sets can be loaded from or exported to JSON:
-
-```bash
-python -m rollup digest --export-summary-profile-set ./output/summary_profiles.json
-python -m rollup digest --ollama --summary-profile-set ./output/summary_profiles.json
-```
+Profile sets can be loaded from or exported to JSON. See [docs/EXAMPLES.md](docs/EXAMPLES.md#custom-profile-sets).
 
 The serialized profile set includes:
 
@@ -213,31 +217,7 @@ Newer summary generations are stored with richer cache identity so cached output
 
 ## Ollama validation (live)
 
-Prerequisites:
-
-```bash
-pip install -e ".[ollama]"
-ollama pull llama3.2:3b
-```
-
-Incremental checks (default digest performs **no network calls** unless `--ollama` is passed):
-
-```bash
-# Single-folder smoke
-python -m rollup digest --ollama --folder tech --lookback-days 7
-
-# Re-run — expect cache hits in stats
-python -m rollup digest --ollama --folder tech --lookback-days 7
-
-# Force rebuild
-python -m rollup digest --ollama --rebuild-summaries --folder tech --lookback-days 7
-
-# Stop Ollama, then confirm preview fallback (no crash)
-python -m rollup digest --ollama --folder tech --lookback-days 7
-
-# Full digest after smoke passes
-python -m rollup digest --ollama
-```
+Prerequisites and incremental smoke-test commands are in [docs/EXAMPLES.md](docs/EXAMPLES.md#ollama-validation-sequence).
 
 ## Summary routing report
 
@@ -253,21 +233,13 @@ Rendered digests also include compact summary metadata showing:
 
 ## Benchmark local models
 
-Use the stdlib-only benchmark helper to compare local Ollama-compatible models on the same prompts:
-
-```bash
-python scripts/benchmark_ollama_models.py \
-  --models llama3.2:3b,qwen2.5:7b,gpt-oss:20b,qwen3.6:27b \
-  --runs 2 \
-  --num-ctx 16384 \
-  --out benchmarks/ollama_benchmark.json \
-  --markdown-out benchmarks/ollama_benchmark.md
-```
+Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMPLES.md#benchmark-local-models).
 
 ## Project layout
 
 ```
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
+docs/EXAMPLES.md                  # runnable command recipes
 fixtures/                         # gitignored — local real-mail copies
 output/                           # generated digests
 state/                            # seen_messages SQLite

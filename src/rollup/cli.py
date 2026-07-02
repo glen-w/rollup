@@ -52,8 +52,15 @@ from rollup.summary_profiles import (
 logger = logging.getLogger(__name__)
 
 
-def _setup_logging(verbose: bool, log_dir: Path | None, dry_run: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+def _setup_logging(
+    verbose: bool, quiet: bool, log_dir: Path | None, dry_run: bool
+) -> None:
+    if verbose:
+        level = logging.DEBUG
+    elif quiet:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
     logging.basicConfig(
         level=level,
         format="%(levelname)s: %(message)s",
@@ -116,6 +123,7 @@ def _build_config(args: argparse.Namespace) -> Config:
         list_newsletter_types=getattr(args, "list_newsletter_types", False),
         summary_routing_report=getattr(args, "summary_routing_report", False),
         verbose=getattr(args, "verbose", False),
+        quiet=getattr(args, "quiet", False),
     )
 
 
@@ -232,7 +240,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     for w in warnings:
         print(w, file=sys.stderr)
 
-    _setup_logging(config.verbose, None, dry_run=True)
+    _setup_logging(config.verbose, config.quiet, None, dry_run=True)
     logger.info("Reading newsletter root: %s", config.root.resolve())
 
     inventory = build_inventory(config.root)
@@ -275,7 +283,10 @@ def cmd_digest(args: argparse.Namespace) -> int:
         print(w, file=sys.stderr)
 
     _setup_logging(
-        config.verbose, config.log_dir if not config.dry_run else None, config.dry_run
+        config.verbose,
+        config.quiet,
+        config.log_dir if not config.dry_run else None,
+        config.dry_run,
     )
     profile_set = _load_and_validate_profile_set(config)
     if config.list_newsletter_types:
@@ -371,6 +382,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
             allow_remote=config.allow_remote_ollama,
             conn=conn,
             rebuild=config.rebuild_summaries,
+            quiet=config.quiet,
         )
         dated_count = len(dated_entries)
         for variant_name, rendered in execution.entries_by_variant.items():
@@ -587,6 +599,12 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
         "--exclude-folder", action="append", help="Exclude folder (repeatable)"
     )
     p.add_argument("--verbose", action="store_true", default=False)
+    p.add_argument(
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Suppress INFO progress output (warnings and errors still shown)",
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
