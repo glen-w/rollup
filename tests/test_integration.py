@@ -314,6 +314,38 @@ def test_digest_folder_filter(tmp_path: Path) -> None:
     assert "brainfood" not in md.lower()
 
 
+def test_digest_trackerwall_renders_readable_links(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    state = tmp_path / "state"
+    result = _run(
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--no-ollama",
+        "--folder",
+        "trackerwall",
+        "--output-dir",
+        str(output),
+        "--state-dir",
+        str(state),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0, result.stderr
+    md = list(output.glob("*-newsletter-digest.md"))[0].read_text(encoding="utf-8")
+    html = list(output.glob("*-newsletter-digest.html"))[0].read_text(encoding="utf-8")
+
+    assert "[Open post](" in md
+    assert "[Register](" in md or "[Register for Teams event](" in md
+    assert "- <https://" not in md
+
+    assert ">Open post<" in html
+    assert "Register for Teams event" in html or ">Register<" in html
+    assert ">https://substack.com/app-link/post?" not in html
+    assert ">https://u14608870.ct.sendgrid.net/ls/click?" not in html
+    assert "eotrx.substackcdn.com/o/abc/p.gif" not in html
+
+
 def test_safety_rejects_output_in_mail_root(tmp_path: Path) -> None:
     mail = tmp_path / "gmail"
     mail.mkdir()

@@ -50,6 +50,7 @@ def _parsed(body: str = "Newsletter body text for summarisation.", subject: str 
         html_link_count=0,
         html_section_break_count=0,
         links=(),
+        link_items=(),
         read_time_minutes=2,
         preview=body[:100],
         parse_warnings=(),

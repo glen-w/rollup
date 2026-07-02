@@ -11,7 +11,7 @@ import pytest
 from rollup.classify import classify_message
 from rollup.config import compute_date_window
 from rollup.filter import make_digest_entry
-from rollup.models import DigestReport, DigestStats
+from rollup.models import DigestReport, DigestStats, LinkItem
 from rollup.parse import compute_content_hash
 from rollup.models import ParsedMessage
 from rollup.render import (
@@ -39,6 +39,7 @@ def _entry(body: str = "Summary text here"):
         html_link_count=0,
         html_section_break_count=0,
         links=("https://example.com",),
+        link_items=(LinkItem("https://example.com", "Example article", None, 0),),
         read_time_minutes=2,
         preview=body[:100],
         parse_warnings=(),
@@ -175,6 +176,7 @@ def test_render_undated_section() -> None:
         html_link_count=0,
         html_section_break_count=0,
         links=(),
+        link_items=(),
         read_time_minutes=1,
         preview="undated body",
         parse_warnings=(),
@@ -250,8 +252,209 @@ def test_render_html_summary_pre_wrap() -> None:
 def test_render_clickable_links() -> None:
     md = render_markdown(_report(), 8)
     html = render_html(_report(), 8)
-    assert "https://example.com" in md
+    assert "[Example article](https://example.com)" in md
     assert 'href="https://example.com"' in html
+    assert ">Example article<" in html
+
+
+def test_render_hides_raw_url_as_visible_text() -> None:
+    parsed = ParsedMessage(
+        message_key="k-raw",
+        content_hash=compute_content_hash("raw body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Raw URL Link",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="raw body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=("https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",),
+        link_items=(
+            LinkItem(
+                "https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",
+                "https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",
+                None,
+                0,
+            ),
+        ),
+        read_time_minutes=1,
+        preview="raw body",
+        parse_warnings=(),
+    )
+    report = _report()
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    report = DigestReport(
+        generated_at=report.generated_at,
+        lookback_days=report.lookback_days,
+        window_start=report.window_start,
+        window_end=report.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=report.stats,
+    )
+    md = render_markdown(report, 8)
+    html = render_html(report, 8)
+    assert "[Open post](https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc)" in md
+    assert ">https://substack.com/app-link/post?" not in html
+
+
+def test_render_markdown_escapes_link_labels_without_changing_href() -> None:
+    parsed = ParsedMessage(
+        message_key="k-escape",
+        content_hash=compute_content_hash("escape body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Escaped Label",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="escape body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=("https://example.com/report?x=1&y=2",),
+        link_items=(LinkItem("https://example.com/report?x=1&y=2", "[Report]", None, 0),),
+        read_time_minutes=1,
+        preview="escape body",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    md = render_markdown(report, 8)
+    html = render_html(report, 8)
+    assert r"[\[Report\]](https://example.com/report?x=1&y=2)" in md
+    assert 'href="https://example.com/report?x=1&amp;y=2"' in html
+    assert ">[Report]<" in html
+
+
+def test_render_wrapper_links_keep_clean_visible_text_and_original_hrefs() -> None:
+    parsed = ParsedMessage(
+        message_key="k-wrapper",
+        content_hash=compute_content_hash("wrapper body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Wrapped Links",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="wrapper body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=(
+            "https://u14608870.ct.sendgrid.net/ls/click?upn=report123",
+            "https://u14608870.ct.sendgrid.net/ls/click?upn=register123",
+            "https://newsletter.substack.com/c/article123",
+        ),
+        link_items=(
+            LinkItem(
+                "https://u14608870.ct.sendgrid.net/ls/click?upn=report123",
+                "Report",
+                "Annual report download",
+                0,
+            ),
+            LinkItem(
+                "https://u14608870.ct.sendgrid.net/ls/click?upn=register123",
+                "Register",
+                "Register for the webinar",
+                1,
+            ),
+            LinkItem("https://newsletter.substack.com/c/article123", "Article", "Featured story", 2),
+        ),
+        read_time_minutes=1,
+        preview="wrapper body",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    md = render_markdown(report, 8)
+    html = render_html(report, 8)
+    assert "[Report](https://u14608870.ct.sendgrid.net/ls/click?upn=report123)" in md
+    assert "[Register](https://u14608870.ct.sendgrid.net/ls/click?upn=register123)" in md
+    assert "[Article](https://newsletter.substack.com/c/article123)" in md
+    assert ">Report<" in html
+    assert ">Register<" in html
+    assert ">Article<" in html
+    assert 'href="https://u14608870.ct.sendgrid.net/ls/click?upn=report123"' in html
+    assert 'href="https://u14608870.ct.sendgrid.net/ls/click?upn=register123"' in html
+    assert 'href="https://newsletter.substack.com/c/article123"' in html
+
+
+def test_render_other_links_in_secondary_section_only() -> None:
+    parsed = ParsedMessage(
+        message_key="k-other",
+        content_hash=compute_content_hash("other body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Other Links",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="other body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=(
+            "https://example.com/post/1",
+            "https://example.com/post/2",
+            "https://example.com/post/3",
+            "https://example.com/post/4",
+            "https://example.com/post/5",
+            "https://calendar.google.com/calendar/event?action=VIEW",
+        ),
+        link_items=(
+            LinkItem("https://example.com/post/1", "Read article 1", None, 0),
+            LinkItem("https://example.com/post/2", "Read article 2", None, 1),
+            LinkItem("https://example.com/post/3", "Read article 3", None, 2),
+            LinkItem("https://example.com/post/4", "Read article 4", None, 3),
+            LinkItem("https://example.com/post/5", "Read article 5", None, 4),
+            LinkItem("https://calendar.google.com/calendar/event?action=VIEW", None, None, 5),
+        ),
+        read_time_minutes=1,
+        preview="other body",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    md = render_markdown(report, 8)
+    html = render_html(report, 8)
+    assert "**Other links:**" in md
+    assert "View calendar event" in md
+    assert "<summary>Other links</summary>" in html
 
 
 def test_atomic_write_failure_cleans_partials(tmp_path: Path) -> None:

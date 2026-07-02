@@ -45,7 +45,8 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
             )
 
         word_count = _word_count(parsed.body_text)
-        link_count = max(len(parsed.links), parsed.html_link_count)
+        structured_link_count = len(getattr(parsed, "link_items", ()) or ())
+        link_count = max(structured_link_count, len(parsed.links), parsed.html_link_count)
         heading_count = max(_heading_count_text(parsed.body_text), parsed.html_heading_count)
         bullet_count = _bullet_count(parsed.body_text)
         ratio = link_count / max(word_count, 1)

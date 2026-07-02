@@ -139,9 +139,33 @@ def main() -> None:
             ),
         ],
     )
+    _write_mbox(
+        FIXTURE_ROOT / "trackerwall",
+        [
+            _html_msg(
+                "Tracker Wall Digest",
+                "links@example.com",
+                (
+                    "<html><body><h1>Useful links</h1>"
+                    '<p><a href="https://substack.com/app-link/post?publication_id=111&post_id=222&token=abcdef&utm_source=email">'
+                    "https://substack.com/app-link/post?publication_id=111&post_id=222&token=abcdef&utm_source=email"
+                    "</a></p>"
+                    '<p><a href="https://events.teams.microsoft.com/event/123/register">Register</a></p>'
+                    '<p><a href="https://calendar.google.com/calendar/event?action=RESPOND&text=Demo&dates=20260702T100000Z/20260702T110000Z&rst=1">Add to calendar</a></p>'
+                    '<p><a href="https://calendar.google.com/calendar/event?action=RESPOND&text=Demo&dates=20260702T100000Z/20260702T110000Z&rst=2">RSVP copy</a></p>'
+                    '<p><a href="https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456">https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456</a></p>'
+                    '<p><a href="https://eotrx.substackcdn.com/o/abc/p.gif?token=secret">pixel</a></p>'
+                    '<p><a href="http://www.w3.org/1999/xhtml">xhtml</a></p>'
+                    "</body></html>"
+                ),
+                "<trackerwall@example.com>",
+                recent,
+            ),
+        ],
+    )
 
     # Empty .msf sidecars (ignored)
-    for name in ("brainfood", "enviro", "hoops", "misc", "tech"):
+    for name in ("brainfood", "enviro", "hoops", "misc", "tech", "trackerwall"):
         (FIXTURE_ROOT / f"{name}.msf").write_text("", encoding="utf-8")
 
     # Nested classify fixture

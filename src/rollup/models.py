@@ -15,6 +15,21 @@ NewsletterType = Literal[
     "unclassified",
 ]
 SummarySource = Literal["ollama", "cache", "preview_fallback", "none"]
+LinkCategory = Literal[
+    "primary_content",
+    "content",
+    "registration",
+    "event",
+    "video_audio",
+    "document_pdf",
+    "calendar",
+    "author_profile",
+    "share_comment_like",
+    "unsubscribe_preferences",
+    "tracking_pixel",
+    "junk",
+    "unknown",
+]
 
 
 @dataclass(frozen=True)
@@ -30,6 +45,36 @@ class InventoryEntry:
     folder: MboxFolder
     message_count: int | None
     parse_error: str | None
+
+
+@dataclass(frozen=True)
+class LinkItem:
+    href: str
+    text: str | None
+    context: str | None
+    source_index: int
+
+
+@dataclass(frozen=True)
+class ClassifiedLink:
+    href: str
+    text: str | None
+    context: str | None
+    source_index: int
+    label: str
+    domain: str | None
+    category: LinkCategory
+    priority: int
+    is_main: bool
+    hidden_reason: str | None
+    dedupe_key: str
+
+
+@dataclass(frozen=True)
+class LinkRenderBundle:
+    main_links: tuple[ClassifiedLink, ...]
+    other_links: tuple[ClassifiedLink, ...]
+    hidden_links: tuple[ClassifiedLink, ...]
 
 
 @dataclass(frozen=True)
@@ -55,6 +100,7 @@ class ParsedMessage:
     html_link_count: int
     html_section_break_count: int
     links: tuple[str, ...]
+    link_items: tuple[LinkItem, ...]
     read_time_minutes: int
     preview: str
     parse_warnings: tuple[str, ...]

@@ -84,14 +84,46 @@ def test_body_size_guard() -> None:
     assert len(parsed.body_text) <= 1000
 
 
-def test_links_deduped() -> None:
+def test_links_preserve_raw_extracted_duplicates() -> None:
     msg = EmailMessage()
     msg["Subject"] = "Links"
     msg["From"] = "a@example.com"
     html = '<a href="https://example.com/a">a</a> <a href="https://example.com/a">dup</a>'
     msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
     parsed = parse_message(msg, "t", "t", 200_000, 8)
-    assert len(parsed.links) == 1
+    assert len(parsed.links) == 2
+    assert len(parsed.link_items) == 2
+
+
+def test_link_items_preserve_text_and_source_order() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Links"
+    msg["From"] = "a@example.com"
+    html = (
+        '<a href="https://example.com/read">Read article</a>'
+        '<a href="https://example.com/register">Register</a>'
+    )
+    msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 8)
+    assert [item.href for item in parsed.link_items] == [
+        "https://example.com/read",
+        "https://example.com/register",
+    ]
+    assert parsed.link_items[0].text == "Read article"
+    assert parsed.link_items[1].source_index == 1
+
+
+def test_parse_does_not_truncate_extracted_links() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Many Links"
+    msg["From"] = "a@example.com"
+    html = "<html><body>" + "".join(
+        f'<a href="https://example.com/{i}">Link {i}</a>' for i in range(12)
+    ) + "</body></html>"
+    msg.add_alternative(html, subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 3)
+    assert len(parsed.links) == 12
+    assert len(parsed.link_items) == 12
 
 
 def test_preview_not_empty() -> None:
@@ -179,6 +211,37 @@ def test_html_link_count_before_conversion() -> None:
     msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
     parsed = parse_message(msg, "t", "t", 200_000, 8)
     assert parsed.html_link_count == 2
+
+
+def test_non_http_links_ignored_in_link_items() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Mixed links"
+    msg["From"] = "a@example.com"
+    html = (
+        '<a href="mailto:test@example.com">Email</a>'
+        '<a href="/relative">Relative</a>'
+        '<a href="https://example.com/live">Live</a>'
+    )
+    msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 8)
+    assert parsed.links == ("https://example.com/live",)
+
+
+def test_parse_extracts_bare_urls_from_html_text_nodes() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Bare HTML URL"
+    msg["From"] = "a@example.com"
+    html = (
+        "<html><body>"
+        "<p>Visible URL https://example.com/raw should still be extracted.</p>"
+        '<p><a href="https://example.com/linked">Article</a></p>'
+        "</body></html>"
+    )
+    msg.add_alternative(html, subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 8)
+    assert "https://example.com/raw" in parsed.links
+    assert "https://example.com/linked" in parsed.links
+    assert len(parsed.link_items) == 2
 
 
 def test_parse_error_on_first_message_does_not_abort_folder(tmp_path: Path) -> None:

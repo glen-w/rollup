@@ -14,8 +14,9 @@ from pathlib import Path
 
 import html2text
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString
 
-from rollup.models import ParsedMessage
+from rollup.models import LinkItem, ParsedMessage
 
 logger = logging.getLogger(__name__)
 
@@ -129,36 +130,80 @@ def _extract_html_features(html: str) -> tuple[int, int, int]:
     return len(headings), len(links), breaks
 
 
-def _extract_links_from_html(html: str) -> list[str]:
+def _context_snippet(text: str | None, max_len: int = 140) -> str | None:
+    if text is None:
+        return None
+    collapsed = " ".join(text.split()).strip()
+    if not collapsed:
+        return None
+    if len(collapsed) <= max_len:
+        return collapsed
+    return collapsed[: max_len - 1].rstrip() + "…"
+
+
+def _extract_links_from_html(html: str) -> list[LinkItem]:
     soup = BeautifulSoup(html, "html.parser")
-    links: list[str] = []
-    for tag in soup.find_all("a", href=True):
+    links: list[LinkItem] = []
+    for source_index, tag in enumerate(soup.find_all("a", href=True)):
         href = tag["href"].strip()
         if href.startswith("http"):
-            links.append(href)
+            links.append(
+                LinkItem(
+                    href=href,
+                    text=_context_snippet(tag.get_text(" ", strip=True), max_len=80),
+                    context=_context_snippet(tag.parent.get_text(" ", strip=True) if tag.parent else None),
+                    source_index=source_index,
+                )
+            )
     return links
 
 
-def _dedupe_links(urls: list[str], max_links: int) -> tuple[str, ...]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for url in urls:
-        key = url.rstrip("/")
-        if key not in seen:
-            seen.add(key)
-            result.append(url)
-        if len(result) >= max_links:
-            break
-    return tuple(result)
+def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[LinkItem]:
+    soup = BeautifulSoup(html, "html.parser")
+    links: list[LinkItem] = []
+    offset = 0
+    for node in soup.find_all(string=True):
+        if not isinstance(node, NavigableString):
+            continue
+        parent = node.parent
+        if parent and parent.name in {"a", "script", "style"}:
+            continue
+        text = str(node)
+        for match in URL_RE.finditer(text):
+            href = match.group(0)
+            links.append(
+                LinkItem(
+                    href=href,
+                    text=None,
+                    context=_context_snippet(text[max(0, match.start() - 80) : match.end() + 80]),
+                    source_index=start_index + offset,
+                )
+            )
+            offset += 1
+    return links
 
 
-def _collect_urls(plain: str, html: str | None) -> list[str]:
-    urls: list[str] = []
+def _extract_links_from_plain_text(text: str, start_index: int = 0) -> list[LinkItem]:
+    links: list[LinkItem] = []
+    for offset, match in enumerate(URL_RE.finditer(text)):
+        href = match.group(0)
+        links.append(
+            LinkItem(
+                href=href,
+                text=None,
+                context=_context_snippet(text[max(0, match.start() - 80) : match.end() + 80]),
+                source_index=start_index + offset,
+            )
+        )
+    return links
+
+
+def _collect_link_items(plain: str, html: str | None) -> list[LinkItem]:
+    urls: list[LinkItem] = []
     if html:
         urls.extend(_extract_links_from_html(html))
-    urls.extend(URL_RE.findall(plain))
-    if html:
-        urls.extend(URL_RE.findall(html))
+        urls.extend(_extract_raw_urls_from_html_text(html, start_index=len(urls)))
+    urls.extend(_extract_links_from_plain_text(plain, start_index=len(urls)))
     return urls
 
 
@@ -258,7 +303,9 @@ def parse_message(
     else:
         html_heading_count = html_link_count = html_section_break_count = 0
 
-    links = _dedupe_links(_collect_urls(plain, html_raw), max_display_links)
+    del max_display_links
+    link_items = tuple(_collect_link_items(plain, html_raw))
+    links = tuple(item.href for item in link_items)
     message_key, key_warnings = compute_message_key(
         message_id_header, folder_name, subject, sender, date_raw, body_text
     )
@@ -281,6 +328,7 @@ def parse_message(
         html_link_count=html_link_count,
         html_section_break_count=html_section_break_count,
         links=links,
+        link_items=link_items,
         read_time_minutes=_read_time_minutes(body_text),
         preview=preview,
         parse_warnings=tuple(warnings),

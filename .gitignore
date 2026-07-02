@@ -11,6 +11,9 @@ __pycache__/
 dist/
 build/
 
+# Cursor (local custom commands)
+.cursor/
+
 # macOS / secrets
 .DS_Store
 .env

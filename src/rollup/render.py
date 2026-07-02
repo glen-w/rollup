@@ -7,6 +7,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from rollup.links import prepare_links_for_render, render_link_html, render_link_markdown
+from rollup.models import LinkItem
 from rollup.models import DigestEntry, DigestReport, DigestStats
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,13 @@ def render_stats_block(stats: DigestStats) -> str:
 def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
+    link_items = list(p.link_items) if getattr(p, "link_items", ()) else [
+        LinkItem(href=href, text=None, context=None, source_index=index)
+        for index, href in enumerate(p.links)
+    ]
+    max_main = min(5, max_display_links)
+    max_other = max(0, max_display_links - max_main)
+    bundle = prepare_links_for_render(link_items, max_main=max_main, max_other=max_other)
     lines = [
         f"### {p.subject}",
         "",
@@ -47,10 +56,15 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     if entry.summary:
         lines.append(entry.summary)
         lines.append("")
-    if p.links:
-        lines.append("**Top links:**")
-        for link in p.links[:max_display_links]:
-            lines.append(f"- <{link}>")
+    if bundle.main_links:
+        lines.append("**Key links:**")
+        for link in bundle.main_links:
+            lines.append(render_link_markdown(link))
+        lines.append("")
+    if bundle.other_links:
+        lines.append("**Other links:**")
+        for link in bundle.other_links:
+            lines.append(render_link_markdown(link))
         lines.append("")
     return "\n".join(lines)
 
@@ -88,6 +102,13 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
 def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
+    link_items = list(p.link_items) if getattr(p, "link_items", ()) else [
+        LinkItem(href=href, text=None, context=None, source_index=index)
+        for index, href in enumerate(p.links)
+    ]
+    max_main = min(5, max_display_links)
+    max_other = max(0, max_display_links - max_main)
+    bundle = prepare_links_for_render(link_items, max_main=max_main, max_other=max_other)
     summary_line = (
         f"{html_module.escape(p.subject)} — {html_module.escape(p.sender)} — "
         f"{html_module.escape(_format_date(p.date_parsed))} — "
@@ -96,14 +117,19 @@ def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
     parts = [f"<details><summary>{summary_line}</summary><div class='card-body'>"]
     parts.append(f"<p><strong>Folder:</strong> {html_module.escape(p.folder_name)}</p>")
     if entry.summary:
-        esc = html_module.escape(entry.summary)
-        parts.append(f"<p class='summary'>{esc}</p>")
-    if p.links:
+        summary_text = html_module.escape(entry.summary)
+        parts.append(f"<p class='summary'>{summary_text}</p>")
+    if bundle.main_links:
+        parts.append("<p><strong>Key links:</strong></p>")
         parts.append("<ul>")
-        for link in p.links[:max_display_links]:
-            esc = html_module.escape(link)
-            parts.append(f'<li><a href="{esc}" rel="noopener">{esc}</a></li>')
+        for link in bundle.main_links:
+            parts.append(render_link_html(link))
         parts.append("</ul>")
+    if bundle.other_links:
+        parts.append("<details class='other-links'><summary>Other links</summary><ul>")
+        for link in bundle.other_links:
+            parts.append(render_link_html(link))
+        parts.append("</ul></details>")
     parts.append("</div></details>")
     return "\n".join(parts)
 
@@ -124,6 +150,8 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         "#undated{border-color:#c90;background:#fffbe6;}",
         ".stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}",
         ".summary{white-space:pre-wrap;}",
+        ".link-domain{color:#666;font-size:0.9em;}",
+        ".other-links{border:none;padding:0;margin-top:0.5rem;}",
         "</style></head><body>",
         f"<h1>Newsletter Digest — {gen_date}</h1>",
         f"<p><em>Week of {ws} to {we} · {total} newsletters</em></p>",
