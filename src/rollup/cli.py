@@ -83,14 +83,42 @@ def _resolve_no_ollama(args: argparse.Namespace) -> bool:
     return True
 
 
+def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
+    """Warn when Ollama-only flags are passed but summarisation is disabled."""
+    if not config.no_ollama:
+        return []
+
+    ignored: list[str] = []
+    if config.summary_profile:
+        ignored.append("--summary-profile")
+    if config.summary_variants:
+        ignored.append("--summary-variants")
+    if config.rebuild_summaries:
+        ignored.append("--rebuild-summaries")
+    if config.summary_routing_report:
+        ignored.append("--summary-routing-report")
+    if config.summary_type_routing is True:
+        ignored.append("--summary-type-routing")
+    if config.summary_type_routing is False:
+        ignored.append("--no-summary-type-routing")
+    if config.allow_remote_ollama:
+        ignored.append("--allow-remote-ollama")
+    if not ignored:
+        return []
+    flag_list = ", ".join(ignored)
+    return [
+        f"Ignoring {flag_list} because Ollama summarisation is disabled "
+        f"(default; pass --ollama to enable)."
+    ]
+
+
 def _build_config(args: argparse.Namespace) -> Config:
     variants_raw = getattr(args, "summary_variants", "") or ""
     summary_variants = tuple(v.strip() for v in variants_raw.split(",") if v.strip())
     summary_type_routing = getattr(args, "summary_type_routing", None)
-    if summary_type_routing is None:
+    if summary_type_routing is None and getattr(args, "ollama", False):
         summary_type_routing = bool(
-            getattr(args, "ollama", False)
-            and not getattr(args, "summary_profile", None)
+            not getattr(args, "summary_profile", None)
             and not summary_variants
         )
     return Config(
@@ -303,6 +331,8 @@ def cmd_digest(args: argparse.Namespace) -> int:
             f"Exported summary profile set to {config.export_summary_profile_set_path}"
         )
         return 0
+    for warning in _ignored_ollama_flag_warnings(config):
+        logger.warning(warning)
     generated_at = datetime.now().astimezone()
     window_start, window_end = compute_date_window(generated_at, config.lookback_days)
 
@@ -366,10 +396,13 @@ def cmd_digest(args: argparse.Namespace) -> int:
     if not config.no_ollama and not config.dry_run:
         from rollup.summarize import execute_summary_plan
 
+        routing = config.summary_type_routing
+        if routing is None:
+            routing = not config.summary_profile and not config.summary_variants
         cli_options = SummaryCliOptions(
             summary_profile=config.summary_profile,
             summary_variants=config.summary_variants,
-            summary_type_routing=config.summary_type_routing,
+            summary_type_routing=routing,
         )
         all_entries = dated_entries + undated_to_render
         plan = resolve_summary_plan(all_entries, profile_set, cli_options)
@@ -548,7 +581,7 @@ def build_parser() -> argparse.ArgumentParser:
     ollama_group.add_argument(
         "--ollama",
         action="store_true",
-        help="Enable local Ollama summarisation (explicit opt-in; requires .[ollama] extra)",
+        help="Enable local Ollama summarisation (explicit opt-in; local loopback only by default)",
     )
     ollama_group.add_argument(
         "--no-ollama",
@@ -556,20 +589,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip Ollama summarisation (default when neither flag is passed)",
     )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
-    dig.add_argument("--rebuild-summaries", action="store_true", default=False)
+    dig.add_argument(
+        "--rebuild-summaries",
+        action="store_true",
+        default=False,
+        help="Ollama only: bypass summary cache",
+    )
     dig.add_argument("--max-body-chars", type=int, default=DEFAULT_MAX_BODY_CHARS)
     dig.add_argument("--max-chars-for-llm", type=int, default=DEFAULT_MAX_CHARS_FOR_LLM)
     dig.add_argument("--max-display-links", type=int, default=DEFAULT_MAX_DISPLAY_LINKS)
     dig.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     dig.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL)
     dig.add_argument("--allow-remote-ollama", action="store_true", default=False)
-    dig.add_argument("--summary-profile")
-    dig.add_argument("--summary-variants")
-    dig.add_argument("--summary-profile-set")
+    dig.add_argument(
+        "--summary-profile",
+        help="Ollama only: force one profile for every message",
+    )
+    dig.add_argument(
+        "--summary-variants",
+        help="Ollama only: comma-separated profiles; one digest per profile",
+    )
+    dig.add_argument(
+        "--summary-profile-set",
+        help="Load summary profiles/routes from JSON (used with --ollama)",
+    )
     dig.add_argument("--export-summary-profile-set")
     dig.add_argument("--list-summary-profiles", action="store_true", default=False)
     dig.add_argument("--list-newsletter-types", action="store_true", default=False)
-    dig.add_argument("--summary-routing-report", action="store_true", default=False)
+    dig.add_argument(
+        "--summary-routing-report",
+        action="store_true",
+        default=False,
+        help="Ollama only: print profile/model usage after the run",
+    )
     type_routing_group = dig.add_mutually_exclusive_group()
     type_routing_group.add_argument(
         "--summary-type-routing",

@@ -28,6 +28,33 @@ def test_inventory_fixture(tmp_path: Path) -> None:
     assert "tech" in result.stdout
 
 
+def test_digest_default_fixture(tmp_path: Path) -> None:
+    """Default digest (no flags) matches explicit --no-ollama: writes output, no Ollama."""
+    output = tmp_path / "output"
+    state = tmp_path / "state"
+    result = _run(
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--output-dir",
+        str(output),
+        "--state-dir",
+        str(state),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "no_ollama=True" in result.stderr
+    combined = result.stdout + result.stderr
+    assert "Summaries: Ollama 0" in combined
+    md_files = list(output.glob("*-newsletter-digest.md"))
+    html_files = list(output.glob("*-newsletter-digest.html"))
+    assert len(md_files) == 1
+    assert len(html_files) == 1
+    assert md_files[0].stat().st_size > 0
+    assert html_files[0].stat().st_size > 0
+
+
 def test_digest_no_ollama_fixture(tmp_path: Path) -> None:
     output = tmp_path / "output"
     state = tmp_path / "state"
@@ -52,6 +79,9 @@ def test_digest_no_ollama_fixture(tmp_path: Path) -> None:
         "Undated" in md_files[0].read_text(encoding="utf-8")
         or "undated" in md_files[0].read_text(encoding="utf-8").lower()
     )
+    html = html_files[0].read_text(encoding="utf-8")
+    assert "class='rollup-toc'" in html
+    assert "<details class='run-details'>" in html
 
 
 def test_digest_dry_run_no_writes(tmp_path: Path) -> None:

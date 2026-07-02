@@ -20,8 +20,23 @@ All output, state, and logs are written outside the mail store.
 
 - Python 3.10+
 - Thunderbird mbox format (not Maildir)
+- **No Ollama server required** for the default digest workflow
 
-## Setup
+## Install
+
+From a built wheel or PyPI (when published):
+
+```bash
+pip install rollup
+```
+
+From a git checkout:
+
+```bash
+pip install .
+```
+
+## Development setup
 
 ```bash
 python3 -m venv .venv
@@ -29,26 +44,30 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-For Ollama summarisation (optional):
+No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls**.
 
-```bash
-pip install -e ".[ollama]"
-```
+Optional LLM summarisation uses a local Ollama server and requires `--ollama` on the CLI. The `requests` library ships with Rollup for that path but is not loaded during default digest runs.
 
 ## Network policy
 
-**MVP performs no network calls.** `--no-ollama` defaults to `True`.
+**Default digest performs no network calls.** Ollama is off unless you pass `--ollama`.
 
-The Ollama phase performs only local loopback calls unless `--allow-remote-ollama` is explicitly passed.
+When `--ollama` is enabled, Rollup calls the local Ollama HTTP API on loopback only, unless `--allow-remote-ollama` is explicitly passed.
+
+Summary-related flags (`--summary-profile`, `--rebuild-summaries`, and similar) are ignored on default runs; Rollup prints a warning if you pass them without `--ollama`.
 
 ## Quick start (synthetic fixtures)
 
+Default digest skips Ollama (preview summaries only; no network):
+
 ```bash
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
-python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama
+python -m rollup digest --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --root tests/fixtures/Newsletters.sbd --dry-run
-python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama --folder tech
+python -m rollup digest --root tests/fixtures/Newsletters.sbd --folder tech
 ```
+
+Explicit `--no-ollama` is equivalent to the default.
 
 ## Quick start (live mail with Ollama)
 
@@ -56,7 +75,6 @@ From the project root, with Ollama running locally:
 
 ```bash
 source .venv/bin/activate
-pip install -e ".[ollama]"
 python -m rollup digest --list-summary-profiles
 python -m rollup digest --ollama --summary-routing-report
 ```
@@ -69,7 +87,7 @@ python -m rollup digest --ollama --summary-routing-report
 
 `--ollama` alone enables **type routing by default**. Each newsletter type is summarized with the profile/model mapped in the built-in profile set (for example, `essay` → `deep` / `gpt-oss:20b`, `link_roundup` → `rough` / `llama3.2:3b`). Use `--summary-routing-report` to print which profiles and models were used.
 
-More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
+More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Commands
 
@@ -81,11 +99,11 @@ Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no
 
 1. **Before copying real mail**, confirm `.gitignore` contains `fixtures/`.
 2. **Never commit** files copied from `/Users/89298/email/gmail`.
-3. Bootstrap Python env (see Setup above).
+3. Bootstrap Python env (see Development setup above).
 4. Run against committed synthetic fixtures first:
    ```bash
    python -m rollup inventory --root tests/fixtures/Newsletters.sbd
-   python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama
+   python -m rollup digest --root tests/fixtures/Newsletters.sbd
    ```
 5. Optional local real-mail copy (gitignored):
    ```bash
@@ -94,16 +112,15 @@ Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no
 6. Small live tests before a full run:
    ```bash
    python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
-   python -m rollup digest --no-ollama --folder hoops
-   python -m rollup digest --no-ollama --folder tech
+   python -m rollup digest --folder hoops
+   python -m rollup digest --folder tech
    ```
-7. Full live digest without Ollama:
+7. Full live digest without Ollama (default; preview summaries only):
    ```bash
-   python -m rollup digest --no-ollama
+   python -m rollup digest
    ```
 8. Enable Ollama (local loopback only by default; explicit opt-in):
    ```bash
-   pip install -e ".[ollama]"
    python -m rollup digest --list-summary-profiles
    python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
    python -m rollup digest --ollama --summary-routing-report
@@ -113,23 +130,25 @@ Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no
 
 All settings via CLI flags and defaults. No `.env` file required for v1.
 
-| Flag | Default |
-|------|---------|
-| `--root` | `/Users/89298/email/gmail/Newsletters.sbd` |
-| `--mail-root` | `/Users/89298/email/gmail` |
-| `--output-dir` | `./output` |
-| `--state-dir` | `./state` (SQLite: `rollup.db`) |
-| `--lookback-days` | `7` |
-| `--no-ollama` | `True` (MVP default; no network) |
-| `--ollama` | Explicit opt-in to enable local Ollama summarisation |
-| `--summary-profile` | Force one profile for every message (disables default type routing) |
-| `--summary-type-routing` | Route by newsletter type (default when `--ollama` is passed) |
-| `--no-summary-type-routing` | Disable per-type routing; use `standard` profile instead |
-| `--summary-variants` | Comma-separated profiles; writes one digest per profile |
-| `--summary-profile-set` | Load profiles/routes from JSON |
-| `--summary-routing-report` | Print profile/model usage after the run |
-| `--rebuild-summaries` | Bypass summary cache |
-| `--dry-run` | No output files, state DB, logs, or Ollama calls |
+| Flag | Default | Notes |
+|------|---------|-------|
+| `--root` | `/Users/89298/email/gmail/Newsletters.sbd` | Newsletter mbox folder |
+| `--mail-root` | `/Users/89298/email/gmail` | Safety boundary for writes |
+| `--output-dir` | `./output` | Digest Markdown + HTML |
+| `--state-dir` | `./state` | SQLite: `rollup.db` |
+| `--log-dir` | `./logs` | Run logs (non-dry-run) |
+| `--lookback-days` | `7` | Inclusive calendar-day window |
+| *(digest mode)* | **no Ollama** | Omit both `--ollama` and `--no-ollama` |
+| `--no-ollama` | implicit default | Preview summaries; no network |
+| `--ollama` | off | Opt-in local Ollama summarisation |
+| `--summary-profile` | — | **Ollama only:** one profile for all messages |
+| `--summary-type-routing` | on when `--ollama` | **Ollama only:** per-type routing |
+| `--no-summary-type-routing` | — | **Ollama only:** use `standard` for all |
+| `--summary-variants` | — | **Ollama only:** one digest per profile |
+| `--summary-profile-set` | built-in | Load profiles/routes from JSON |
+| `--summary-routing-report` | off | **Ollama only:** print routing stats |
+| `--rebuild-summaries` | off | **Ollama only:** bypass summary cache |
+| `--dry-run` | off | Parse only; no writes or network |
 
 ## Summary profiles
 
@@ -164,7 +183,7 @@ python -m rollup digest --list-newsletter-types
 
 ## Summary routing modes
 
-Routing precedence:
+When `--ollama` is enabled, routing precedence is:
 
 1. `--summary-variants` — compare whole-digest outputs across profiles
 2. `--summary-profile` — one profile for every message
@@ -211,7 +230,7 @@ Canonical newsletter classifier labels are:
 
 ## Prompt templates
 
-Ollama prompts live under `prompts/`. Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`).
+Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`).
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
@@ -242,9 +261,12 @@ Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMP
 ## Project layout
 
 ```
+src/rollup/                       # package source
+src/rollup/prompts/               # bundled Ollama prompt templates
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
-assets/                           # logo and favicon
+assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes
+CHANGELOG.md                      # release notes
 fixtures/                         # gitignored — local real-mail copies
 output/                           # generated rollups (the rollup)
 state/                            # seen_messages SQLite

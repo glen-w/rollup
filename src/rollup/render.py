@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 ROLLUP_TITLE = "Rollup"
 
+_FOLDERS_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
 FOLDER_EMOJI: dict[str, str] = {
     "brainfood": "🧠",
     "enviro": "🌲",
@@ -31,11 +33,39 @@ FOLDER_EMOJI: dict[str, str] = {
     "trackerwall": "📰",
 }
 
+FOLDER_ACCENT: dict[str, str] = {
+    "brainfood": "#e8a0bf",
+    "enviro": "#4a9e6b",
+    "hoops": "#e8923a",
+    "tech": "#4a7fd4",
+    "misc": "#8b7fa8",
+    "trackerwall": "#9a8b7a",
+}
+
+DEFAULT_FOLDER_ACCENT = "#ccc"
+
 
 def _format_date(dt: datetime | None) -> str:
     if dt is None:
         return "undated"
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _format_window_range(start: datetime, end: datetime) -> str:
+    """Human-readable digest window, e.g. 23-30 July 2026 or 30 July - 6 August 2026."""
+    start_day = start.day
+    end_day = end.day
+    if start.year == end.year and start.month == end.month:
+        return f"{start_day}-{end_day} {end.strftime('%B %Y')}"
+    if start.year == end.year:
+        return (
+            f"{start_day} {start.strftime('%B')} - "
+            f"{end_day} {end.strftime('%B %Y')}"
+        )
+    return (
+        f"{start_day} {start.strftime('%B %Y')} - "
+        f"{end_day} {end.strftime('%B %Y')}"
+    )
 
 
 def _display_sender(sender: str) -> str:
@@ -56,8 +86,101 @@ def _folder_display_name(folder: str) -> str:
     return folder
 
 
+def _folder_accent_class(folder: str) -> str:
+    slug = _folder_slug(folder)
+    if slug in FOLDER_ACCENT:
+        return f"folder-accent-{slug}"
+    return "folder-accent-default"
+
+
+def _folder_accent_color(folder: str) -> str:
+    return FOLDER_ACCENT.get(_folder_slug(folder), DEFAULT_FOLDER_ACCENT)
+
+
+def _format_newsletter_type(ntype: str) -> str:
+    parts = ntype.split("_")
+    if len(parts) == 1:
+        return parts[0].capitalize()
+    return f"{parts[0].capitalize()} {' '.join(parts[1:])}"
+
+
+def _sort_entries_by_read_time(
+    entries: tuple[DigestEntry, ...],
+) -> tuple[DigestEntry, ...]:
+    return tuple(
+        sorted(
+            entries,
+            key=lambda entry: (
+                entry.classified.parsed.read_time_minutes,
+                entry.classified.parsed.subject.lower(),
+            ),
+        )
+    )
+
+
+def _folder_accent_css() -> str:
+    rules: list[str] = []
+    for slug, color in FOLDER_ACCENT.items():
+        selector = f".folder-accent-{slug}"
+        rules.append(f"{selector}>h2{{border-left:4px solid {color};padding-left:0.5rem;}}")
+        rules.append(
+            f"{selector} .newsletter-card{{border-color:{color};border-left-width:3px;}}"
+        )
+    rules.append(
+        f".folder-accent-default>h2{{border-left:4px solid {DEFAULT_FOLDER_ACCENT};padding-left:0.5rem;}}"
+    )
+    rules.append(
+        f".folder-accent-default .newsletter-card{{border-color:{DEFAULT_FOLDER_ACCENT};border-left-width:3px;}}"
+    )
+    return "".join(rules)
+
+
+def _folder_slug(folder: str) -> str:
+    slug = _FOLDERS_SLUG_RE.sub("-", folder.lower()).strip("-")
+    return slug or "folder"
+
+
+def _folder_section_id(folder: str) -> str:
+    return f"folder-{_folder_slug(folder)}"
+
+
+def _folder_anchor_map(
+    report: DigestReport,
+) -> list[tuple[str, str, int]]:
+    slug_counts: dict[str, int] = {}
+    anchors: list[tuple[str, str, int]] = []
+    for folder, entries in sorted(report.dated_by_folder.items()):
+        base = _folder_slug(folder)
+        slug_counts[base] = slug_counts.get(base, 0) + 1
+        count = slug_counts[base]
+        section_id = _folder_section_id(folder) if count == 1 else f"folder-{base}-{count}"
+        anchors.append((folder, section_id, len(entries)))
+    return anchors
+
+
 def _format_read_time(minutes: int) -> str:
     return f"🕐 {minutes} min"
+
+
+def _format_section_byline(entries: tuple[DigestEntry, ...]) -> str:
+    count = len(entries)
+    total_minutes = sum(
+        entry.classified.parsed.read_time_minutes for entry in entries
+    )
+    newsletter_word = "newsletter" if count == 1 else "newsletters"
+    minute_word = "minute" if total_minutes == 1 else "minutes"
+    return (
+        f"{count} {newsletter_word}, "
+        f"{total_minutes} {minute_word} reading time"
+    )
+
+
+def _render_section_byline_html(entries: tuple[DigestEntry, ...]) -> str:
+    return (
+        "<p class='folder-byline'>"
+        f"<em>{html_module.escape(_format_section_byline(entries))}</em>"
+        "</p>"
+    )
 
 
 _INLINE_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
@@ -174,7 +297,7 @@ def _render_summary_metadata_html(report: DigestReport) -> str:
     metadata = report.summary_metadata
     if metadata is None:
         return ""
-    title = "Summary Variant" if metadata.variant_name else "Summary Routing"
+    title = "Summary Variant" if metadata.variant_name else "AI info"
     items = []
     if metadata.variant_name:
         items.append(
@@ -213,6 +336,80 @@ def _render_summary_metadata_html(report: DigestReport) -> str:
     return f"<section class='summary-metadata'><h2>{title}</h2><ul>{''.join(items)}</ul>{table}</section>"
 
 
+def _render_run_details_html(report: DigestReport) -> str:
+    metadata_html = _render_summary_metadata_html(report)
+    return (
+        "<details class='run-details'>"
+        "<summary>Digest generation details</summary>"
+        "<section class='stats-section'>"
+        "<h2>Stats</h2>"
+        f"<div class='stats'>{html_module.escape(render_stats_block(report.stats))}</div>"
+        "</section>"
+        f"{metadata_html}"
+        "</details>"
+    )
+
+
+def _render_toc_html(
+    anchor_map: list[tuple[str, str, int]], *, include_undated: bool
+) -> str:
+    items = [
+        "<li>"
+        f"<a href='#{html_module.escape(section_id)}'>"
+        f"{html_module.escape(_folder_display_name(folder))} ({count})"
+        "</a></li>"
+        for folder, section_id, count in anchor_map
+    ]
+    if include_undated:
+        items.append(
+            "<li><a href='#undated'>Undated / needs review</a></li>"
+        )
+    controls = (
+        "<p class='rollup-controls'>"
+        "<button type='button' id='expand-all-cards' "
+        "aria-label='Expand all newsletter cards'>Expand all</button>"
+        " · "
+        "<button type='button' id='collapse-all-cards' "
+        "aria-label='Collapse all newsletter cards'>Collapse all</button>"
+        "</p>"
+    )
+    return (
+        f"<nav class='rollup-toc' aria-label='Contents'>{controls}"
+        f"<ul>{''.join(items)}</ul></nav>"
+    )
+
+
+def _render_toc_md(report: DigestReport) -> list[str]:
+    lines = ["## Contents", ""]
+    for folder, _section_id, count in _folder_anchor_map(report):
+        lines.append(f"- {_folder_display_name(folder)} ({count})")
+    if report.undated:
+        lines.append("- Undated / needs review")
+    lines.append("")
+    return lines
+
+
+def _render_run_details_md(report: DigestReport) -> list[str]:
+    lines = [
+        "## Digest generation details",
+        "",
+        "### Stats",
+        "",
+        "```",
+        render_stats_block(report.stats),
+        "```",
+        "",
+    ]
+    metadata_lines = _render_summary_metadata_md(report)
+    if metadata_lines:
+        lines.extend(metadata_lines)
+    return lines
+
+
+def _hidden_link_cue_text(hidden_count: int) -> str:
+    return f"+{hidden_count} more links in original"
+
+
 def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
@@ -240,15 +437,27 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     if entry.summary:
         lines.append(entry.summary)
         lines.append("")
+    hidden_count = len(bundle.hidden_links)
     if bundle.main_links:
         lines.append("**Key links:**")
         for link in bundle.main_links:
             lines.append(render_link_markdown(link))
+        if hidden_count > 0:
+            lines.append(_hidden_link_cue_text(hidden_count))
+        lines.append("")
+    elif hidden_count > 0:
+        lines.append(_hidden_link_cue_text(hidden_count))
         lines.append("")
     if bundle.other_links:
-        lines.append("**Other links:**")
+        other_heading = "**Other links:**"
+        if hidden_count > 0 and not bundle.main_links:
+            other_heading = f"**Other links ({_hidden_link_cue_text(hidden_count)}):**"
+        lines.append(other_heading)
         for link in bundle.other_links:
             lines.append(render_link_markdown(link))
+        lines.append("")
+    elif hidden_count > 0 and not bundle.main_links:
+        lines.append("**Other links:**")
         lines.append("")
     return "\n".join(lines)
 
@@ -265,14 +474,8 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
         "",
         f"_Week of {ws} to {we} · {total} newsletters_",
         "",
-        "## Stats",
-        "",
-        "```",
-        render_stats_block(report.stats),
-        "```",
-        "",
     ]
-    lines.extend(_render_summary_metadata_md(report))
+    lines.extend(_render_toc_md(report))
     for folder, entries in sorted(report.dated_by_folder.items()):
         lines.append(f"## {_folder_display_name(folder)}")
         lines.append("")
@@ -283,10 +486,14 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
         lines.append("")
         for entry in report.undated:
             lines.append(_render_entry_md(entry, max_display_links))
+    lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
+def _render_entry_html(
+    entry: DigestEntry,
+    max_display_links: int,
+) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
     link_items = (
@@ -303,79 +510,137 @@ def _render_entry_html(entry: DigestEntry, max_display_links: int) -> str:
         link_items, max_main=max_main, max_other=max_other
     )
     summary_line = (
-        f"{html_module.escape(p.subject)} — {html_module.escape(_display_sender(p.sender))} — "
-        f"{html_module.escape(_format_date(p.date_parsed))} — "
-        f"{_format_read_time(p.read_time_minutes)} — {ntype}"
+        f"<strong>{html_module.escape(p.subject)}</strong> — "
+        f"{html_module.escape(_display_sender(p.sender))} — "
+        f"{_format_read_time(p.read_time_minutes)}"
     )
-    parts = [f"<details><summary>{summary_line}</summary><div class='card-body'>"]
+    parts = [
+        "<details class='newsletter-card' data-newsletter-card>"
+        f"<summary>{summary_line}</summary><div class='card-body'>"
+    ]
     parts.append(
-        f"<p><strong>Folder:</strong> {html_module.escape(_folder_display_name(p.folder_name))}</p>"
+        f"<p class='item-type'>{html_module.escape(_format_newsletter_type(ntype))}</p>"
     )
     if entry.summary:
         parts.append(
             f"<div class='summary'>{_render_summary_html(entry.summary)}</div>"
         )
+    hidden_count = len(bundle.hidden_links)
+    hidden_cue = (
+        f"<p class='hidden-link-cue'>{html_module.escape(_hidden_link_cue_text(hidden_count))}</p>"
+        if hidden_count > 0
+        else ""
+    )
     if bundle.main_links:
         parts.append("<p><strong>Key links:</strong></p>")
         parts.append("<ul>")
         for link in bundle.main_links:
             parts.append(render_link_html(link))
         parts.append("</ul>")
+        if hidden_count > 0:
+            parts.append(hidden_cue)
+    elif hidden_count > 0:
+        parts.append(hidden_cue)
     if bundle.other_links:
-        parts.append("<details class='other-links'><summary>Other links</summary><ul>")
+        other_summary = "Other links"
+        if hidden_count > 0 and not bundle.main_links:
+            other_summary = (
+                f"Other links ({_hidden_link_cue_text(hidden_count)})"
+            )
+        parts.append(
+            f"<details class='other-links'><summary>{html_module.escape(other_summary)}</summary><ul>"
+        )
         for link in bundle.other_links:
             parts.append(render_link_html(link))
         parts.append("</ul></details>")
+    elif hidden_count > 0 and not bundle.main_links:
+        parts.append(
+            "<details class='other-links'><summary>Other links</summary></details>"
+        )
     parts.append("</div></details>")
     return "\n".join(parts)
 
 
+_EXPAND_COLLAPSE_SCRIPT = """<script>
+document.getElementById('expand-all-cards')?.addEventListener('click', function () {
+  document.querySelectorAll('details.newsletter-card').forEach(function (el) { el.open = true; });
+});
+document.getElementById('collapse-all-cards')?.addEventListener('click', function () {
+  document.querySelectorAll('details.newsletter-card').forEach(function (el) { el.open = false; });
+});
+</script>"""
+
+
 def render_html(report: DigestReport, max_display_links: int) -> str:
-    gen_date = report.generated_at.strftime("%Y-%m-%d")
-    ws = report.window_start.strftime("%Y-%m-%d")
-    we = report.window_end.strftime("%Y-%m-%d")
+    window_label = _format_window_range(report.window_start, report.window_end)
     total = report.stats.dated_included + report.stats.undated_needing_review
+    anchor_map = _folder_anchor_map(report)
     body_parts = [
         "<!DOCTYPE html>",
         "<html lang='en'><head><meta charset='utf-8'>",
-        f"<title>{ROLLUP_TITLE} — {gen_date}</title>",
+        f"<title>{ROLLUP_TITLE} — {window_label}</title>",
         f"<link rel='icon' href='{FAVICON_FILENAME}' type='image/x-icon'>",
         "<style>",
         "body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;line-height:1.5;}",
-        ".rollup-header{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;}",
-        ".rollup-logo{height:48px;width:auto;border-radius:6px;}",
-        "details{margin:1rem 0;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;}",
-        "summary{cursor:pointer;font-weight:600;}",
-        "#undated{border-color:#c90;background:#fffbe6;}",
+        ".rollup-header{margin-bottom:0.5rem;}",
+        ".rollup-logo{height:120px;width:auto;border-radius:6px;}",
+        ".rollup-subhead{margin:0.25rem 0 1rem;font-size:1.05rem;color:#444;}",
+        ".rollup-toc{margin:1rem 0;}",
+        ".rollup-toc ul{margin:0.35rem 0;padding-left:1.25rem;}",
+        ".rollup-controls{margin:0 0 0.5rem;font-size:0.9rem;}",
+        ".rollup-controls button{font:inherit;cursor:pointer;background:none;border:none;padding:0;color:#06c;text-decoration:underline;}",
+        "details.newsletter-card{margin:1rem 0;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;}",
+        "details.newsletter-card>summary{cursor:pointer;font-weight:400;}",
+        "details.newsletter-card>summary strong{font-weight:600;}",
+        "details.run-details{margin:1rem 0;border:none;padding:0;border-top:1px solid #eee;}",
+        "details.run-details>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}",
+        "details.other-links{border:none;padding:0;margin-top:0.5rem;}",
+        "details.other-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;}",
+        "#undated{border:1px solid #c90;border-radius:6px;padding:0.5rem 1rem;background:#fffbe6;}",
+        ".folder-byline{margin:-0.25rem 0 0.75rem;font-size:0.95rem;color:#555;}",
+        ".stats-section h2{font-size:1rem;margin:0 0 0.5rem;}",
         ".stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}",
+        ".hidden-link-cue{margin:0.25rem 0 0.5rem;font-size:0.9rem;color:#666;}",
         ".summary h3{font-size:1rem;margin:1rem 0 0.35rem;font-weight:600;}",
         ".summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}",
         ".summary li{margin:0.2rem 0;}",
         ".summary p{margin:0.5rem 0;}",
         ".link-domain{color:#666;font-size:0.9em;}",
-        ".other-links{border:none;padding:0;margin-top:0.5rem;}",
+        ".item-type{margin:0 0 0.75rem;font-size:0.9rem;color:#666;}",
+        _folder_accent_css(),
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
         ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",
         "</style></head><body>",
         "<header class='rollup-header'>",
         f"<img class='rollup-logo' src='{LOGO_FILENAME}' alt='{ROLLUP_TITLE} logo'>",
-        f"<h1>{ROLLUP_TITLE} — {gen_date}</h1>",
         "</header>",
-        f"<p><em>Week of {ws} to {we} · {total} newsletters</em></p>",
-        f"<div class='stats'>{html_module.escape(render_stats_block(report.stats))}</div>",
-        _render_summary_metadata_html(report),
+        f"<p class='rollup-subhead'><em>{html_module.escape(window_label)} · {total} newsletters</em></p>",
+        _render_toc_html(anchor_map, include_undated=bool(report.undated)),
     ]
+    section_ids = {folder: section_id for folder, section_id, _ in anchor_map}
     for folder, entries in sorted(report.dated_by_folder.items()):
+        section_id = section_ids[folder]
+        accent_class = _folder_accent_class(folder)
+        sorted_entries = _sort_entries_by_read_time(entries)
         body_parts.append(
+            f"<section id='{html_module.escape(section_id)}' "
+            f"class='folder-section {accent_class}'>"
             f"<h2>{html_module.escape(_folder_display_name(folder))}</h2>"
+            f"{_render_section_byline_html(entries)}"
         )
-        for entry in entries:
-            body_parts.append(_render_entry_html(entry, max_display_links))
-    if report.undated:
-        body_parts.append("<section id='undated'><h2>Undated / needs review</h2>")
-        for entry in report.undated:
+        for entry in sorted_entries:
             body_parts.append(_render_entry_html(entry, max_display_links))
         body_parts.append("</section>")
+    if report.undated:
+        body_parts.append(
+            "<section id='undated'><h2>Undated / needs review</h2>"
+            f"{_render_section_byline_html(report.undated)}"
+        )
+        for entry in _sort_entries_by_read_time(report.undated):
+            body_parts.append(_render_entry_html(entry, max_display_links))
+        body_parts.append("</section>")
+    body_parts.append(_render_run_details_html(report))
+    body_parts.append(_EXPAND_COLLAPSE_SCRIPT)
     body_parts.append("</body></html>")
     return "\n".join(body_parts)
 

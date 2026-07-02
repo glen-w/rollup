@@ -17,6 +17,10 @@ source .venv/bin/activate
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
 
+**Default digest mode** needs no Ollama server and makes no network calls. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
+
+If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
+
 ## Inventory
 
 Discover mbox folders and message counts (read-only; no body parsing):
@@ -28,22 +32,22 @@ python -m rollup inventory --json-out ./output/inventory.json
 python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
 ```
 
-## Digest without Ollama
+## Digest without Ollama (default)
 
-Preview and generate digests without network calls:
+Preview and generate digests with no Ollama server and no network calls. `--no-ollama` is optional — it is the default when neither `--ollama` nor `--no-ollama` is passed.
 
 ```bash
-python -m rollup digest --no-ollama
-python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama
-python -m rollup digest --lookback-days 7 --no-ollama
+python -m rollup digest
+python -m rollup digest --root tests/fixtures/Newsletters.sbd
+python -m rollup digest --lookback-days 7
 python -m rollup digest --dry-run --root tests/fixtures/Newsletters.sbd
-python -m rollup digest --folder tech --exclude-folder hoops --no-ollama
-python -m rollup digest --include-seen-undated --no-ollama
+python -m rollup digest --folder tech --exclude-folder hoops
+python -m rollup digest --include-seen-undated
 ```
 
 ## Digest with Ollama (recommended full run)
 
-Requires `pip install -e ".[ollama]"` and a running local Ollama server.
+Requires a running local Ollama server (`--ollama` enables network calls to loopback by default).
 
 **Recommended full run** (all folders, 7-day lookback, per-type model routing):
 
@@ -128,26 +132,27 @@ Incremental checks before a full live digest:
 
 ```bash
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
-python -m rollup digest --root tests/fixtures/Newsletters.sbd --no-ollama
+python -m rollup digest --root tests/fixtures/Newsletters.sbd
 python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
-python -m rollup digest --no-ollama --folder hoops
-python -m rollup digest --no-ollama --folder tech
-python -m rollup digest --no-ollama
+python -m rollup digest --folder hoops
+python -m rollup digest --folder tech
+python -m rollup digest
 python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
 python -m rollup digest --ollama --summary-routing-report
 ```
+
+Explicit `--no-ollama` is equivalent to omitting both `--ollama` and `--no-ollama`.
 
 Optional gitignored local mail copy:
 
 ```bash
 cp -R /Users/89298/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
-python -m rollup digest --root ./fixtures/Newsletters.sbd --no-ollama
+python -m rollup digest --root ./fixtures/Newsletters.sbd
 ```
 
 ## Ollama validation sequence
 
 ```bash
-pip install -e ".[ollama]"
 python -m rollup digest --list-summary-profiles
 python -m rollup digest --list-newsletter-types
 python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report

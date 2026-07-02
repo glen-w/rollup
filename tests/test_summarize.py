@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +13,7 @@ from rollup.filter import make_digest_entry
 from rollup.models import ClassifiedMessage, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.summarize import (
+    PROMPTS_DIR,
     PROMPT_VERSION,
     OllamaError,
     apply_summaries,
@@ -29,7 +29,6 @@ from rollup.summarize import (
 from rollup.summary_plan import SummaryCliOptions, resolve_summary_plan
 from rollup.summary_profiles import get_builtin_summary_profile_set
 
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 COMMON_SNIPPET = (PROMPTS_DIR / "_common.txt").read_text(encoding="utf-8").strip()[:40]
 
 NEWSLETTER_TYPES = (
@@ -175,7 +174,6 @@ def test_build_prompt_all_types(newsletter_type: str) -> None:
 
 @patch("requests.get")
 def test_check_ollama_available_model_found(mock_get: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
     mock_get.return_value.raise_for_status = MagicMock()
     ok, msg = check_ollama_available(
@@ -189,7 +187,6 @@ def test_check_ollama_available_model_found(mock_get: MagicMock) -> None:
 
 @patch("requests.get")
 def test_check_ollama_available_model_missing(mock_get: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "other:7b"}]}
     mock_get.return_value.raise_for_status = MagicMock()
     ok, msg = check_ollama_available(
@@ -200,7 +197,6 @@ def test_check_ollama_available_model_missing(mock_get: MagicMock) -> None:
 
 @patch("requests.get")
 def test_check_ollama_available_bare_name_matches_tagged(mock_get: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:latest"}]}
     mock_get.return_value.raise_for_status = MagicMock()
     ok, _ = check_ollama_available("http://localhost:11434/api/generate", "llama3.2")
@@ -209,7 +205,6 @@ def test_check_ollama_available_bare_name_matches_tagged(mock_get: MagicMock) ->
 
 @patch("requests.get")
 def test_check_ollama_available_rejects_partial_name_match(mock_get: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_get.return_value.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
     mock_get.return_value.raise_for_status = MagicMock()
     ok, _ = check_ollama_available("http://localhost:11434/api/generate", "llama")
@@ -218,7 +213,6 @@ def test_check_ollama_available_rejects_partial_name_match(mock_get: MagicMock) 
 
 @patch("requests.post")
 def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_post.return_value.json.return_value = {"response": "Bullet summary"}
     mock_post.return_value.raise_for_status = MagicMock()
     entry = _entry()
@@ -241,7 +235,6 @@ def test_summarize_message_posts_generate_payload(mock_post: MagicMock) -> None:
 
 @patch("requests.post")
 def test_summarize_message_streams_when_not_quiet(mock_post: MagicMock) -> None:
-    pytest.importorskip("requests")
     mock_post.return_value.raise_for_status = MagicMock()
     mock_post.return_value.iter_lines.return_value = [
         json.dumps({"response": "Bullet ", "done": False}),

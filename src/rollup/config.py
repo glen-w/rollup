@@ -41,7 +41,7 @@ class Config:
     allow_remote_ollama: bool
     summary_profile: str | None
     summary_variants: tuple[str, ...]
-    summary_type_routing: bool
+    summary_type_routing: bool | None
     summary_profile_set_path: str | None
     export_summary_profile_set_path: str | None
     list_summary_profiles: bool

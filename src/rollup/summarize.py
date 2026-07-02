@@ -23,7 +23,7 @@ from rollup.models import DigestSummaryMetadata, DigestSummaryRouteStat
 
 logger = logging.getLogger(__name__)
 
-PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROMPT_VERSION = 2
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -137,10 +137,7 @@ def _ollama_model_matches(requested: str, available: str) -> bool:
 
 def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
     """Check Ollama tags endpoint. Returns (ok, message)."""
-    try:
-        import requests
-    except ImportError:
-        return False, "requests not installed; pip install -e '.[ollama]'"
+    import requests
 
     parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:

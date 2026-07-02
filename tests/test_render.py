@@ -12,6 +12,7 @@ from rollup.classify import classify_message
 from rollup.config import compute_date_window
 from rollup.filter import make_digest_entry
 from rollup.models import (
+    DigestEntry,
     DigestReport,
     DigestStats,
     DigestSummaryMetadata,
@@ -21,6 +22,11 @@ from rollup.models import (
 from rollup.parse import compute_content_hash
 from rollup.models import ParsedMessage
 from rollup.render import (
+    _folder_section_id,
+    _format_newsletter_type,
+    _format_section_byline,
+    _format_window_range,
+    _sort_entries_by_read_time,
     atomic_write_digest,
     cleanup_stale_temps,
     render_html,
@@ -103,7 +109,10 @@ def test_render_markdown_contains_subject() -> None:
     md = render_markdown(_report(), 8)
     assert "Test Subject" in md
     assert "## 💻 tech" in md
+    assert "## Digest generation details" in md
     assert "## Summary Routing" in md
+    assert md.index("## Contents") < md.index("## 💻 tech")
+    assert md.index("## 💻 tech") < md.index("## Digest generation details")
     assert "# Rollup —" in md
     assert "![Rollup](rollup_logo.png)" in md
 
@@ -114,7 +123,8 @@ def test_render_html_includes_branding() -> None:
     assert "rollup_logo.png" in html
     assert "favicon.ico" in html
     assert "class='rollup-logo'" in html
-    assert "<h1>Rollup —" in html
+    assert "height:120px" in html
+    assert "<h1>" not in html
 
 
 def test_write_branding_assets(tmp_path: Path) -> None:
@@ -142,9 +152,10 @@ def test_render_uses_folder_and_read_time_emojis() -> None:
 def test_render_html_escapes_content() -> None:
     report = _report()
     html = render_html(report, 8)
-    assert "<script>" not in html
+    assert "<script>alert" not in html
     assert "Test Subject" in html
-    assert "Summary Routing" in html
+    assert "AI info" in html
+    assert "<details class='run-details'>" in html
 
 
 def test_render_html_title_bar_omits_sender_email() -> None:
@@ -183,6 +194,28 @@ def test_render_html_title_bar_omits_sender_email() -> None:
     html = render_html(report, 8)
     assert "Chris Dalla Riva" in html
     assert "chrisdallariva@substack.com" not in html
+    assert "<strong>Welcome to Can&#x27;t Get Much Higher!</strong>" in html
+    assert " — 20" not in html.split("<summary>")[1].split("</summary>")[0]
+
+
+def test_format_window_range_same_month() -> None:
+    start = datetime(2026, 7, 23, tzinfo=datetime.now().astimezone().tzinfo)
+    end = datetime(2026, 7, 30, tzinfo=start.tzinfo)
+    assert _format_window_range(start, end) == "23-30 July 2026"
+
+
+def test_format_window_range_cross_month() -> None:
+    tz = datetime.now().astimezone().tzinfo
+    start = datetime(2026, 7, 30, tzinfo=tz)
+    end = datetime(2026, 8, 6, tzinfo=tz)
+    assert _format_window_range(start, end) == "30 July - 6 August 2026"
+
+
+def test_render_html_uses_window_range_subhead() -> None:
+    html = render_html(_report(), 8)
+    assert "Week of" not in html
+    assert "class='rollup-subhead'" in html
+    assert "newsletters</em></p>" in html
 
 
 def test_stats_block() -> None:
@@ -387,7 +420,91 @@ def test_render_clickable_links() -> None:
     html = render_html(_report(), 8)
     assert "[Example article](https://example.com)" in md
     assert 'href="https://example.com"' in html
+    assert 'target="_blank"' in html
+    assert 'rel="noopener noreferrer"' in html
     assert ">Example article<" in html
+
+
+def test_render_html_item_type_in_card_body() -> None:
+    report = _report()
+    html = render_html(report, 8)
+    ntype = report.dated_by_folder["tech"][0].classified.newsletter_type
+    summary = html.split("<summary>")[1].split("</summary>")[0]
+    assert ntype not in summary
+    assert (
+        f"<p class='item-type'>{_format_newsletter_type(ntype)}</p>" in html
+    )
+    assert "<strong>Folder:</strong>" not in html
+
+
+def test_format_newsletter_type() -> None:
+    assert _format_newsletter_type("short_update") == "Short update"
+    assert _format_newsletter_type("link_roundup") == "Link roundup"
+
+
+def test_render_html_folder_accent_classes() -> None:
+    html = render_html(_report(), 8)
+    assert "class='folder-section folder-accent-tech'" in html
+    assert ".folder-accent-tech>h2{border-left:4px solid #4a7fd4" in html
+    assert ".folder-accent-tech .newsletter-card{border-color:#4a7fd4" in html
+
+
+def test_render_html_sorts_entries_by_read_time() -> None:
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+
+    def make_entry(subject: str, minutes: int, message_key: str) -> DigestEntry:
+        body = f"{subject} body"
+        parsed = ParsedMessage(
+            message_key=message_key,
+            content_hash=compute_content_hash(body),
+            folder_name="tech",
+            relative_folder_path="tech",
+            subject=subject,
+            sender="a@example.com",
+            date_raw="",
+            date_parsed=now,
+            body_text=body,
+            body_html=None,
+            html_heading_count=0,
+            html_link_count=0,
+            html_section_break_count=0,
+            links=(),
+            link_items=(),
+            read_time_minutes=minutes,
+            preview=body,
+            parse_warnings=(),
+        )
+        return make_digest_entry(classify_message(parsed), no_ollama=True)
+
+    entries = (
+        make_entry("Five min read", 5, "k5"),
+        make_entry("One min read", 1, "k1"),
+        make_entry("Three min read", 3, "k3"),
+    )
+    assert [e.classified.parsed.subject for e in _sort_entries_by_read_time(entries)] == [
+        "One min read",
+        "Three min read",
+        "Five min read",
+    ]
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": entries},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    section_start = html.index("id='folder-tech'")
+    section_end = html.index("</section>", section_start)
+    section_html = html[section_start:section_end]
+    assert (
+        section_html.index("One min read")
+        < section_html.index("Three min read")
+        < section_html.index("Five min read")
+    )
 
 
 def test_render_hides_raw_url_as_visible_text() -> None:
@@ -604,6 +721,305 @@ def test_render_other_links_in_secondary_section_only() -> None:
     assert "**Other links:**" in md
     assert "View calendar event" in md
     assert "<summary>Other links</summary>" in html
+
+
+def _multi_folder_report() -> DigestReport:
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+
+    def make_entry(
+        folder: str,
+        subject: str,
+        message_key: str,
+        date_parsed: datetime | None,
+    ) -> DigestEntry:
+        body = f"{subject} body"
+        parsed = ParsedMessage(
+            message_key=message_key,
+            content_hash=compute_content_hash(body),
+            folder_name=folder,
+            relative_folder_path=folder,
+            subject=subject,
+            sender="a@example.com",
+            date_raw="",
+            date_parsed=date_parsed,
+            body_text=body,
+            body_html=None,
+            html_heading_count=0,
+            html_link_count=0,
+            html_section_break_count=0,
+            links=(),
+            link_items=(),
+            read_time_minutes=1,
+            preview=body,
+            parse_warnings=(),
+        )
+        return make_digest_entry(classify_message(parsed), no_ollama=True)
+
+    enviro_entries = tuple(
+        make_entry("enviro", f"Enviro {index}", f"env-{index}", now - timedelta(days=index))
+        for index in range(3)
+    )
+    tech_entries = tuple(
+        make_entry("tech", f"Tech {index}", f"tech-{index}", now - timedelta(hours=index))
+        for index in range(2)
+    )
+    stats = DigestStats(
+        folders_scanned=2,
+        messages_parsed=5,
+        dated_included=5,
+        undated_needing_review=0,
+        skipped_outside_window=0,
+        skipped_seen_undated=0,
+        deduped_messages=0,
+        parse_errors=0,
+        summaries_ollama=0,
+        summaries_cache=0,
+        summaries_fallback=5,
+    )
+    return DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"enviro": enviro_entries, "tech": tech_entries},
+        undated=(),
+        stats=stats,
+    )
+
+
+def test_render_run_details_collapsed_by_default() -> None:
+    html = render_html(_report(), 8)
+    assert "<details class='run-details'>" in html
+    assert "<summary>Digest generation details</summary>" in html
+    assert "<h2>Stats</h2>" in html
+    assert "<div class='stats'>" in html
+    run_details_pos = html.index("<details class='run-details'>")
+    stats_pos = html.index("<h2>Stats</h2>")
+    assert run_details_pos < stats_pos
+    assert html.index("</details>", run_details_pos) > stats_pos
+    script_pos = html.index("<script>")
+    assert run_details_pos < script_pos
+
+
+def test_render_toc_lists_folders_with_counts() -> None:
+    report = _multi_folder_report()
+    html = render_html(report, 8)
+    assert "class='rollup-toc'" in html
+    assert "href='#folder-enviro'>🌲 enviro (3)" in html
+    assert "href='#folder-tech'>💻 tech (2)" in html
+
+
+def test_render_html_section_byline() -> None:
+    report = _multi_folder_report()
+    html = render_html(report, 8)
+    enviro_start = html.index("id='folder-enviro'")
+    enviro_end = html.index("</section>", enviro_start)
+    enviro_section = html[enviro_start:enviro_end]
+    assert "<p class='folder-byline'><em>3 newsletters, 3 minutes reading time</em></p>" in enviro_section
+    tech_start = html.index("id='folder-tech'")
+    tech_end = html.index("</section>", tech_start)
+    tech_section = html[tech_start:tech_end]
+    assert "<p class='folder-byline'><em>2 newsletters, 2 minutes reading time</em></p>" in tech_section
+
+
+def test_format_section_byline_singular() -> None:
+    assert _format_section_byline((_entry(),)) == "1 newsletter, 2 minutes reading time"
+
+
+def test_toc_counts_match_rendered_cards() -> None:
+    report = _multi_folder_report()
+    html = render_html(report, 8)
+    for folder, entries in report.dated_by_folder.items():
+        section_id = _folder_section_id(folder)
+        section_start = html.index(f"id='{section_id}'")
+        section_end = html.index("</section>", section_start)
+        section_html = html[section_start:section_end]
+        assert section_html.count("data-newsletter-card") == len(entries)
+
+
+def test_folder_section_id_ignores_emoji_in_display_name() -> None:
+    assert _folder_section_id("enviro") == "folder-enviro"
+    assert _folder_section_id("tech") == "folder-tech"
+
+
+def test_folder_section_ids_are_stable() -> None:
+    report = _multi_folder_report()
+    html_one = render_html(report, 8)
+    html_two = render_html(report, 8)
+    assert html_one.count("id='folder-enviro'") == 1
+    assert html_one.count("id='folder-tech'") == 1
+    assert "id='folder-enviro'" in html_two
+    assert "id='folder-tech'" in html_two
+
+
+def test_newsletter_cards_have_marker_class() -> None:
+    html = render_html(_report(), 8)
+    assert "class='newsletter-card' data-newsletter-card" in html
+
+
+def test_expand_collapse_controls_present() -> None:
+    html = render_html(_report(), 8)
+    assert "id='expand-all-cards'" in html
+    assert "id='collapse-all-cards'" in html
+    assert "aria-label='Expand all newsletter cards'" in html
+    script = html.split("<script>")[1].split("</script>")[0]
+    assert "querySelectorAll('details.newsletter-card')" in script
+    assert "run-details" not in script
+
+
+def test_all_newsletter_cards_closed_by_default() -> None:
+    report = _multi_folder_report()
+    html = render_html(report, 8)
+    assert "data-newsletter-card open" not in html
+    assert html.count("data-newsletter-card") == 5
+
+
+def test_render_markdown_minimal_toc_and_deferred_run_details() -> None:
+    md = render_markdown(_report(), 8)
+    assert "## Contents" in md
+    assert "- 💻 tech (1)" in md
+    assert "## Digest generation details" in md
+    assert "Folders scanned:" in md
+    assert md.index("## Contents") < md.index("## 💻 tech")
+    assert md.index("## 💻 tech") < md.index("## Digest generation details")
+
+
+def test_hidden_link_count_cue_when_trimmed() -> None:
+    parsed = ParsedMessage(
+        message_key="k-hidden",
+        content_hash=compute_content_hash("hidden body"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Hidden Links",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="hidden body",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=(
+            "https://example.com/post/1",
+            "https://example.com/post/2",
+            "https://example.com/post/3",
+            "https://example.com/post/4",
+            "https://example.com/post/5",
+            "https://example.com/post/6",
+            "https://example.com/post/7",
+            "https://example.com/post/8",
+            "https://example.com/post/9",
+            "https://example.com/post/10",
+            "https://example.com/post/11",
+        ),
+        link_items=tuple(
+            LinkItem(f"https://example.com/post/{index}", f"Article {index}", None, index)
+            for index in range(1, 12)
+        ),
+        read_time_minutes=1,
+        preview="hidden body",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    html = render_html(report, 8)
+    assert "hidden-link-cue" in html
+    assert "+3 more links in original" in html
+
+
+def test_no_hidden_link_cue_when_none_hidden() -> None:
+    html = render_html(_report(), 8)
+    assert "<p class='hidden-link-cue'>" not in html
+    assert "more links in original" not in html
+
+
+def test_hidden_link_cue_when_no_key_links() -> None:
+    parsed = ParsedMessage(
+        message_key="k-only-hidden",
+        content_hash=compute_content_hash("only hidden"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Only Hidden",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="only hidden",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=("http://www.w3.org/1999/xhtml",),
+        link_items=(LinkItem("http://www.w3.org/1999/xhtml", None, None, 0),),
+        read_time_minutes=1,
+        preview="only hidden",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    html = render_html(report, 8)
+    assert "<strong>Key links:</strong>" not in html
+    assert "+1 more links in original" in html
+    assert "<summary>Other links</summary>" in html
+
+
+def test_hidden_link_count_is_render_items_not_unique_destinations() -> None:
+    href = "https://example.com/article"
+    parsed = ParsedMessage(
+        message_key="k-dup-hidden",
+        content_hash=compute_content_hash("dup hidden"),
+        folder_name="tech",
+        relative_folder_path="tech",
+        subject="Dup Hidden",
+        sender="a@example.com",
+        date_raw="",
+        date_parsed=datetime.now().astimezone(),
+        body_text="dup hidden",
+        body_html=None,
+        html_heading_count=0,
+        html_link_count=0,
+        html_section_break_count=0,
+        links=(href, href, "http://www.w3.org/1999/xhtml"),
+        link_items=(
+            LinkItem(href, "Article A", None, 0),
+            LinkItem(href, "Article B", None, 1),
+            LinkItem("http://www.w3.org/1999/xhtml", None, None, 2),
+        ),
+        read_time_minutes=1,
+        preview="dup hidden",
+        parse_warnings=(),
+    )
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    base = _report()
+    report = DigestReport(
+        generated_at=base.generated_at,
+        lookback_days=base.lookback_days,
+        window_start=base.window_start,
+        window_end=base.window_end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=base.stats,
+    )
+    html = render_html(report, 8)
+    assert "+2 more links in original" in html
 
 
 def test_atomic_write_failure_cleans_partials(tmp_path: Path) -> None:

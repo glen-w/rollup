@@ -267,7 +267,7 @@ def resolve_summary_plan(
         )
 
     if cli_options.summary_type_routing:
-        jobs = []
+        route_jobs: list[SummaryJob] = []
         routes_used: dict[str, str] = {}
         for entry in entries:
             profile_name = _resolve_routed_profile_name(
@@ -275,12 +275,12 @@ def resolve_summary_plan(
             )
             profile = _resolve_profile(profile_set, profile_name)
             routes_used[entry.classified.newsletter_type] = profile_name
-            jobs.append(_build_job(entry, profile_name, profile, "default"))
+            route_jobs.append(_build_job(entry, profile_name, profile, "default"))
         return SummaryPlan(
             mode="type_routed",
             selected_profiles=tuple(sorted(set(routes_used.values()))),
             type_routes_used=routes_used,
-            jobs_by_variant={"default": tuple(jobs)},
+            jobs_by_variant={"default": tuple(route_jobs)},
             output_variants=("default",),
         )
 

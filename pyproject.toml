@@ -11,11 +11,11 @@ requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.12",
     "html2text>=2024.2.26",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
-ollama = ["requests>=2.31"]
-dev = ["pytest>=7.4"]
+dev = ["pytest>=7.4", "types-requests>=2.31"]
 
 [project.scripts]
 rollup = "rollup.cli:main"
@@ -24,7 +24,7 @@ rollup = "rollup.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rollup = ["assets/*"]
+rollup = ["assets/*", "prompts/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

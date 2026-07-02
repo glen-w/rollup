@@ -54,11 +54,10 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
     """Classify a parsed message using deterministic heuristics."""
     try:
         if not parsed.body_text.strip():
-            scores = (("unclassified", 1.0),)
             return ClassifiedMessage(
                 parsed=parsed,
                 newsletter_type="unclassified",
-                classification_scores=scores,
+                classification_scores=(("unclassified", 1.0),),
             )
 
         word_count = _word_count(parsed.body_text)

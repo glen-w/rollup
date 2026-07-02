@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rollup.links import (
     clean_anchor_text,
+    clean_href,
     classify_link,
     classify_links,
     domain_for_display,
@@ -205,3 +206,82 @@ def test_classify_links_preserves_original_href() -> None:
     href = "https://example.com/post?token=secret&utm_source=email"
     classified = classify_links([LinkItem(href, "Open", None, 0)])
     assert classified[0].href == href
+
+
+def test_clean_href_strips_trailing_paren_and_bracket() -> None:
+    assert clean_href("https://x.com/a).") == "https://x.com/a"
+    assert clean_href("https://x.com/a]") == "https://x.com/a"
+
+
+def test_clean_href_preserves_valid_path_and_extension() -> None:
+    assert clean_href("https://x.com/report.pdf") == "https://x.com/report.pdf"
+    assert clean_href("https://en.wikipedia.org/wiki/Foo_(bar)") == (
+        "https://en.wikipedia.org/wiki/Foo_(bar)"
+    )
+
+
+def test_clean_href_strips_trailing_period_from_prose_capture() -> None:
+    assert clean_href("https://example.com/foo.") == "https://example.com/foo"
+
+
+def test_clean_href_preserves_percent_encoded_paths() -> None:
+    href = "https://x.com/path%2Fto%29file"
+    assert clean_href(href) == href
+
+
+def test_clean_href_preserves_percent_encoded_query_values() -> None:
+    href = "https://x.com/search?q=hello%20world"
+    assert clean_href(href) == href
+
+
+def test_classify_links_applies_clean_href() -> None:
+    classified = classify_links(
+        [LinkItem("https://example.com/article).", "Open", None, 0)]
+    )
+    assert classified[0].href == "https://example.com/article"
+
+
+def test_dedup_prefers_shorter_normalised_query() -> None:
+    bundle = prepare_links_for_render(
+        [
+            LinkItem(
+                "https://example.com/story?utm_source=email", "Tracked", None, 0
+            ),
+            LinkItem("https://example.com/story", "Clean", None, 1),
+        ],
+        max_main=5,
+        max_other=5,
+    )
+    assert len(bundle.main_links) == 1
+    assert bundle.main_links[0].href == "https://example.com/story"
+    assert any(
+        link.hidden_reason == "duplicate_for_display" for link in bundle.hidden_links
+    )
+
+
+def test_dedup_prefers_shorter_url_when_dedupe_key_matches() -> None:
+    bundle = prepare_links_for_render(
+        [
+            LinkItem(
+                "https://substack.com/app-link/post?publication_id=1&post_id=2&token=abc",
+                None,
+                None,
+                0,
+            ),
+            LinkItem(
+                "https://substack.com/app-link/post?publication_id=1&post_id=2",
+                None,
+                None,
+                1,
+            ),
+        ],
+        max_main=5,
+        max_other=5,
+    )
+    assert len(bundle.main_links) == 1
+    assert bundle.main_links[0].href == (
+        "https://substack.com/app-link/post?publication_id=1&post_id=2"
+    )
+    assert any(
+        link.hidden_reason == "duplicate_for_display" for link in bundle.hidden_links
+    )

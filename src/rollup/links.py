@@ -14,11 +14,23 @@ TRACKING_QUERY_PARAMS = {
     "utm_campaign",
     "utm_content",
     "utm_term",
+    "utm_id",
     "token",
     "r",
     "ref",
     "source",
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "igshid",
 }
+
+TRAILING_URL_PUNCT_CHARS = ".,;:!?'\"…)]}\"'"
+_FILE_EXT_RE = re.compile(
+    r"\.(pdf|html?|xml|json|png|jpe?g|gif|webp|svg|txt|docx?|xlsx?)$",
+    re.IGNORECASE,
+)
 
 MEANINGFUL_LABEL_MAX_LEN = 80
 PRIMARY_CATEGORIES: tuple[LinkCategory, ...] = (
@@ -97,6 +109,28 @@ def clean_anchor_text(text: str | None) -> str | None:
     if cleaned.lower() in GENERIC_ANCHOR_TEXT:
         return None
     return cleaned
+
+
+def clean_href(href: str) -> str:
+    """Strip prose-captured trailing punctuation from a URL without altering encodings."""
+    href = href.strip()
+    if not href:
+        return href
+    while href:
+        path = urlparse(href).path
+        if _FILE_EXT_RE.search(path):
+            break
+        last = href[-1]
+        if last == ")":
+            if href.count("(") < href.count(")"):
+                href = href[:-1]
+                continue
+            break
+        if last in TRAILING_URL_PUNCT_CHARS:
+            href = href[:-1]
+            continue
+        break
+    return href
 
 
 def is_raw_url_text(text: str | None) -> bool:
@@ -324,25 +358,51 @@ def label_link(
     return "Open link"
 
 
+def _is_tracking_wrapper_href(href: str) -> bool:
+    parsed = urlparse(href.strip())
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    if host.endswith("sendgrid.net") and path.startswith("/ls/click"):
+        return True
+    if host.endswith("substack.com") and (
+        path.startswith("/c/") or "redirect" in path
+    ):
+        return True
+    return False
+
+
+def _href_display_score(link: ClassifiedLink) -> tuple[int, int, int, int]:
+    wrapper_penalty = 1 if _is_tracking_wrapper_href(link.href) else 0
+    query_len = len(urlparse(link.href).query)
+    return (link.priority, wrapper_penalty, query_len, link.source_index)
+
+
+def _hidden_link(link: ClassifiedLink, reason: str) -> ClassifiedLink:
+    return ClassifiedLink(
+        **{**link.__dict__, "hidden_reason": reason, "is_main": False}
+    )
+
+
 def classify_links(links: list[LinkItem]) -> list[ClassifiedLink]:
     classified: list[ClassifiedLink] = []
     for item in links:
-        category = classify_link(item.href, text=item.text, context=item.context)
+        href = clean_href(item.href)
+        category = classify_link(href, text=item.text, context=item.context)
         classified.append(
             ClassifiedLink(
-                href=item.href,
+                href=href,
                 text=item.text,
                 context=item.context,
                 source_index=item.source_index,
                 label=label_link(
-                    item.href, text=item.text, category=category, context=item.context
+                    href, text=item.text, category=category, context=item.context
                 ),
-                domain=domain_for_display(item.href),
+                domain=domain_for_display(href),
                 category=category,
                 priority=PRIORITY_BY_CATEGORY[category],
                 is_main=False,
                 hidden_reason=None,
-                dedupe_key=dedupe_key_for_display(item.href, category=category),
+                dedupe_key=dedupe_key_for_display(href, category=category),
             )
         )
     return classified
@@ -352,48 +412,40 @@ def prepare_links_for_render(
     links: list[LinkItem], max_main: int = 5, max_other: int = 10
 ) -> LinkRenderBundle:
     classified = classify_links(links)
-    main_links: list[ClassifiedLink] = []
-    other_links: list[ClassifiedLink] = []
     hidden_links: list[ClassifiedLink] = []
-    seen_display_keys: set[str] = set()
+    candidates: list[ClassifiedLink] = []
 
     for link in sorted(classified, key=lambda item: (item.priority, item.source_index)):
         if link.category in HIDDEN_CATEGORIES:
-            hidden_links.append(
-                ClassifiedLink(
-                    **{
-                        **link.__dict__,
-                        "hidden_reason": link.category,
-                        "is_main": False,
-                    }
-                )
-            )
+            hidden_links.append(_hidden_link(link, link.category))
             continue
+        candidates.append(link)
 
-        if link.dedupe_key in seen_display_keys:
-            hidden_links.append(
-                ClassifiedLink(
-                    **{
-                        **link.__dict__,
-                        "hidden_reason": "duplicate_for_display",
-                        "is_main": False,
-                    }
-                )
-            )
+    best_by_key: dict[str, ClassifiedLink] = {}
+    for link in candidates:
+        key = link.dedupe_key
+        existing = best_by_key.get(key)
+        if existing is None:
+            best_by_key[key] = link
             continue
+        if _href_display_score(link) < _href_display_score(existing):
+            hidden_links.append(_hidden_link(existing, "duplicate_for_display"))
+            best_by_key[key] = link
+        else:
+            hidden_links.append(_hidden_link(link, "duplicate_for_display"))
 
-        seen_display_keys.add(link.dedupe_key)
+    main_links: list[ClassifiedLink] = []
+    other_links: list[ClassifiedLink] = []
+    for link in sorted(
+        best_by_key.values(), key=lambda item: (item.priority, item.source_index)
+    ):
         if link.category in PRIMARY_CATEGORIES and len(main_links) < max_main:
             main_links.append(ClassifiedLink(**{**link.__dict__, "is_main": True}))
             continue
         if len(other_links) < max_other:
             other_links.append(ClassifiedLink(**{**link.__dict__, "is_main": False}))
             continue
-        hidden_links.append(
-            ClassifiedLink(
-                **{**link.__dict__, "hidden_reason": "over_limit", "is_main": False}
-            )
-        )
+        hidden_links.append(_hidden_link(link, "over_limit"))
 
     return LinkRenderBundle(
         main_links=tuple(main_links),
@@ -411,6 +463,10 @@ def render_link_html(link: ClassifiedLink) -> str:
     href = html.escape(link.href, quote=True)
     label = html.escape(link.label)
     domain = html.escape(link.domain) if link.domain else None
+    anchor_attrs = 'target="_blank" rel="noopener noreferrer"'
     if domain and not link.label.endswith(domain):
-        return f'<li><a href="{href}" rel="noopener">{label}</a> <span class="link-domain">· {domain}</span></li>'
-    return f'<li><a href="{href}" rel="noopener">{label}</a></li>'
+        return (
+            f'<li><a href="{href}" {anchor_attrs}>{label}</a> '
+            f'<span class="link-domain">· {domain}</span></li>'
+        )
+    return f'<li><a href="{href}" {anchor_attrs}>{label}</a></li>'

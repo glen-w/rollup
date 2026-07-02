@@ -1,0 +1,9 @@
+include README.md
+include pyproject.toml
+graft src
+prune tests
+prune fixtures
+prune output
+prune state
+prune logs
+global-exclude __pycache__ *.py[cod] .pytest_cache

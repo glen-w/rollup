@@ -14,8 +14,9 @@ from pathlib import Path
 
 import html2text
 from bs4 import BeautifulSoup
-from bs4.element import NavigableString
+from bs4.element import NavigableString, Tag
 
+from rollup.links import clean_href
 from rollup.models import LinkItem, ParsedMessage
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,12 @@ def _extract_links_from_html(html: str) -> list[LinkItem]:
     soup = BeautifulSoup(html, "html.parser")
     links: list[LinkItem] = []
     for source_index, tag in enumerate(soup.find_all("a", href=True)):
-        href = tag["href"].strip()
+        if not isinstance(tag, Tag):
+            continue
+        href_attr = tag.get("href")
+        if not href_attr:
+            continue
+        href = clean_href(str(href_attr).strip())
         if href.startswith("http"):
             links.append(
                 LinkItem(
@@ -172,7 +178,7 @@ def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[Li
             continue
         text = str(node)
         for match in URL_RE.finditer(text):
-            href = match.group(0)
+            href = clean_href(match.group(0))
             links.append(
                 LinkItem(
                     href=href,
@@ -190,7 +196,7 @@ def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[Li
 def _extract_links_from_plain_text(text: str, start_index: int = 0) -> list[LinkItem]:
     links: list[LinkItem] = []
     for offset, match in enumerate(URL_RE.finditer(text)):
-        href = match.group(0)
+        href = clean_href(match.group(0))
         links.append(
             LinkItem(
                 href=href,

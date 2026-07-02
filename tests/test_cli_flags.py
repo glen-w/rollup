@@ -105,3 +105,24 @@ def test_digest_ollama_flag(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "no_ollama=False" in result.stderr
+
+
+def test_digest_warns_when_ollama_flags_ignored(tmp_path: Path) -> None:
+    result = _run(
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--no-ollama",
+        "--summary-profile",
+        "deep",
+        "--dry-run",
+        "--output-dir",
+        str(tmp_path / "output"),
+        "--state-dir",
+        str(tmp_path / "state"),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Ignoring --summary-profile" in result.stderr
+    assert "pass --ollama to enable" in result.stderr
