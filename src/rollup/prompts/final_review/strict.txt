@@ -1,0 +1,1 @@
+Profile: strict — flag all style drift, duplication, metadata mismatches, date wording inconsistencies, and clarity problems. Be thorough. Prefer reporting borderline issues as minor rather than omitting them.

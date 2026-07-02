@@ -17,6 +17,7 @@ from rollup.links import (
 )
 from rollup.models import LinkItem
 from rollup.models import DigestEntry, DigestReport, DigestStats
+from rollup.final_review import format_final_review_digest_summary
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +267,7 @@ def _render_summary_metadata_md(report: DigestReport) -> list[str]:
         return []
     if metadata.variant_name:
         lines = [
-            "## Summary Variant",
+            "### Summary variant",
             "",
             f"- **Profile:** {metadata.variant_name}",
             f"- **Models used:** {', '.join(metadata.models_used) or 'none'}",
@@ -275,7 +276,7 @@ def _render_summary_metadata_md(report: DigestReport) -> list[str]:
         ]
     else:
         lines = [
-            "## Summary Routing",
+            "### Summary routing",
             "",
             f"- **Mode:** {metadata.mode}",
             f"- **Profiles used:** {', '.join(metadata.profiles_used) or 'none'}",
@@ -297,7 +298,7 @@ def _render_summary_metadata_html(report: DigestReport) -> str:
     metadata = report.summary_metadata
     if metadata is None:
         return ""
-    title = "Summary Variant" if metadata.variant_name else "AI info"
+    title = "Summary variant" if metadata.variant_name else "Summary routing"
     items = []
     if metadata.variant_name:
         items.append(
@@ -333,19 +334,52 @@ def _render_summary_metadata_html(report: DigestReport) -> str:
             "<table><thead><tr><th>Type</th><th>Profile</th><th>Model</th><th>Count</th></tr></thead>"
             f"<tbody>{rows}</tbody></table>"
         )
-    return f"<section class='summary-metadata'><h2>{title}</h2><ul>{''.join(items)}</ul>{table}</section>"
+    return (
+        f"<section class='run-details-section summary-metadata'>"
+        f"<h3 class='run-details-heading'>{html_module.escape(title)}</h3>"
+        f"<ul>{''.join(items)}</ul>{table}</section>"
+    )
+
+
+def _render_final_review_md(report: DigestReport) -> list[str]:
+    result = report.final_review
+    if result is None:
+        return []
+    return [
+        "### Final review",
+        "",
+        "```",
+        format_final_review_digest_summary(result),
+        "```",
+        "",
+    ]
+
+
+def _render_final_review_html(report: DigestReport) -> str:
+    result = report.final_review
+    if result is None:
+        return ""
+    summary = html_module.escape(format_final_review_digest_summary(result))
+    return (
+        "<section class='run-details-section final-review'>"
+        "<h3 class='run-details-heading'>Final review</h3>"
+        f"<div class='stats'>{summary}</div>"
+        "</section>"
+    )
 
 
 def _render_run_details_html(report: DigestReport) -> str:
     metadata_html = _render_summary_metadata_html(report)
+    final_review_html = _render_final_review_html(report)
     return (
         "<details class='run-details'>"
         "<summary>Digest generation details</summary>"
-        "<section class='stats-section'>"
-        "<h2>Stats</h2>"
+        "<section class='run-details-section stats-section'>"
+        "<h3 class='run-details-heading'>Stats</h3>"
         f"<div class='stats'>{html_module.escape(render_stats_block(report.stats))}</div>"
         "</section>"
         f"{metadata_html}"
+        f"{final_review_html}"
         "</details>"
     )
 
@@ -403,6 +437,7 @@ def _render_run_details_md(report: DigestReport) -> list[str]:
     metadata_lines = _render_summary_metadata_md(report)
     if metadata_lines:
         lines.extend(metadata_lines)
+    lines.extend(_render_final_review_md(report))
     return lines
 
 
@@ -585,7 +620,8 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         "details.hidden-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;color:#666;}",
         "#undated{border:1px solid #c90;border-radius:6px;padding:0.5rem 1rem;background:#fffbe6;}",
         ".folder-byline{margin:-0.25rem 0 0.75rem;font-size:0.95rem;color:#555;}",
-        ".stats-section h2{font-size:1rem;margin:0 0 0.5rem;}",
+        ".run-details-section{margin-top:1rem;}",
+        ".run-details-heading{font-size:1rem;margin:0 0 0.5rem;font-weight:600;color:#444;}",
         ".stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}",
         ".summary h3{font-size:1rem;margin:1rem 0 0.35rem;font-weight:600;}",
         ".summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}",

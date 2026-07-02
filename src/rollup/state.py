@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MVP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -93,6 +93,33 @@ CREATE TABLE IF NOT EXISTS summary_generations (
         num_ctx,
         options_json,
         summary_input_hash
+    )
+);
+"""
+
+FINAL_REVIEW_SCHEMA_V5 = """
+CREATE TABLE IF NOT EXISTS final_review_generations (
+    digest_fingerprint TEXT NOT NULL,
+    review_input_hash TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    profile_name TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    temperature REAL NOT NULL,
+    num_ctx INTEGER,
+    options_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (
+        digest_fingerprint,
+        review_input_hash,
+        provider,
+        profile_name,
+        model,
+        prompt_version,
+        temperature,
+        num_ctx,
+        options_json
     )
 );
 """
@@ -216,6 +243,11 @@ def get_schema_version(conn: sqlite3.Connection) -> int:
     return int(row[0])
 
 
+def ensure_final_review_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(FINAL_REVIEW_SCHEMA_V5)
+    _set_schema_version(conn)
+
+
 def init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -231,7 +263,7 @@ def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     _migrate_summaries_schema(conn)
     _migrate_summary_generations_v4(conn)
     conn.executescript(SUMMARIES_SCHEMA_V4)
-    _set_schema_version(conn)
+    ensure_final_review_schema(conn)
     return conn
 
 
@@ -380,6 +412,83 @@ def store_summary_generation(
             options_json,
             summary_input_hash,
             summary,
+            created_at.isoformat(),
+        ),
+    )
+    conn.commit()
+
+
+def get_final_review_generation(
+    conn: sqlite3.Connection,
+    *,
+    digest_fingerprint: str,
+    review_input_hash: str,
+    provider: str,
+    profile_name: str,
+    model: str,
+    prompt_version: str,
+    temperature: float,
+    num_ctx: int | None,
+    options: dict[str, object] | None,
+) -> str | None:
+    options_json = canonicalize_provider_options(options)
+    row = conn.execute(
+        """SELECT result_json FROM final_review_generations
+           WHERE digest_fingerprint = ? AND review_input_hash = ?
+             AND provider = ? AND profile_name = ? AND model = ?
+             AND prompt_version = ? AND temperature = ? AND num_ctx IS ?
+             AND options_json = ?""",
+        (
+            digest_fingerprint,
+            review_input_hash,
+            provider,
+            profile_name,
+            model,
+            prompt_version,
+            temperature,
+            num_ctx,
+            options_json,
+        ),
+    ).fetchone()
+    if row:
+        return row[0]
+    return None
+
+
+def store_final_review_generation(
+    conn: sqlite3.Connection,
+    *,
+    digest_fingerprint: str,
+    review_input_hash: str,
+    provider: str,
+    profile_name: str,
+    model: str,
+    prompt_version: str,
+    temperature: float,
+    num_ctx: int | None,
+    options: dict[str, object] | None,
+    result_json: str,
+    created_at: datetime,
+) -> None:
+    options_json = canonicalize_provider_options(options)
+    conn.execute(
+        """INSERT OR REPLACE INTO final_review_generations
+           (
+               digest_fingerprint, review_input_hash, provider, profile_name, model,
+               prompt_version, temperature, num_ctx, options_json, result_json, created_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            digest_fingerprint,
+            review_input_hash,
+            provider,
+            profile_name,
+            model,
+            prompt_version,
+            temperature,
+            num_ctx,
+            options_json,
+            result_json,
             created_at.isoformat(),
         ),
     )

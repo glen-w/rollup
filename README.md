@@ -93,7 +93,7 @@ More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](C
 
 Rollup exposes two subcommands: `inventory` (discover folders and counts) and `digest` (generate **the rollup** — Markdown + HTML output).
 
-Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no-ollama`, and the summary routing flags documented below. See [docs/EXAMPLES.md](docs/EXAMPLES.md) for copy-paste command recipes covering inventory, digest modes, Ollama routing, smoke tests, benchmarks, and fixture workflows.
+Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no-ollama`, summary routing flags, and `--final-review` documented below. See [docs/EXAMPLES.md](docs/EXAMPLES.md) for copy-paste command recipes covering inventory, digest modes, Ollama routing, final review, smoke tests, benchmarks, and fixture workflows.
 
 ## Live-run checklist
 
@@ -148,7 +148,15 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--summary-profile-set` | built-in | Load profiles/routes from JSON |
 | `--summary-routing-report` | off | **Ollama only:** print routing stats |
 | `--rebuild-summaries` | off | **Ollama only:** bypass summary cache |
+| `--final-review` | off | Whole-digest editorial QA; writes JSON sidecar |
+| `--final-review-mode` | `report` | `report` only (`apply` not implemented yet) |
+| `--final-review-profile` | `strict` | `strict`, `concise`, or `editorial` |
+| `--final-review-model` | profile default | Override Ollama model for review |
+| `--final-review-report` | `<digest-stem>.final-review.json` | Explicit sidecar path |
+| `--no-final-review-cache` | off | Bypass final review cache |
 | `--dry-run` | off | Parse only; no writes or network |
+
+Final review does **not** require `--ollama`. It calls Ollama independently when enabled. Digest content is not mutated in report mode; a short QA summary appears in the collapsed run-details section. See [docs/EXAMPLES.md](docs/EXAMPLES.md#final-review-editorial-qa).
 
 ## Summary profiles
 
@@ -230,11 +238,11 @@ Canonical newsletter classifier labels are:
 
 ## Prompt templates
 
-Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`).
+Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`). Final review prompts live in `rollup/prompts/final_review/`.
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. New databases record schema version 3 during non-dry-run initialization.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. New databases record **schema version 5** during non-dry-run initialization.
 
 Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, and generation options. Legacy cache rows remain readable when applicable.
 
@@ -262,7 +270,7 @@ Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMP
 
 ```
 src/rollup/                       # package source
-src/rollup/prompts/               # bundled Ollama prompt templates
+src/rollup/prompts/               # bundled Ollama + final-review prompt templates
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes

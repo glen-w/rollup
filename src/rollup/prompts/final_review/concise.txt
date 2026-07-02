@@ -1,0 +1,1 @@
+Profile: concise — report only major and critical issues. Omit minor style nits unless they appear in multiple entries.

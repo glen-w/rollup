@@ -1,0 +1,16 @@
+{
+  "overall_status": "pass | pass_with_warnings | fail",
+  "safe_to_publish": true,
+  "issues": [
+    {
+      "severity": "minor | major | critical",
+      "type": "style_drift | duplication | date_inconsistency | heading_inconsistency | link_issue | metadata_mismatch | possible_contradiction | length_mismatch | other",
+      "location": "section / subject",
+      "entry_id": "message_key or null",
+      "description": "string",
+      "suggested_fix": "string or null",
+      "safe_auto_fix": false
+    }
+  ],
+  "patches": []
+}

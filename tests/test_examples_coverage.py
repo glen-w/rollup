@@ -33,6 +33,10 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("summary profile set", "--summary-profile-set"),
     ("summary routing report", "--summary-routing-report"),
     ("rebuild summaries", "--rebuild-summaries"),
+    ("final review", "--final-review"),
+    ("final review profile", "--final-review-profile"),
+    ("final review report", "--final-review-report"),
+    ("no final review cache", "--no-final-review-cache"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),
 )

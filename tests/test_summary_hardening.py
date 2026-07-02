@@ -15,6 +15,7 @@ from rollup.filter import make_digest_entry
 from rollup.models import ClassifiedMessage, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.state import (
+    SCHEMA_VERSION,
     get_cached_summary_generation,
     get_schema_version,
     init_db,
@@ -317,15 +318,15 @@ def test_execute_summary_plan_checks_each_model_once(
 def test_schema_version_singleton(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == 4
+    assert get_schema_version(conn) == SCHEMA_VERSION
     rows = conn.execute("SELECT id, version FROM schema_version").fetchall()
-    assert rows == [(1, 4)]
+    assert rows == [(1, SCHEMA_VERSION)]
     conn.close()
 
     conn = init_db(db)
-    assert get_schema_version(conn) == 4
+    assert get_schema_version(conn) == SCHEMA_VERSION
     rows = conn.execute("SELECT id, version FROM schema_version").fetchall()
-    assert rows == [(1, 4)]
+    assert rows == [(1, SCHEMA_VERSION)]
     conn.close()
 
 
@@ -341,9 +342,9 @@ def test_schema_version_migrates_legacy_multi_row_table(tmp_path: Path) -> None:
     conn.close()
 
     conn = init_db_with_summaries(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == 4
+    assert get_schema_version(conn) == SCHEMA_VERSION
     rows = conn.execute("SELECT id, version FROM schema_version").fetchall()
-    assert rows == [(1, 4)]
+    assert rows == [(1, SCHEMA_VERSION)]
 
 
 def test_canonical_provider_options_stable_for_nested_dicts() -> None:

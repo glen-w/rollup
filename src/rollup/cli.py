@@ -6,11 +6,15 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from rollup import __version__
 from rollup.config import (
+    DEFAULT_FINAL_REVIEW_MODE,
+    DEFAULT_FINAL_REVIEW_PROFILE,
+    DEFAULT_FINAL_REVIEW_PROVIDER,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_LOG_DIR,
     DEFAULT_MAIL_ROOT,
@@ -32,7 +36,7 @@ from rollup.filter import (
     count_summary_sources,
     group_dated_by_folder,
 )
-from rollup.models import DigestReport, DigestStats
+from rollup.models import DigestReport, DigestStats, FinalReviewResult
 from rollup.parse import parse_mbox_folder
 from rollup.render import (
     atomic_write_digest,
@@ -153,6 +157,24 @@ def _build_config(args: argparse.Namespace) -> Config:
         summary_routing_report=getattr(args, "summary_routing_report", False),
         verbose=getattr(args, "verbose", False),
         quiet=getattr(args, "quiet", False),
+        final_review_enabled=getattr(args, "final_review", False),
+        final_review_mode=getattr(args, "final_review_mode", DEFAULT_FINAL_REVIEW_MODE),
+        final_review_profile=getattr(
+            args, "final_review_profile", DEFAULT_FINAL_REVIEW_PROFILE
+        ),
+        final_review_provider=getattr(
+            args, "final_review_provider", DEFAULT_FINAL_REVIEW_PROVIDER
+        ),
+        final_review_model=getattr(args, "final_review_model", None),
+        final_review_report_path=(
+            Path(args.final_review_report)
+            if getattr(args, "final_review_report", None)
+            else None
+        ),
+        rebuild_final_review=getattr(args, "no_final_review_cache", False),
+        final_review_preserve_links=True,
+        final_review_preserve_quotes=True,
+        final_review_max_changed_chars_ratio=0.08,
     )
 
 
@@ -187,6 +209,16 @@ def _validate_config(
                 config.output_dir / f".tmp-{stem}.html",
             ]
         )
+        if config.final_review_enabled:
+            review_path = (
+                config.final_review_report_path
+                if variant is None
+                else None
+            )
+            if review_path is None:
+                writable.append(config.output_dir / f"{stem}.final-review.json")
+    if config.final_review_report_path:
+        writable.append(config.final_review_report_path)
     if config.export_summary_profile_set_path:
         writable.append(Path(config.export_summary_profile_set_path))
     assert_safe_write_paths(config.mail_root, *writable)
@@ -227,6 +259,44 @@ def _print_routing_report(report) -> None:
             f"{row.newsletter_type}: profile={row.profile_name} "
             f"model={row.model} count={row.count}"
         )
+
+
+def _validate_final_review_config(config: Config) -> None:
+    from rollup.final_review_profiles import validate_final_review_config
+
+    if not config.final_review_enabled:
+        return
+    validate_final_review_config(
+        mode=config.final_review_mode,
+        provider=config.final_review_provider,
+        profile_name=config.final_review_profile,
+    )
+
+
+def _run_final_review_if_enabled(
+    report: DigestReport,
+    config: Config,
+    conn,
+    digest_stem: str,
+    *,
+    use_explicit_report_path: bool = False,
+) -> FinalReviewResult | None:
+    if not config.final_review_enabled or config.dry_run:
+        return None
+    from rollup.final_review import (
+        execute_final_review,
+        print_final_review_summary,
+        write_final_review_report,
+    )
+
+    if use_explicit_report_path and config.final_review_report_path:
+        report_path = config.final_review_report_path
+    else:
+        report_path = config.output_dir / f"{digest_stem}.final-review.json"
+    result = execute_final_review(report, config, conn=conn)
+    write_final_review_report(result, report_path)
+    print_final_review_summary(result, report_path)
+    return result
 
 
 def _build_digest_report(
@@ -330,6 +400,11 @@ def cmd_digest(args: argparse.Namespace) -> int:
         return 0
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
+    try:
+        _validate_final_review_config(config)
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     window_start, window_end = compute_date_window(generated_at, config.lookback_days)
 
     folders = list(iter_mbox_files(config.root))
@@ -370,10 +445,19 @@ def cmd_digest(args: argparse.Namespace) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
 
+    if config.final_review_enabled and not config.dry_run:
+        from rollup.summarize import OllamaError, validate_ollama_url
+
+        try:
+            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+        except OllamaError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+
     seen_keys: set[str] = set()
     conn = None
     if not config.dry_run:
-        from rollup.state import init_db, load_seen_keys
+        from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
 
         if not config.no_ollama:
             from rollup.state import init_db_with_summaries
@@ -381,6 +465,8 @@ def cmd_digest(args: argparse.Namespace) -> int:
             conn = init_db_with_summaries(config.db_path)
         else:
             conn = init_db(config.db_path)
+            if config.final_review_enabled:
+                ensure_final_review_schema(conn)
         seen_keys = load_seen_keys(conn)
 
     undated_to_render, skipped_seen = apply_undated_seen_filter(
@@ -507,6 +593,18 @@ def cmd_digest(args: argparse.Namespace) -> int:
                     stats=variant_stats,
                     summary_metadata=variant_metadata,
                 )
+                variant_stem = digest_output_stem(generated_at, variant_name)
+                review_result = _run_final_review_if_enabled(
+                    variant_report,
+                    config,
+                    conn,
+                    variant_stem,
+                    use_explicit_report_path=False,
+                )
+                if review_result is not None:
+                    variant_report = replace(
+                        variant_report, final_review=review_result
+                    )
                 md = render_markdown(variant_report, config.max_display_links)
                 html_content = render_html(variant_report, config.max_display_links)
                 md_path, html_path = atomic_write_digest(
@@ -519,6 +617,16 @@ def cmd_digest(args: argparse.Namespace) -> int:
                 logger.info("Wrote %s", md_path)
                 logger.info("Wrote %s", html_path)
         else:
+            default_stem = digest_output_stem(generated_at)
+            review_result = _run_final_review_if_enabled(
+                report,
+                config,
+                conn,
+                default_stem,
+                use_explicit_report_path=bool(config.final_review_report_path),
+            )
+            if review_result is not None:
+                report = replace(report, final_review=review_result)
             md = render_markdown(report, config.max_display_links)
             html_content = render_html(report, config.max_display_links)
             md_path, html_path = atomic_write_digest(
@@ -629,6 +737,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-summary-type-routing",
         dest="summary_type_routing",
         action="store_false",
+    )
+    dig.add_argument(
+        "--final-review",
+        action="store_true",
+        default=False,
+        help="Run whole-digest editorial QA review and write JSON sidecar report",
+    )
+    dig.add_argument(
+        "--final-review-mode",
+        choices=["report", "apply"],
+        default=DEFAULT_FINAL_REVIEW_MODE,
+        help="Final review mode (apply not implemented in Phase 1)",
+    )
+    dig.add_argument(
+        "--final-review-profile",
+        choices=["strict", "concise", "editorial"],
+        default=DEFAULT_FINAL_REVIEW_PROFILE,
+        help="Final review profile",
+    )
+    dig.add_argument(
+        "--final-review-model",
+        help="Override final review Ollama model",
+    )
+    dig.add_argument(
+        "--final-review-provider",
+        default=DEFAULT_FINAL_REVIEW_PROVIDER,
+        help="Final review provider (ollama only in Phase 1)",
+    )
+    dig.add_argument(
+        "--final-review-report",
+        help="Write final review JSON report to this path",
+    )
+    dig.add_argument(
+        "--no-final-review-cache",
+        action="store_true",
+        default=False,
+        help="Bypass final review cache",
     )
 
     return parser

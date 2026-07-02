@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rollup"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local read-only Thunderbird mbox newsletter digest"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ rollup = "rollup.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rollup = ["assets/*", "prompts/*.txt"]
+rollup = ["assets/*", "prompts/**/*.txt", "prompts/**/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

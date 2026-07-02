@@ -15,6 +15,20 @@ NewsletterType = Literal[
     "unclassified",
 ]
 SummarySource = Literal["ollama", "cache", "preview_fallback", "none"]
+FinalReviewIssueType = Literal[
+    "style_drift",
+    "duplication",
+    "date_inconsistency",
+    "heading_inconsistency",
+    "link_issue",
+    "metadata_mismatch",
+    "possible_contradiction",
+    "length_mismatch",
+    "other",
+]
+FinalReviewSeverity = Literal["minor", "major", "critical"]
+FinalReviewStatus = Literal["pass", "pass_with_warnings", "fail"]
+FinalReviewSource = Literal["cache", "ollama", "error", "skipped"]
 LinkCategory = Literal[
     "primary_content",
     "content",
@@ -169,3 +183,62 @@ class DigestReport:
     undated: tuple[DigestEntry, ...]
     stats: DigestStats
     summary_metadata: DigestSummaryMetadata | None = None
+    final_review: FinalReviewResult | None = None
+
+
+@dataclass(frozen=True)
+class FinalReviewIssue:
+    severity: FinalReviewSeverity
+    type: FinalReviewIssueType
+    location: str
+    entry_id: str | None
+    description: str
+    suggested_fix: str | None
+    safe_auto_fix: bool
+
+
+@dataclass(frozen=True)
+class FinalReviewPatch:
+    entry_id: str
+    field: Literal["summary"]
+    replacement: str
+    rationale: str
+
+
+@dataclass(frozen=True)
+class FinalReviewResult:
+    overall_status: FinalReviewStatus
+    safe_to_publish: bool
+    issues: tuple[FinalReviewIssue, ...]
+    patches: tuple[FinalReviewPatch, ...]
+    review_source: FinalReviewSource
+    profile_name: str
+    model: str
+    prompt_version: str
+    generated_at: datetime
+    digest_fingerprint: str
+    review_input_hash: str
+
+
+@dataclass(frozen=True)
+class DigestReviewEntry:
+    entry_id: str
+    section: str
+    subject: str
+    sender: str
+    date: str | None
+    newsletter_type: str
+    read_time_minutes: int
+    summary_source: str
+    summary: str | None
+    link_labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DigestReviewCorpus:
+    window_start: str
+    window_end: str
+    lookback_days: int
+    entry_count: int
+    summary_metadata: dict | None
+    entries: tuple[DigestReviewEntry, ...]

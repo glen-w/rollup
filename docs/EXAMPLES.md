@@ -167,6 +167,19 @@ Stop Ollama and re-run a smoke command to confirm preview fallback without crash
 python -m rollup digest --ollama --folder tech --lookback-days 7
 ```
 
+## Final review (editorial QA)
+
+Run a whole-digest editorial QA pass after assembly. Report-only by default: writes a JSON sidecar and does **not** change digest content. Advisory only.
+
+```bash
+python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review
+python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --final-review-profile concise
+python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --final-review-report ./output/review.json
+python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --no-final-review-cache
+```
+
+Final review does not require `--ollama` (it uses Ollama independently when enabled). Apply mode (`--final-review-mode apply`) is not available yet. When enabled, a short QA summary also appears in the digest’s collapsed “Digest generation details” section at the end.
+
 ## Benchmark local models
 
 Compare local Ollama-compatible models on fixed prompts:

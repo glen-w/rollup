@@ -11,16 +11,19 @@ import pytest
 from rollup.classify import classify_message
 from rollup.config import compute_date_window
 from rollup.filter import make_digest_entry
+from rollup.final_review import format_final_review_digest_summary
 from rollup.models import (
     DigestEntry,
     DigestReport,
     DigestStats,
     DigestSummaryMetadata,
     DigestSummaryRouteStat,
+    FinalReviewIssue,
+    FinalReviewResult,
     LinkItem,
+    ParsedMessage,
 )
 from rollup.parse import compute_content_hash
-from rollup.models import ParsedMessage
 from rollup.render import (
     _folder_section_id,
     _format_newsletter_type,
@@ -111,7 +114,7 @@ def test_render_markdown_contains_subject() -> None:
     assert "Test Subject" in md
     assert "## 💻 tech" in md
     assert "## Digest generation details" in md
-    assert "## Summary Routing" in md
+    assert "### Summary routing" in md
     assert md.index("## Contents") < md.index("## 💻 tech")
     assert md.index("## 💻 tech") < md.index("## Digest generation details")
     assert "# Rollup —" in md
@@ -155,7 +158,7 @@ def test_render_html_escapes_content() -> None:
     html = render_html(report, 8)
     assert "<script>alert" not in html
     assert "Test Subject" in html
-    assert "AI info" in html
+    assert "Summary routing" in html
     assert "<details class='run-details'>" in html
 
 
@@ -812,10 +815,10 @@ def test_render_run_details_collapsed_by_default() -> None:
     html = render_html(_report(), 8)
     assert "<details class='run-details'>" in html
     assert "<summary>Digest generation details</summary>" in html
-    assert "<h2>Stats</h2>" in html
+    assert "<h3 class='run-details-heading'>Stats</h3>" in html
     assert "<div class='stats'>" in html
     run_details_pos = html.index("<details class='run-details'>")
-    stats_pos = html.index("<h2>Stats</h2>")
+    stats_pos = html.index("<h3 class='run-details-heading'>Stats</h3>")
     assert run_details_pos < stats_pos
     assert html.index("</details>", run_details_pos) > stats_pos
     script_pos = html.index("<script>")
@@ -1066,3 +1069,60 @@ def test_atomic_write_failure_cleans_partials(tmp_path: Path) -> None:
     assert not (tmp_path / f"{stem}.md").exists()
     assert not (tmp_path / f"{stem}.html").exists()
     assert not list(tmp_path.glob(".tmp-*"))
+
+
+def test_render_run_details_includes_final_review_summary() -> None:
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    review = FinalReviewResult(
+        overall_status="pass_with_warnings",
+        safe_to_publish=True,
+        issues=(
+            FinalReviewIssue(
+                severity="minor",
+                type="style_drift",
+                location="tech / Test Subject",
+                entry_id="k1",
+                description="Mixed bullet styles",
+                suggested_fix=None,
+                safe_auto_fix=False,
+            ),
+        ),
+        patches=(),
+        review_source="ollama",
+        profile_name="strict",
+        model="qwen2.5:7b",
+        prompt_version="final_review_v1",
+        generated_at=now,
+        digest_fingerprint="abc",
+        review_input_hash="def",
+    )
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (_entry(),)},
+        undated=(),
+        stats=DigestStats(
+            folders_scanned=1,
+            messages_parsed=1,
+            dated_included=1,
+            undated_needing_review=0,
+            skipped_outside_window=0,
+            skipped_seen_undated=0,
+            deduped_messages=0,
+            parse_errors=0,
+            summaries_ollama=0,
+            summaries_cache=0,
+            summaries_fallback=1,
+        ),
+        final_review=review,
+    )
+    md = render_markdown(report, 8)
+    html = render_html(report, 8)
+    assert "### Final review" in md
+    assert format_final_review_digest_summary(review) in md
+    assert "<h3 class='run-details-heading'>Final review</h3>" in html
+    assert "<h3 class='run-details-heading'>Stats</h3>" in html
+    assert "Mixed bullet styles" in html

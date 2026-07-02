@@ -653,3 +653,152 @@ def test_digest_summary_variants_writes_multiple_outputs(
     assert rc == 0
     assert list((tmp_path / "output").glob("*-newsletter-digest.rough.md"))
     assert list((tmp_path / "output").glob("*-newsletter-digest.deep.md"))
+
+
+def _mock_final_review_response() -> str:
+    import json
+
+    return json.dumps(
+        {
+            "overall_status": "pass",
+            "safe_to_publish": True,
+            "issues": [],
+            "patches": [],
+        }
+    )
+
+
+def test_digest_final_review_writes_sidecar(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from rollup import cli
+
+    monkeypatch.setattr(
+        "rollup.final_review.call_final_review_model",
+        lambda *a, **k: _mock_final_review_response(),
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--final-review", "--no-ollama", "--folder", "tech")
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 0
+    review_files = list((tmp_path / "output").glob("*.final-review.json"))
+    assert len(review_files) == 1
+    captured = capsys.readouterr()
+    assert "Final review:" in captured.out
+
+
+def test_digest_final_review_embedded_in_run_details(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from rollup import cli
+
+    monkeypatch.setattr(
+        "rollup.final_review.call_final_review_model",
+        lambda *a, **k: _mock_final_review_response(),
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--no-ollama", "--folder", "tech", "--final-review")
+    )
+    assert cli.cmd_digest(args) == 0
+    md = list((tmp_path / "output").glob("*-newsletter-digest.md"))[0].read_text(
+        encoding="utf-8"
+    )
+    html = list((tmp_path / "output").glob("*-newsletter-digest.html"))[0].read_text(
+        encoding="utf-8"
+    )
+    assert "### Final review" in md
+    assert "Status: pass" in md
+    assert "<h3 class='run-details-heading'>Final review</h3>" in html
+    assert "Status: pass" in html
+
+
+def test_digest_without_final_review_omits_run_details_review_section(
+    tmp_path: Path,
+) -> None:
+    from rollup import cli
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--no-ollama", "--folder", "tech")
+    )
+    assert cli.cmd_digest(args) == 0
+    md = list((tmp_path / "output").glob("*-newsletter-digest.md"))[0].read_text(
+        encoding="utf-8"
+    )
+    assert "### Final review" not in md
+
+
+
+def test_digest_final_review_cache_hit(tmp_path: Path, monkeypatch) -> None:
+    from rollup import cli
+
+    calls = {"count": 0}
+
+    def mock_review(*a, **k):
+        calls["count"] += 1
+        return _mock_final_review_response()
+
+    monkeypatch.setattr("rollup.final_review.call_final_review_model", mock_review)
+    parser = cli.build_parser()
+    args = _digest_args(
+        tmp_path, "--final-review", "--no-ollama", "--folder", "tech", "--quiet"
+    )
+    assert cli.cmd_digest(parser.parse_args(args)) == 0
+    assert cli.cmd_digest(parser.parse_args(args)) == 0
+    assert calls["count"] == 1
+
+
+def test_digest_final_review_dry_run_skips(tmp_path: Path, monkeypatch) -> None:
+    from rollup import cli
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("final review should not run in dry-run")
+
+    monkeypatch.setattr("rollup.final_review.call_final_review_model", fail_if_called)
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--dry-run", "--final-review", "--folder", "tech")
+    )
+    assert cli.cmd_digest(args) == 0
+    assert not (tmp_path / "output").exists()
+
+
+def test_digest_final_review_apply_mode_rejected(
+    tmp_path: Path, capsys
+) -> None:
+    from rollup import cli
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(
+            tmp_path,
+            "--final-review",
+            "--final-review-mode",
+            "apply",
+            "--folder",
+            "tech",
+        )
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "apply mode is not implemented" in captured.err
+
+
+def test_digest_final_review_without_ollama(tmp_path: Path, monkeypatch) -> None:
+    from rollup import cli
+
+    monkeypatch.setattr(
+        "rollup.final_review.call_final_review_model",
+        lambda *a, **k: _mock_final_review_response(),
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--final-review", "--no-ollama", "--folder", "tech")
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 0
+    assert list((tmp_path / "output").glob("*.final-review.json"))

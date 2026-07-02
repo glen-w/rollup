@@ -17,6 +17,10 @@ DEFAULT_MAX_CHARS_FOR_LLM = 30_000
 DEFAULT_MAX_DISPLAY_LINKS = 8
 DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
+DEFAULT_FINAL_REVIEW_PROFILE = "strict"
+DEFAULT_FINAL_REVIEW_PROVIDER = "ollama"
+DEFAULT_FINAL_REVIEW_MODE = "report"
+DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO = 0.08
 
 
 @dataclass(frozen=True)
@@ -49,6 +53,18 @@ class Config:
     summary_routing_report: bool
     verbose: bool
     quiet: bool
+    final_review_enabled: bool = False
+    final_review_mode: str = DEFAULT_FINAL_REVIEW_MODE
+    final_review_profile: str = DEFAULT_FINAL_REVIEW_PROFILE
+    final_review_provider: str = DEFAULT_FINAL_REVIEW_PROVIDER
+    final_review_model: str | None = None
+    final_review_report_path: Path | None = None
+    rebuild_final_review: bool = False
+    final_review_preserve_links: bool = True
+    final_review_preserve_quotes: bool = True
+    final_review_max_changed_chars_ratio: float = (
+        DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+    )
 
     @property
     def db_path(self) -> Path:
