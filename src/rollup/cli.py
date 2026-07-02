@@ -36,6 +36,7 @@ from rollup.models import DigestReport, DigestStats
 from rollup.parse import parse_mbox_folder
 from rollup.render import (
     atomic_write_digest,
+    digest_output_stem,
     render_html,
     render_markdown,
     render_stats_block,
@@ -155,7 +156,11 @@ def _build_config(args: argparse.Namespace) -> Config:
     )
 
 
-def _validate_config(config: Config, json_out: Path | None = None) -> list[str]:
+def _validate_config(
+    config: Config,
+    json_out: Path | None = None,
+    generated_at: datetime | None = None,
+) -> list[str]:
     warnings = validate_read_root(
         config.root,
         config.mail_root,
@@ -171,24 +176,15 @@ def _validate_config(config: Config, json_out: Path | None = None) -> list[str]:
     ]
     if json_out:
         writable.append(json_out)
-    digest_date = datetime.now().astimezone().strftime("%Y-%m-%d")
-    writable.extend(
-        [
-            config.output_dir / f"{digest_date}-newsletter-digest.md",
-            config.output_dir / f"{digest_date}-newsletter-digest.html",
-            config.output_dir / f".tmp-{digest_date}-newsletter-digest.md",
-            config.output_dir / f".tmp-{digest_date}-newsletter-digest.html",
-        ]
-    )
-    for variant in config.summary_variants:
+    digest_at = generated_at or datetime.now().astimezone()
+    for variant in (None, *config.summary_variants):
+        stem = digest_output_stem(digest_at, variant)
         writable.extend(
             [
-                config.output_dir / f"{digest_date}-newsletter-digest.{variant}.md",
-                config.output_dir / f"{digest_date}-newsletter-digest.{variant}.html",
-                config.output_dir
-                / f".tmp-{digest_date}-newsletter-digest.{variant}.md",
-                config.output_dir
-                / f".tmp-{digest_date}-newsletter-digest.{variant}.html",
+                config.output_dir / f"{stem}.md",
+                config.output_dir / f"{stem}.html",
+                config.output_dir / f".tmp-{stem}.md",
+                config.output_dir / f".tmp-{stem}.html",
             ]
         )
     if config.export_summary_profile_set_path:
@@ -301,8 +297,9 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 def cmd_digest(args: argparse.Namespace) -> int:
     config = _build_config(args)
+    generated_at = datetime.now().astimezone()
     try:
-        warnings = _validate_config(config)
+        warnings = _validate_config(config, generated_at=generated_at)
     except SafetyError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -333,7 +330,6 @@ def cmd_digest(args: argparse.Namespace) -> int:
         return 0
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
-    generated_at = datetime.now().astimezone()
     window_start, window_end = compute_date_window(generated_at, config.lookback_days)
 
     folders = list(iter_mbox_files(config.root))

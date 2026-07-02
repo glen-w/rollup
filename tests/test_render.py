@@ -29,6 +29,7 @@ from rollup.render import (
     _sort_entries_by_read_time,
     atomic_write_digest,
     cleanup_stale_temps,
+    digest_output_stem,
     render_html,
     render_markdown,
     render_stats_block,
@@ -239,6 +240,24 @@ def test_atomic_write_variant_name(tmp_path: Path) -> None:
     )
     assert md_path.name.endswith(".deep.md")
     assert html_path.name.endswith(".deep.html")
+
+
+def test_atomic_write_includes_timestamp_in_filename(tmp_path: Path) -> None:
+    now = datetime(2026, 7, 2, 14, 30, 52, tzinfo=datetime.now().astimezone().tzinfo)
+    md_path, _html_path = atomic_write_digest(tmp_path, now, "# Test\n", "<html></html>")
+    assert md_path.name == "2026-07-02-143052-newsletter-digest.md"
+
+
+def test_atomic_write_same_day_does_not_overwrite(tmp_path: Path) -> None:
+    tz = datetime.now().astimezone().tzinfo
+    first = datetime(2026, 7, 2, 9, 0, 0, tzinfo=tz)
+    second = datetime(2026, 7, 2, 17, 30, 0, tzinfo=tz)
+    atomic_write_digest(tmp_path, first, "# First\n", "<html>first</html>")
+    atomic_write_digest(tmp_path, second, "# Second\n", "<html>second</html>")
+    md_files = sorted(tmp_path.glob("*-newsletter-digest.md"))
+    assert len(md_files) == 2
+    assert md_files[0].read_text(encoding="utf-8") == "# First\n"
+    assert md_files[1].read_text(encoding="utf-8") == "# Second\n"
 
 
 def test_cleanup_stale_temps(tmp_path: Path) -> None:
@@ -1024,7 +1043,7 @@ def test_hidden_link_count_is_render_items_not_unique_destinations() -> None:
 
 def test_atomic_write_failure_cleans_partials(tmp_path: Path) -> None:
     now = datetime.now().astimezone()
-    date_str = now.strftime("%Y-%m-%d")
+    stem = digest_output_stem(now)
     original_rename = Path.rename
 
     def fail_on_html_rename(self, target):
@@ -1036,6 +1055,6 @@ def test_atomic_write_failure_cleans_partials(tmp_path: Path) -> None:
         with pytest.raises(OSError, match="simulated"):
             atomic_write_digest(tmp_path, now, "# Test\n", "<html></html>")
 
-    assert not (tmp_path / f"{date_str}-newsletter-digest.md").exists()
-    assert not (tmp_path / f"{date_str}-newsletter-digest.html").exists()
+    assert not (tmp_path / f"{stem}.md").exists()
+    assert not (tmp_path / f"{stem}.html").exists()
     assert not list(tmp_path.glob(".tmp-*"))

@@ -654,6 +654,15 @@ def write_branding_assets(output_dir: Path) -> None:
     (output_dir / FAVICON_FILENAME).write_bytes(asset_bytes(FAVICON_FILENAME))
 
 
+def digest_output_stem(
+    generated_at: datetime, variant_name: str | None = None
+) -> str:
+    """Filename stem for digest outputs (date + time so same-day runs do not overwrite)."""
+    timestamp = generated_at.strftime("%Y-%m-%d-%H%M%S")
+    suffix = f".{variant_name}" if variant_name else ""
+    return f"{timestamp}-newsletter-digest{suffix}"
+
+
 def cleanup_stale_temps(output_dir: Path) -> None:
     for path in output_dir.glob(".tmp-*"):
         try:
@@ -674,12 +683,11 @@ def atomic_write_digest(
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stale_temps(output_dir)
     write_branding_assets(output_dir)
-    date_str = generated_at.strftime("%Y-%m-%d")
-    suffix = f".{variant_name}" if variant_name else ""
-    final_md = output_dir / f"{date_str}-newsletter-digest{suffix}.md"
-    final_html = output_dir / f"{date_str}-newsletter-digest{suffix}.html"
-    tmp_md = output_dir / f".tmp-{date_str}-newsletter-digest{suffix}.md"
-    tmp_html = output_dir / f".tmp-{date_str}-newsletter-digest{suffix}.html"
+    stem = digest_output_stem(generated_at, variant_name)
+    final_md = output_dir / f"{stem}.md"
+    final_html = output_dir / f"{stem}.html"
+    tmp_md = output_dir / f".tmp-{stem}.md"
+    tmp_html = output_dir / f".tmp-{stem}.html"
 
     paths_to_clean = (tmp_md, tmp_html, final_md, final_html)
 
