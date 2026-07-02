@@ -411,6 +411,65 @@ def test_render_html_summary_pre_wrap() -> None:
     assert "<p>Para two</p>" in html
 
 
+def test_render_html_summary_renders_markdown_links() -> None:
+    entry = _entry()
+    entry = make_digest_entry(
+        entry.classified,
+        no_ollama=True,
+        summary=(
+            "- RADAR Festival returns to Manchester.\n"
+            "- Get Tickets: [RADAR Festival](https://example.com/tickets?x=1&y=2)"
+        ),
+        summary_source="preview_fallback",
+    )
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    assert 'href="https://example.com/tickets?x=1&amp;y=2"' in html
+    assert ">RADAR Festival</a>" in html
+    assert 'target="_blank"' in html
+    assert "[RADAR Festival](https://example.com/tickets" not in html
+
+
+def test_render_html_summary_renders_italic_markdown() -> None:
+    entry = _entry()
+    entry = make_digest_entry(
+        entry.classified,
+        no_ollama=True,
+        summary=(
+            "Overview: A summer reading list featuring *Don Quixote* and "
+            "*The Adventures of Sherlock Holmes*, plus **must-read** picks."
+        ),
+        summary_source="preview_fallback",
+    )
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    assert "<em>Don Quixote</em>" in html
+    assert "<em>The Adventures of Sherlock Holmes</em>" in html
+    assert "<strong>must-read</strong>" in html
+    assert "*Don Quixote*" not in html
+    assert "*The Adventures of Sherlock Holmes*" not in html
+
+
 def test_render_html_summary_renders_markdown() -> None:
     entry = _entry()
     entry = make_digest_entry(
@@ -435,6 +494,38 @@ def test_render_html_summary_renders_markdown() -> None:
     assert "<strong>Victor Wembanyama&#x27;s Development:</strong>" in html
     assert "### Key Themes:" not in html
     assert "**Victor Wembanyama" not in html
+
+
+def test_render_strips_trailing_worth_opening_section() -> None:
+    entry = _entry()
+    entry = make_digest_entry(
+        entry.classified,
+        no_ollama=True,
+        summary=(
+            "Overview of the newsletter.\n\n"
+            "Worth opening? Yes, if you enjoy exploring themes of male friendship "
+            "through classic and contemporary literature."
+        ),
+        summary_source="cache",
+    )
+    now = datetime.now().astimezone()
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"tech": (entry,)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    md = render_markdown(report, 8)
+    assert "Overview of the newsletter." in html
+    assert "Overview of the newsletter." in md
+    assert "Worth opening?" not in html
+    assert "Worth opening?" not in md
+    assert "male friendship" not in html
 
 
 def test_render_clickable_links() -> None:

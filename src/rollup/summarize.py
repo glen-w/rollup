@@ -30,7 +30,7 @@ from rollup.summary_profiles import summary_job_options_for_cache
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 
 MAX_OUTPUT_CHARS_BY_STYLE = {
     "rough": 1500,
@@ -42,7 +42,7 @@ LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 PROMPT_STYLE_INSTRUCTIONS = {
     "rough": (
         "Write 1-3 bullets. Start with the first bullet on line 1 — no intro sentence. "
-        "Focus on what this is and whether it is worth clicking."
+        "Focus on what this is and the main takeaway."
     ),
     "standard": (
         "Write 2-5 bullets. Start with the first bullet on line 1 — no intro sentence. "
@@ -67,9 +67,27 @@ _INTRO_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_WORTH_TAIL_LINE_RE = re.compile(
+    r"^(?:[-*]\s+)?(?:\*\*)?worth\s+(?:opening|reading|clicking)\??(?:\*\*)?\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_trailing_worth_sections(lines: list[str]) -> None:
+    """Remove trailing recommendation tails such as 'Worth opening? Yes, if…'."""
+    while lines:
+        stripped = lines[-1].strip()
+        if not stripped:
+            lines.pop()
+            continue
+        if _WORTH_TAIL_LINE_RE.match(stripped):
+            lines.pop()
+            continue
+        break
+
 
 def clean_summary_output(text: str) -> str:
-    """Drop leading meta lines such as 'Here's a summary in 2 bullets:'."""
+    """Drop leading meta lines and trailing worth recommendation sections."""
     lines = text.strip().splitlines()
     while lines:
         stripped = lines[0].strip()
@@ -80,6 +98,7 @@ def clean_summary_output(text: str) -> str:
             lines.pop(0)
             continue
         break
+    _strip_trailing_worth_sections(lines)
     return "\n".join(lines).strip()
 
 

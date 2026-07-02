@@ -128,6 +128,25 @@ def test_quiet_suppresses_progress(capsys) -> None:
     assert capsys.readouterr().err == ""
 
 
+def test_progress_completion_clears_generating_line(capsys) -> None:
+    resp = _stream_lines(
+        *[{"response": "x", "done": False} for _ in range(600)],
+        {"response": "", "done": True, "eval_count": 90},
+    )
+    tick = iter([0.0] + [float(i) for i in range(1, 2000)])
+    with patch("rollup.ollama_stream.monotonic", side_effect=lambda: next(tick)):
+        consume_ollama_stream(
+            resp,
+            max_output_chars=10_000,
+            show_progress=True,
+            progress_interval_chars=50,
+            progress_interval_seconds=2.0,
+        )
+    err = capsys.readouterr().err
+    assert "tokenss" not in err
+    assert err.endswith("generated, 90 tokens\x1b[K\n")
+
+
 def test_response_close_on_early_stop() -> None:
     cases = [
         _stream_lines({"response": "a" * 500, "done": False}),

@@ -60,13 +60,16 @@ def _resolve_done_stop_reason(data: dict[str, object]) -> StreamStopReason:
     return "done"
 
 
+_CLEAR_EOL = "\033[K"
+
+
 def _write_progress(total_chars: int, eval_count: int | None) -> None:
-    suffix = f", {eval_count} tokens" if eval_count else ""
-    sys.stderr.write(f"\r  generating… {total_chars} chars")
+    if eval_count is None:
+        sys.stderr.write(f"\r  generating… {total_chars} chars{_CLEAR_EOL}")
+    else:
+        suffix = f", {eval_count} tokens"
+        sys.stderr.write(f"\r  generated{suffix}{_CLEAR_EOL}\n")
     sys.stderr.flush()
-    if eval_count is not None:
-        sys.stderr.write(f"\r  generated{suffix}\n")
-        sys.stderr.flush()
 
 
 def consume_ollama_stream(

@@ -18,6 +18,7 @@ from rollup.links import (
 from rollup.models import LinkItem
 from rollup.models import DigestEntry, DigestReport, DigestStats
 from rollup.final_review import format_final_review_digest_summary
+from rollup.summarize import clean_summary_output
 
 logger = logging.getLogger(__name__)
 
@@ -185,10 +186,23 @@ def _render_section_byline_html(entries: tuple[DigestEntry, ...]) -> str:
 
 
 _INLINE_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_INLINE_ITALIC_RE = re.compile(r"\*(?!\*)(.+?)(?<!\*)\*")
+_INLINE_ITALIC_UNDERSCORE_RE = re.compile(r"(?<!\w)_(.+?)_(?!\w)")
+_INLINE_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_ANCHOR_ATTRS = 'target="_blank" rel="noopener noreferrer"'
+
+
+def _replace_inline_link(match: re.Match[str]) -> str:
+    label = match.group(1)
+    href = match.group(2)
+    return f'<a href="{href}" {_ANCHOR_ATTRS}>{label}</a>'
 
 
 def _inline_summary_markdown(text: str) -> str:
-    return _INLINE_BOLD_RE.sub(r"<strong>\1</strong>", text)
+    text = _INLINE_BOLD_RE.sub(r"<strong>\1</strong>", text)
+    text = _INLINE_ITALIC_RE.sub(r"<em>\1</em>", text)
+    text = _INLINE_ITALIC_UNDERSCORE_RE.sub(r"<em>\1</em>", text)
+    return _INLINE_LINK_RE.sub(_replace_inline_link, text)
 
 
 def _render_summary_html(text: str) -> str:
@@ -470,8 +484,10 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
         "",
     ]
     if entry.summary:
-        lines.append(entry.summary)
-        lines.append("")
+        summary = clean_summary_output(entry.summary)
+        if summary:
+            lines.append(summary)
+            lines.append("")
     hidden_count = len(bundle.hidden_links)
     if bundle.main_links:
         lines.append("**Key links:**")
@@ -551,9 +567,11 @@ def _render_entry_html(
         f"<p class='item-type'>{html_module.escape(_format_newsletter_type(ntype))}</p>"
     )
     if entry.summary:
-        parts.append(
-            f"<div class='summary'>{_render_summary_html(entry.summary)}</div>"
-        )
+        summary = clean_summary_output(entry.summary)
+        if summary:
+            parts.append(
+                f"<div class='summary'>{_render_summary_html(summary)}</div>"
+            )
     hidden_count = len(bundle.hidden_links)
     if bundle.main_links:
         parts.append("<p><strong>Key links:</strong></p>")

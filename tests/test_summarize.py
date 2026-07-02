@@ -176,6 +176,54 @@ def test_clean_summary_output_strips_intro_lines(raw: str, expected: str) -> Non
     assert clean_summary_output(raw) == expected
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "Overview paragraph.\n\nKey items listed.\n\n"
+            "Worth opening? Yes, if you enjoy exploring themes of male friendship "
+            "through classic and contemporary literature.",
+            "Overview paragraph.\n\nKey items listed.",
+        ),
+        (
+            "- Main point\n- Time sensitive\n- Worth opening? Skip unless subscribed.",
+            "- Main point\n- Time sensitive",
+        ),
+        (
+            "Body paragraph.\n\n**Worth reading?** Only for policy wonks.",
+            "Body paragraph.",
+        ),
+        (
+            "- First bullet\n- Worth clicking? Probably not.",
+            "- First bullet",
+        ),
+        (
+            "Middle mentions worth opening? in passing.\n\nStill relevant.",
+            "Middle mentions worth opening? in passing.\n\nStill relevant.",
+        ),
+    ],
+)
+def test_clean_summary_output_strips_trailing_worth_sections(
+    raw: str, expected: str
+) -> None:
+    assert clean_summary_output(raw) == expected
+
+
+def test_prompt_templates_do_not_request_worth_sections() -> None:
+    short_update = (PROMPTS_DIR / "short_update.txt").read_text(encoding="utf-8")
+    multi = (PROMPTS_DIR / "multi_section_digest.txt").read_text(encoding="utf-8")
+    essay = (PROMPTS_DIR / "essay.txt").read_text(encoding="utf-8")
+    assert "worth opening" not in short_update.lower()
+    assert "worth opening" not in multi.lower()
+    assert "worth reading" not in essay.lower()
+    rough = build_prompt(_classified("short_update"), "excerpt", prompt_style="rough")
+    assert "worth clicking" not in rough.lower()
+
+
+def test_prompt_version_bumped_for_worth_section_removal() -> None:
+    assert PROMPT_VERSION == 3
+
+
 def test_is_summary_usable_rejects_non_cacheable_stop_reason() -> None:
     assert (
         is_summary_usable(
