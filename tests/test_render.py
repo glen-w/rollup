@@ -676,11 +676,12 @@ def test_render_wrapper_links_keep_clean_visible_text_and_original_hrefs() -> No
     html = render_html(report, 8)
     assert "[Report](https://u14608870.ct.sendgrid.net/ls/click?upn=report123)" in md
     assert (
-        "[Register](https://u14608870.ct.sendgrid.net/ls/click?upn=register123)" in md
+        "[Register for the webinar](https://u14608870.ct.sendgrid.net/ls/click?upn=register123)"
+        in md
     )
     assert "[Article](https://newsletter.substack.com/c/article123)" in md
     assert ">Report<" in html
-    assert ">Register<" in html
+    assert ">Register for the webinar<" in html
     assert ">Article<" in html
     assert 'href="https://u14608870.ct.sendgrid.net/ls/click?upn=report123"' in html
     assert 'href="https://u14608870.ct.sendgrid.net/ls/click?upn=register123"' in html
@@ -952,8 +953,14 @@ def test_hidden_link_count_cue_when_trimmed() -> None:
         stats=base.stats,
     )
     html = render_html(report, 8)
-    assert "hidden-link-cue" in html
+    assert "<details class='hidden-links'>" in html
+    assert "<p class='hidden-link-cue'>" not in html
     assert "+3 more links in original" in html
+    hidden_pos = html.index("<details class='hidden-links'>")
+    other_pos = html.index("<details class='other-links'>")
+    assert other_pos < hidden_pos
+    hidden_section = html[hidden_pos : html.index("</details>", hidden_pos)]
+    assert hidden_section.count("<li>") == 3
 
 
 def test_no_hidden_link_cue_when_none_hidden() -> None:
@@ -996,8 +1003,9 @@ def test_hidden_link_cue_when_no_key_links() -> None:
     )
     html = render_html(report, 8)
     assert "<strong>Key links:</strong>" not in html
+    assert "<details class='hidden-links'>" in html
     assert "+1 more links in original" in html
-    assert "<summary>Other links</summary>" in html
+    assert "<details class='other-links'>" not in html
 
 
 def test_hidden_link_count_is_render_items_not_unique_destinations() -> None:

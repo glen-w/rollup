@@ -442,22 +442,16 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
         lines.append("**Key links:**")
         for link in bundle.main_links:
             lines.append(render_link_markdown(link))
-        if hidden_count > 0:
-            lines.append(_hidden_link_cue_text(hidden_count))
-        lines.append("")
-    elif hidden_count > 0:
-        lines.append(_hidden_link_cue_text(hidden_count))
         lines.append("")
     if bundle.other_links:
-        other_heading = "**Other links:**"
-        if hidden_count > 0 and not bundle.main_links:
-            other_heading = f"**Other links ({_hidden_link_cue_text(hidden_count)}):**"
-        lines.append(other_heading)
+        lines.append("**Other links:**")
         for link in bundle.other_links:
             lines.append(render_link_markdown(link))
         lines.append("")
-    elif hidden_count > 0 and not bundle.main_links:
-        lines.append("**Other links:**")
+    if hidden_count > 0:
+        lines.append(f"**{_hidden_link_cue_text(hidden_count)}:**")
+        for link in bundle.hidden_links:
+            lines.append(render_link_markdown(link))
         lines.append("")
     return "\n".join(lines)
 
@@ -526,37 +520,28 @@ def _render_entry_html(
             f"<div class='summary'>{_render_summary_html(entry.summary)}</div>"
         )
     hidden_count = len(bundle.hidden_links)
-    hidden_cue = (
-        f"<p class='hidden-link-cue'>{html_module.escape(_hidden_link_cue_text(hidden_count))}</p>"
-        if hidden_count > 0
-        else ""
-    )
     if bundle.main_links:
         parts.append("<p><strong>Key links:</strong></p>")
         parts.append("<ul>")
         for link in bundle.main_links:
             parts.append(render_link_html(link))
         parts.append("</ul>")
-        if hidden_count > 0:
-            parts.append(hidden_cue)
-    elif hidden_count > 0:
-        parts.append(hidden_cue)
     if bundle.other_links:
-        other_summary = "Other links"
-        if hidden_count > 0 and not bundle.main_links:
-            other_summary = (
-                f"Other links ({_hidden_link_cue_text(hidden_count)})"
-            )
         parts.append(
-            f"<details class='other-links'><summary>{html_module.escape(other_summary)}</summary><ul>"
+            "<details class='other-links'><summary>Other links</summary><ul>"
         )
         for link in bundle.other_links:
             parts.append(render_link_html(link))
         parts.append("</ul></details>")
-    elif hidden_count > 0 and not bundle.main_links:
+    if hidden_count > 0:
         parts.append(
-            "<details class='other-links'><summary>Other links</summary></details>"
+            f"<details class='hidden-links'><summary>"
+            f"{html_module.escape(_hidden_link_cue_text(hidden_count))}"
+            f"</summary><ul>"
         )
+        for link in bundle.hidden_links:
+            parts.append(render_link_html(link))
+        parts.append("</ul></details>")
     parts.append("</div></details>")
     return "\n".join(parts)
 
@@ -596,11 +581,12 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         "details.run-details>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}",
         "details.other-links{border:none;padding:0;margin-top:0.5rem;}",
         "details.other-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;}",
+        "details.hidden-links{border:none;padding:0;margin-top:0.5rem;}",
+        "details.hidden-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;color:#666;}",
         "#undated{border:1px solid #c90;border-radius:6px;padding:0.5rem 1rem;background:#fffbe6;}",
         ".folder-byline{margin:-0.25rem 0 0.75rem;font-size:0.95rem;color:#555;}",
         ".stats-section h2{font-size:1rem;margin:0 0 0.5rem;}",
         ".stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}",
-        ".hidden-link-cue{margin:0.25rem 0 0.5rem;font-size:0.9rem;color:#666;}",
         ".summary h3{font-size:1rem;margin:1rem 0 0.35rem;font-weight:600;}",
         ".summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}",
         ".summary li{margin:0.2rem 0;}",

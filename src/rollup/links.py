@@ -71,7 +71,33 @@ BARE_NUMBER_RE = re.compile(r"^\d+$")
 GENERIC_ANCHOR_TEXT = {
     "here",
     "click",
+    "click here",
+    "register",
+    "sign up",
+    "signup",
+    "sign-up",
+    "register here",
+    "sign up here",
+    "signup here",
+    "learn more",
+    "read more",
+    "view more",
+    "see more",
+    "download",
+    "get started",
+    "join",
+    "rsvp",
 }
+GENERIC_HERE_STEMS = (
+    "register",
+    "sign up",
+    "signup",
+    "learn more",
+    "read more",
+    "click",
+    "apply",
+    "download",
+)
 EMAIL_ADMIN_HOST_RE = re.compile(r"\.list-manage\d*\.com$", re.IGNORECASE)
 PREFERENCE_ANCHOR_TERMS = (
     "unsubscribe",
@@ -90,6 +116,51 @@ PREFERENCE_ANCHOR_TERMS = (
 )
 
 
+def _normalize_anchor_phrase(text: str) -> str:
+    return text.lower().strip().rstrip(".").rstrip(",").rstrip("!")
+
+
+def is_generic_anchor_text(text: str) -> bool:
+    normalized = _normalize_anchor_phrase(text)
+    if not normalized:
+        return True
+    if normalized in GENERIC_ANCHOR_TEXT:
+        return True
+    if normalized.endswith(" here") and len(normalized) <= 50:
+        if any(stem in normalized for stem in GENERIC_HERE_STEMS):
+            return True
+    return False
+
+
+def _truncate_label(text: str) -> str:
+    if len(text) <= MEANINGFUL_LABEL_MAX_LEN:
+        return text
+    return text[: MEANINGFUL_LABEL_MAX_LEN - 1].rstrip() + "…"
+
+
+def label_from_context(anchor: str | None, context: str | None) -> str | None:
+    if not context:
+        return None
+    context_clean = WHITESPACE_RE.sub(" ", context).strip()
+    if not context_clean:
+        return None
+    anchor_clean = WHITESPACE_RE.sub(" ", (anchor or "")).strip()
+    if not anchor_clean or is_generic_anchor_text(anchor_clean):
+        if len(context_clean) <= len(anchor_clean):
+            return None
+        return _truncate_label(context_clean)
+    anchor_lc = anchor_clean.lower()
+    context_lc = context_clean.lower()
+    if anchor_lc in context_lc and len(context_clean) > len(anchor_clean) + 5:
+        stripped = context_clean
+        if context_lc.startswith(anchor_lc):
+            stripped = context_clean[len(anchor_clean) :].lstrip(" —–-:|")
+        if stripped and stripped.lower() != anchor_lc:
+            return _truncate_label(stripped)
+        return _truncate_label(context_clean)
+    return None
+
+
 def clean_anchor_text(text: str | None) -> str | None:
     if text is None:
         return None
@@ -106,7 +177,7 @@ def clean_anchor_text(text: str | None) -> str | None:
         return None
     if BARE_NUMBER_RE.match(cleaned):
         return None
-    if cleaned.lower() in GENERIC_ANCHOR_TEXT:
+    if is_generic_anchor_text(cleaned):
         return None
     return cleaned
 
@@ -304,8 +375,11 @@ def label_link(
     context: str | None = None,
 ) -> str:
     meaningful = clean_anchor_text(text)
-    if meaningful:
+    if meaningful and not is_generic_anchor_text(meaningful):
         return meaningful
+    context_label = label_from_context(text, context)
+    if context_label:
+        return context_label
 
     parsed = urlparse(href.strip())
     host = parsed.netloc.lower()

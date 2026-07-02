@@ -380,7 +380,12 @@ def test_digest_trackerwall_renders_readable_links(tmp_path: Path) -> None:
     assert "Register for Teams event" in html or ">Register<" in html
     assert ">https://substack.com/app-link/post?" not in html
     assert ">https://u14608870.ct.sendgrid.net/ls/click?" not in html
-    assert "eotrx.substackcdn.com/o/abc/p.gif" not in html
+    assert "<details class='hidden-links'>" in html
+    hidden_pos = html.index("<details class='hidden-links'>")
+    key_pos = html.index("<strong>Key links:</strong>")
+    assert key_pos < hidden_pos
+    hidden_section = html[hidden_pos : html.index("</details>", hidden_pos)]
+    assert "eotrx.substackcdn.com/o/abc/p.gif" in hidden_section
 
 
 def test_safety_rejects_output_in_mail_root(tmp_path: Path) -> None:

@@ -116,6 +116,23 @@ def test_link_items_preserve_text_and_source_order() -> None:
     assert parsed.link_items[1].source_index == 1
 
 
+def test_link_context_walks_up_when_parent_is_anchor_only() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Events"
+    msg["From"] = "a@example.com"
+    html = """
+    <table>
+      <tr><td>Mindfulness Workshop — Mar 12</td><td><a href="https://example.com/a">Register</a></td></tr>
+      <tr><td>Spring retreat registration</td><td><a href="https://example.com/b">Register</a></td></tr>
+    </table>
+    """
+    msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 8)
+    contexts = [item.context for item in parsed.link_items]
+    assert "Mindfulness Workshop" in (contexts[0] or "")
+    assert "Spring retreat" in (contexts[1] or "")
+
+
 def test_parse_does_not_truncate_extracted_links() -> None:
     msg = EmailMessage()
     msg["Subject"] = "Many Links"

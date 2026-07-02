@@ -8,7 +8,9 @@ from rollup.links import (
     classify_link,
     classify_links,
     domain_for_display,
+    is_generic_anchor_text,
     is_raw_url_text,
+    label_from_context,
     label_link,
     normalize_link_for_compare,
     prepare_links_for_render,
@@ -28,8 +30,51 @@ def test_clean_anchor_text_rejects_raw_url_and_long_text() -> None:
 def test_clean_anchor_text_rejects_generic_short_and_numeric_labels() -> None:
     assert clean_anchor_text("here") is None
     assert clean_anchor_text("click") is None
+    assert clean_anchor_text("Register") is None
+    assert clean_anchor_text("register here") is None
+    assert clean_anchor_text("Learn more and register here.") is None
     assert clean_anchor_text("a") is None
     assert clean_anchor_text("7") is None
+
+
+def test_is_generic_anchor_text() -> None:
+    assert is_generic_anchor_text("Register")
+    assert is_generic_anchor_text("register here")
+    assert is_generic_anchor_text("Learn more and register here.")
+    assert not is_generic_anchor_text("Register for event")
+    assert not is_generic_anchor_text("Report")
+
+
+def test_label_from_context_enriches_generic_anchors() -> None:
+    assert (
+        label_from_context("Register", "Register for the webinar")
+        == "Register for the webinar"
+    )
+    assert (
+        label_from_context("register here", "Spring retreat registration closes Friday")
+        == "Spring retreat registration closes Friday"
+    )
+    assert label_from_context("Register for event", "Some context") is None
+
+
+def test_label_link_enriches_generic_register_from_context() -> None:
+    href = "https://u14608870.ct.sendgrid.net/ls/click?upn=register123"
+    assert (
+        label_link(href, text="Register", context="Register for the webinar")
+        == "Register for the webinar"
+    )
+
+
+def test_label_link_distinct_generic_registers_from_context() -> None:
+    href_a = "https://example.com/event/a"
+    href_b = "https://example.com/event/b"
+    label_a = label_link(href_a, text="Register", context="Mindfulness Workshop — Mar 12")
+    label_b = label_link(
+        href_b, text="Register", context="Spring retreat registration closes Friday"
+    )
+    assert label_a == "Mindfulness Workshop — Mar 12"
+    assert label_b == "Spring retreat registration closes Friday"
+    assert label_a != label_b
 
 
 def test_is_raw_url_text() -> None:

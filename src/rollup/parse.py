@@ -142,6 +142,34 @@ def _context_snippet(text: str | None, max_len: int = 140) -> str | None:
     return collapsed[: max_len - 1].rstrip() + "…"
 
 
+def _link_context(tag: Tag, anchor_text: str | None) -> str | None:
+    """Return surrounding text for a link, walking up ancestors when parent is anchor-only."""
+    anchor_clean = " ".join((anchor_text or "").split()).strip()
+    anchor_lc = anchor_clean.lower()
+    parent = tag.parent
+    parent_text = (
+        " ".join(parent.get_text(" ", strip=True).split()).strip() if parent else ""
+    )
+    if (
+        parent_text
+        and anchor_lc
+        and parent_text.lower() != anchor_lc
+        and len(parent_text) > len(anchor_clean)
+    ):
+        return _context_snippet(parent_text)
+    ancestor = parent
+    for _ in range(3):
+        if ancestor is None:
+            break
+        ancestor = ancestor.parent
+        if ancestor is None or ancestor.name in {"body", "html", "[document]"}:
+            break
+        text = " ".join(ancestor.get_text(" ", strip=True).split()).strip()
+        if text and anchor_lc and text.lower() != anchor_lc and len(text) > len(anchor_clean):
+            return _context_snippet(text)
+    return _context_snippet(parent_text) if parent_text else None
+
+
 def _extract_links_from_html(html: str) -> list[LinkItem]:
     soup = BeautifulSoup(html, "html.parser")
     links: list[LinkItem] = []
@@ -153,13 +181,12 @@ def _extract_links_from_html(html: str) -> list[LinkItem]:
             continue
         href = clean_href(str(href_attr).strip())
         if href.startswith("http"):
+            anchor_text = _context_snippet(tag.get_text(" ", strip=True), max_len=80)
             links.append(
                 LinkItem(
                     href=href,
-                    text=_context_snippet(tag.get_text(" ", strip=True), max_len=80),
-                    context=_context_snippet(
-                        tag.parent.get_text(" ", strip=True) if tag.parent else None
-                    ),
+                    text=anchor_text,
+                    context=_link_context(tag, anchor_text),
                     source_index=source_index,
                 )
             )
