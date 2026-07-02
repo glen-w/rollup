@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/rollup_logo.png" alt="Rollup logo" width="120">
+</p>
+
 # Rollup
 
 Local, read-only Thunderbird mbox newsletter digest for macOS.
 
-Rollup reads newsletters from your Thunderbird/Gmail mbox store, classifies them, and produces weekly Markdown and HTML digests — without modifying any mail files.
+Rollup reads newsletters from your Thunderbird/Gmail mbox store, classifies them, and produces **the rollup** — weekly Markdown and HTML digests — without modifying any mail files.
 
 ## Safety guarantee
 
@@ -69,7 +73,7 @@ More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
 
 ## Commands
 
-Rollup exposes two subcommands: `inventory` (discover folders and counts) and `digest` (generate Markdown + HTML output).
+Rollup exposes two subcommands: `inventory` (discover folders and counts) and `digest` (generate **the rollup** — Markdown + HTML output).
 
 Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no-ollama`, and the summary routing flags documented below. See [docs/EXAMPLES.md](docs/EXAMPLES.md) for copy-paste command recipes covering inventory, digest modes, Ollama routing, smoke tests, benchmarks, and fixture workflows.
 
@@ -179,9 +183,9 @@ Default per-type routes in the built-in profile set:
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md#digest-with-ollama-recommended-full-run) for runnable routing examples.
 
-Variant mode writes one output set per profile by inserting `.{profile}` before the extension, for example:
+Variant mode writes one rollup set per profile by inserting `.{profile}` before the extension, for example:
 
-- `2026-07-02-newsletter-digest.rough.md`
+- `2026-07-02-newsletter-digest.rough.md` (+ `rollup_logo.png`, `favicon.ico`)
 - `2026-07-02-newsletter-digest.rough.html`
 - `2026-07-02-newsletter-digest.deep.md`
 - `2026-07-02-newsletter-digest.deep.html`
@@ -239,9 +243,10 @@ Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMP
 
 ```
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
+assets/                           # logo and favicon
 docs/EXAMPLES.md                  # runnable command recipes
 fixtures/                         # gitignored — local real-mail copies
-output/                           # generated digests
+output/                           # generated rollups (the rollup)
 state/                            # seen_messages SQLite
 ```
 

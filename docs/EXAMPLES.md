@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="../assets/rollup_logo.png" alt="Rollup logo" width="96">
+</p>
+
 # Rollup example commands
 
 Runnable examples for inventory, digest generation, summary routing, and local tooling.
+
+**The rollup** is the weekly Markdown + HTML digest Rollup writes to `--output-dir` (default `./output`). Each run also copies `rollup_logo.png` and `favicon.ico` beside the HTML file.
 
 Run from the project root with the virtualenv active:
 
@@ -75,7 +81,7 @@ Disable per-type routing and use the `standard` profile for every message:
 python -m rollup digest --ollama --no-summary-type-routing --summary-routing-report
 ```
 
-Compare multiple profiles side by side (writes one output set per profile):
+Compare multiple profiles side by side (writes one rollup set per profile):
 
 ```bash
 python -m rollup digest --ollama --summary-variants rough,standard,deep --summary-routing-report
@@ -85,6 +91,8 @@ Variant mode writes files such as:
 
 - `output/2026-07-02-newsletter-digest.rough.md`
 - `output/2026-07-02-newsletter-digest.deep.html`
+- `output/rollup_logo.png`
+- `output/favicon.ico`
 
 ### Smoke tests and cache control
 

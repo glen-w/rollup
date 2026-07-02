@@ -9,6 +9,7 @@ from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
+from rollup.assets import FAVICON_FILENAME, LOGO_FILENAME
 from rollup.links import (
     prepare_links_for_render,
     render_link_html,
@@ -18,6 +19,8 @@ from rollup.models import LinkItem
 from rollup.models import DigestEntry, DigestReport, DigestStats
 
 logger = logging.getLogger(__name__)
+
+ROLLUP_TITLE = "Rollup"
 
 FOLDER_EMOJI: dict[str, str] = {
     "brainfood": "🧠",
@@ -256,7 +259,9 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
     we = report.window_end.strftime("%Y-%m-%d")
     total = report.stats.dated_included + report.stats.undated_needing_review
     lines = [
-        f"# Newsletter Digest — {gen_date}",
+        f"![{ROLLUP_TITLE}]({LOGO_FILENAME})",
+        "",
+        f"# {ROLLUP_TITLE} — {gen_date}",
         "",
         f"_Week of {ws} to {we} · {total} newsletters_",
         "",
@@ -333,9 +338,12 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
     body_parts = [
         "<!DOCTYPE html>",
         "<html lang='en'><head><meta charset='utf-8'>",
-        f"<title>Newsletter Digest — {gen_date}</title>",
+        f"<title>{ROLLUP_TITLE} — {gen_date}</title>",
+        f"<link rel='icon' href='{FAVICON_FILENAME}' type='image/x-icon'>",
         "<style>",
         "body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;line-height:1.5;}",
+        ".rollup-header{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;}",
+        ".rollup-logo{height:48px;width:auto;border-radius:6px;}",
         "details{margin:1rem 0;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;}",
         "summary{cursor:pointer;font-weight:600;}",
         "#undated{border-color:#c90;background:#fffbe6;}",
@@ -349,7 +357,10 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
         ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",
         "</style></head><body>",
-        f"<h1>Newsletter Digest — {gen_date}</h1>",
+        "<header class='rollup-header'>",
+        f"<img class='rollup-logo' src='{LOGO_FILENAME}' alt='{ROLLUP_TITLE} logo'>",
+        f"<h1>{ROLLUP_TITLE} — {gen_date}</h1>",
+        "</header>",
         f"<p><em>Week of {ws} to {we} · {total} newsletters</em></p>",
         f"<div class='stats'>{html_module.escape(render_stats_block(report.stats))}</div>",
         _render_summary_metadata_html(report),
@@ -367,6 +378,15 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         body_parts.append("</section>")
     body_parts.append("</body></html>")
     return "\n".join(body_parts)
+
+
+def write_branding_assets(output_dir: Path) -> None:
+    """Copy logo and favicon beside rollup output files."""
+    from rollup.assets import asset_bytes
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / LOGO_FILENAME).write_bytes(asset_bytes(LOGO_FILENAME))
+    (output_dir / FAVICON_FILENAME).write_bytes(asset_bytes(FAVICON_FILENAME))
 
 
 def cleanup_stale_temps(output_dir: Path) -> None:
@@ -388,6 +408,7 @@ def atomic_write_digest(
     """Write MD and HTML atomically via temp files + rename."""
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stale_temps(output_dir)
+    write_branding_assets(output_dir)
     date_str = generated_at.strftime("%Y-%m-%d")
     suffix = f".{variant_name}" if variant_name else ""
     final_md = output_dir / f"{date_str}-newsletter-digest{suffix}.md"

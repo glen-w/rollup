@@ -26,6 +26,7 @@ from rollup.render import (
     render_html,
     render_markdown,
     render_stats_block,
+    write_branding_assets,
 )
 
 
@@ -103,6 +104,31 @@ def test_render_markdown_contains_subject() -> None:
     assert "Test Subject" in md
     assert "## 💻 tech" in md
     assert "## Summary Routing" in md
+    assert "# Rollup —" in md
+    assert "![Rollup](rollup_logo.png)" in md
+
+
+def test_render_html_includes_branding() -> None:
+    html = render_html(_report(), 8)
+    assert "<title>Rollup —" in html
+    assert "rollup_logo.png" in html
+    assert "favicon.ico" in html
+    assert "class='rollup-logo'" in html
+    assert "<h1>Rollup —" in html
+
+
+def test_write_branding_assets(tmp_path: Path) -> None:
+    write_branding_assets(tmp_path)
+    assert (tmp_path / "rollup_logo.png").is_file()
+    assert (tmp_path / "favicon.ico").is_file()
+    assert (tmp_path / "favicon.ico").stat().st_size > 0
+
+
+def test_atomic_write_includes_branding_assets(tmp_path: Path) -> None:
+    now = datetime.now().astimezone()
+    atomic_write_digest(tmp_path, now, "# Test\n", "<html></html>")
+    assert (tmp_path / "rollup_logo.png").is_file()
+    assert (tmp_path / "favicon.ico").is_file()
 
 
 def test_render_uses_folder_and_read_time_emojis() -> None:

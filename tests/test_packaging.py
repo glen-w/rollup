@@ -40,6 +40,8 @@ assert "requests" not in new
 def test_package_has_main_and_entry() -> None:
     assert (PROJECT_ROOT / "src" / "rollup" / "__main__.py").is_file()
     assert (PROJECT_ROOT / "src" / "rollup" / "__init__.py").is_file()
+    assert (PROJECT_ROOT / "src" / "rollup" / "assets" / "rollup_logo.png").is_file()
+    assert (PROJECT_ROOT / "src" / "rollup" / "assets" / "favicon.ico").is_file()
     text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'rollup = "rollup.cli:main"' in text
 
