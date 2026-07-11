@@ -248,7 +248,26 @@ def test_atomic_write_variant_name(tmp_path: Path) -> None:
 def test_atomic_write_includes_timestamp_in_filename(tmp_path: Path) -> None:
     now = datetime(2026, 7, 2, 14, 30, 52, tzinfo=datetime.now().astimezone().tzinfo)
     md_path, _html_path = atomic_write_digest(tmp_path, now, "# Test\n", "<html></html>")
-    assert md_path.name == "2026-07-02-143052-newsletter-digest.md"
+    # Stem uses UTC (Z) so local 14:30 CEST → 12:30Z
+    assert md_path.name.endswith("-newsletter-digest.md")
+    assert "T" in md_path.name and "Z-" in md_path.name or md_path.name.endswith("Z-newsletter-digest.md")
+    from datetime import timezone
+
+    utc = now.astimezone(timezone.utc)
+    expected = utc.strftime("%Y-%m-%dT%H%M%SZ") + "-newsletter-digest.md"
+    assert md_path.name == expected
+
+
+def test_atomic_write_with_run_id_suffix(tmp_path: Path) -> None:
+    now = datetime(2026, 7, 2, 14, 30, 52, tzinfo=datetime.now().astimezone().tzinfo)
+    md_path, _html_path = atomic_write_digest(
+        tmp_path, now, "# Test\n", "<html></html>", run_id_short="a1b2c3d4"
+    )
+    from datetime import timezone
+
+    utc = now.astimezone(timezone.utc)
+    expected = utc.strftime("%Y-%m-%dT%H%M%SZ") + "-a1b2c3d4-newsletter-digest.md"
+    assert md_path.name == expected
 
 
 def test_atomic_write_same_day_does_not_overwrite(tmp_path: Path) -> None:

@@ -91,35 +91,100 @@ More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](C
 
 ## Commands
 
-Rollup exposes two subcommands: `inventory` (discover folders and counts) and `digest` (generate **the rollup** — Markdown + HTML output).
+Rollup exposes:
 
-Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--no-ollama`, summary routing flags, and `--final-review` documented below. See [docs/EXAMPLES.md](docs/EXAMPLES.md) for copy-paste command recipes covering inventory, digest modes, Ollama routing, final review, smoke tests, benchmarks, and fixture workflows.
+| Command | Purpose |
+|---------|---------|
+| `inventory` | Discover folders and counts |
+| `digest` | Generate the weekly Markdown + HTML digest |
+| `doctor` | Setup, safety, and environment diagnostics |
+| `cron` | Print launchd/crontab snippets; show last-run status |
+
+Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--cron`,
+`--ollama`, `--grouping` / `--no-grouping`, and `--final-review`.
+
+See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CRON.md](docs/CRON.md), and
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## Recommended personal setup
+
+1. Install into a venv and confirm `rollup doctor` is clean.
+2. Run a manual weekly non-AI digest (preview summaries, no network).
+3. Optionally enable `--ollama` for local AI summaries.
+4. Schedule with **launchd** on macOS (`rollup cron print-launchd`) — see [docs/CRON.md](docs/CRON.md).
+
+## Manual vs cron vs dry-run
+
+| Mode | Flag | Writes digest? | Latest outputs? | Network? |
+|------|------|----------------|-----------------|----------|
+| Manual | (default) | yes | only with `--latest` | only with `--ollama` |
+| Cron / unattended | `--cron` | yes | yes (on success) | only with `--ollama` |
+| Dry-run | `--dry-run` | no | no | no |
+
+**Preview summaries** (default) are short body excerpts — not the same as dry-run.
+
+## Doctor
+
+```bash
+rollup doctor
+rollup doctor --json
+rollup doctor --full
+```
+
+## Run manifests
+
+Every non-dry-run digest writes a privacy-safe JSON manifest under
+`state/manifests/`. Successful runs that publish latest also update
+`state/manifests/latest.json`.
+
+## Grouping
+
+By default Rollup groups high-frequency notification streams and daily editions
+so the weekly digest stays readable. Essays stay standalone. Disable with
+`--no-grouping`. Inspect decisions with `--grouping-report`.
+
+## AI modes (simple)
+
+| Tier | Flags | What you get |
+|------|-------|--------------|
+| Basic | (default) | Preview summaries — fast, private, no AI server |
+| Local AI | `--ollama` | Local Ollama summaries with type-routed profiles |
+| QA | `--ollama --final-review` | Plus whole-digest editorial report |
+
+## What Rollup will never do
+
+- Write, delete, or rename anything under your mail root
+- Call cloud email APIs (no Gmail API)
+- Require Ollama for default digests or CI tests
+- Open a browser or prompt interactively in `--cron` mode
+- Store message bodies or subjects in run manifests
 
 ## Live-run checklist
 
 1. **Before copying real mail**, confirm `.gitignore` contains `fixtures/`.
 2. **Never commit** files copied from `/Users/89298/email/gmail`.
 3. Bootstrap Python env (see Development setup above).
-4. Run against committed synthetic fixtures first:
+4. Run `rollup doctor` against your paths.
+5. Run against committed synthetic fixtures first:
    ```bash
    python -m rollup inventory --root tests/fixtures/Newsletters.sbd
    python -m rollup digest --root tests/fixtures/Newsletters.sbd
    ```
-5. Optional local real-mail copy (gitignored):
+6. Optional local real-mail copy (gitignored):
    ```bash
    cp -R /Users/89298/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
    ```
-6. Small live tests before a full run:
+7. Small live tests before a full run:
    ```bash
    python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
    python -m rollup digest --folder hoops
    python -m rollup digest --folder tech
    ```
-7. Full live digest without Ollama (default; preview summaries only):
+8. Full live digest without Ollama (default; preview summaries only):
    ```bash
    python -m rollup digest
    ```
-8. Enable Ollama (local loopback only by default; explicit opt-in):
+9. Enable Ollama (local loopback only by default; explicit opt-in):
    ```bash
    python -m rollup digest --list-summary-profiles
    python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
@@ -155,6 +220,10 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--final-review-report` | `<digest-stem>.final-review.json` | Explicit sidecar path |
 | `--no-final-review-cache` | off | Bypass final review cache |
 | `--dry-run` | off | Parse only; no writes or network |
+| `--cron` | off | Unattended mode; quieter; publish latest on success |
+| `--latest` | off | Publish `output/latest.md` / `latest.html` |
+| `--no-grouping` | off | Disable notification/daily grouping |
+| `--grouping-report` | off | Print grouping reason codes |
 
 Final review does **not** require `--ollama`. It calls Ollama independently when enabled. Digest content is not mutated in report mode; a short QA summary appears in the collapsed run-details section. See [docs/EXAMPLES.md](docs/EXAMPLES.md#final-review-editorial-qa).
 

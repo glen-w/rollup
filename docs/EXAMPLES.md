@@ -43,7 +43,28 @@ python -m rollup digest --lookback-days 7
 python -m rollup digest --dry-run --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --folder tech --exclude-folder hoops
 python -m rollup digest --include-seen-undated
+python -m rollup digest --cron --root tests/fixtures/Newsletters.sbd
+python -m rollup digest --no-grouping --root tests/fixtures/Newsletters.sbd
+python -m rollup digest --grouping-report --root tests/fixtures/Newsletters.sbd
 ```
+
+## Doctor
+
+```bash
+python -m rollup doctor --root tests/fixtures/Newsletters.sbd
+python -m rollup doctor --json --root tests/fixtures/Newsletters.sbd
+python -m rollup doctor --full --root tests/fixtures/Newsletters.sbd
+```
+
+## Cron helpers (launchd preferred on macOS)
+
+```bash
+python -m rollup cron print-launchd --python "$(which python)" --workdir .
+python -m rollup cron print-crontab --python "$(which python)" --workdir .
+python -m rollup cron status
+```
+
+See [docs/CRON.md](CRON.md) for weekly non-AI digest scheduling.
 
 ## Digest with Ollama (recommended full run)
 

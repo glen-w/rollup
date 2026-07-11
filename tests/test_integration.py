@@ -313,7 +313,7 @@ def test_partial_write_does_not_update_seen_state(tmp_path: Path, monkeypatch) -
     def boom(*args, **kwargs):
         raise OSError("simulated write failure")
 
-    monkeypatch.setattr(cli, "atomic_write_digest", boom)
+    monkeypatch.setattr("rollup.pipeline.atomic_write_digest", boom)
 
     parser = cli.build_parser()
     args = parser.parse_args(
@@ -584,7 +584,9 @@ def test_digest_ollama_rejects_remote_url(tmp_path: Path, monkeypatch, capsys) -
     assert rc == 1
     assert "ERROR:" in captured.err
     assert "Traceback" not in captured.err
-    assert not (tmp_path / "state").exists()
+    # State dir may exist for lock/manifest, but no digest outputs should be published.
+    assert not list((tmp_path / "output").glob("*-newsletter-digest.md"))
+    assert not (tmp_path / "output" / "latest.md").exists()
 
 
 @pytest.mark.parametrize("ollama_flag", [[], ["--no-ollama"]])

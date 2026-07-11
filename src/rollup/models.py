@@ -15,6 +15,12 @@ NewsletterType = Literal[
     "unclassified",
 ]
 SummarySource = Literal["ollama", "cache", "preview_fallback", "none"]
+GroupType = Literal[
+    "standalone",
+    "notification_stream",
+    "daily_editions",
+]
+GroupRenderMode = Literal["compact", "expandable"]
 FinalReviewIssueType = Literal[
     "style_drift",
     "duplication",
@@ -135,6 +141,33 @@ class DigestEntry:
 
 
 @dataclass(frozen=True)
+class DigestGroup:
+    """Grouped related messages for compact digest reading."""
+
+    group_id: str
+    group_type: GroupType
+    display_name: str
+    sender_normalized: str
+    folder_name: str
+    entries: tuple[DigestEntry, ...]
+    group_summary: str | None = None
+    group_summary_source: SummarySource = "none"
+    render_mode: GroupRenderMode = "compact"
+
+
+# DigestItem is either a standalone entry or a group of related entries.
+DigestItem = DigestEntry | DigestGroup
+
+
+@dataclass(frozen=True)
+class GroupingMetadata:
+    groups_created: int
+    messages_in_groups: int
+    standalone_cards: int
+    grouping_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
 class DigestSummaryRouteStat:
     newsletter_type: str
     profile_name: str
@@ -191,11 +224,12 @@ class DigestReport:
     lookback_days: int
     window_start: datetime
     window_end: datetime
-    dated_by_folder: dict[str, tuple[DigestEntry, ...]]
-    undated: tuple[DigestEntry, ...]
+    dated_by_folder: dict[str, tuple[DigestItem, ...]]
+    undated: tuple[DigestItem, ...]
     stats: DigestStats
     summary_metadata: DigestSummaryMetadata | None = None
     final_review: FinalReviewResult | None = None
+    grouping_metadata: GroupingMetadata | None = None
 
 
 @dataclass(frozen=True)

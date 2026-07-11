@@ -120,18 +120,20 @@ def build_review_corpus(
 ) -> DigestReviewCorpus:
     entries: list[DigestReviewEntry] = []
     for folder, folder_entries in sorted(report.dated_by_folder.items()):
-        for entry in folder_entries:
+        for item in folder_entries:
+            for entry in _iter_digest_entries(item):
+                entries.append(
+                    _corpus_entry_from_digest_entry(
+                        entry, folder, max_summary_chars=max_summary_chars
+                    )
+                )
+    for item in report.undated:
+        for entry in _iter_digest_entries(item):
             entries.append(
                 _corpus_entry_from_digest_entry(
-                    entry, folder, max_summary_chars=max_summary_chars
+                    entry, "undated", max_summary_chars=max_summary_chars
                 )
             )
-    for entry in report.undated:
-        entries.append(
-            _corpus_entry_from_digest_entry(
-                entry, "undated", max_summary_chars=max_summary_chars
-            )
-        )
     return DigestReviewCorpus(
         window_start=report.window_start.isoformat(),
         window_end=report.window_end.isoformat(),
@@ -169,13 +171,22 @@ def _entry_fingerprint(entry: DigestEntry, section: str) -> dict:
     }
 
 
+def _iter_digest_entries(item) -> list:
+    """Flatten DigestGroup to DigestEntry list; pass DigestEntry through."""
+    if hasattr(item, "entries") and not hasattr(item, "classified"):
+        return list(item.entries)
+    return [item]
+
+
 def compute_digest_fingerprint(report: DigestReport) -> str:
     parts: list[dict] = []
     for folder, entries in sorted(report.dated_by_folder.items()):
-        for entry in entries:
-            parts.append(_entry_fingerprint(entry, folder))
-    for entry in report.undated:
-        parts.append(_entry_fingerprint(entry, "undated"))
+        for item in entries:
+            for entry in _iter_digest_entries(item):
+                parts.append(_entry_fingerprint(entry, folder))
+    for item in report.undated:
+        for entry in _iter_digest_entries(item):
+            parts.append(_entry_fingerprint(entry, "undated"))
     payload = json.dumps(parts, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

@@ -6,7 +6,6 @@ import argparse
 import json
 import logging
 import sys
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -27,26 +26,16 @@ from rollup.config import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_STATE_DIR,
     Config,
-    compute_date_window,
 )
-from rollup.discovery import build_inventory, filter_folders, iter_mbox_files
-from rollup.filter import (
-    apply_undated_seen_filter,
-    build_digest_entries,
-    count_summary_sources,
-    group_dated_by_folder,
-)
-from rollup.models import DigestReport, DigestStats, FinalReviewResult
-from rollup.parse import parse_mbox_folder
-from rollup.render import (
-    atomic_write_digest,
-    digest_output_stem,
-    render_html,
-    render_markdown,
-    render_stats_block,
+from rollup.discovery import build_inventory
+from rollup.pipeline import run_digest
+from rollup.render import digest_output_stem, render_stats_block
+from rollup.run_options import (
+    GroupingConfig,
+    default_manifest_config,
+    resolve_run_options,
 )
 from rollup.safety import SafetyError, assert_safe_write_paths, validate_read_root
-from rollup.summary_plan import SummaryCliOptions, resolve_summary_plan
 from rollup.summary_profiles import (
     get_canonical_newsletter_types,
     list_summary_profiles as list_summary_profile_infos,
@@ -123,9 +112,22 @@ def _build_config(args: argparse.Namespace) -> Config:
     summary_type_routing = getattr(args, "summary_type_routing", None)
     if summary_type_routing is None and getattr(args, "ollama", False):
         summary_type_routing = bool(
-            not getattr(args, "summary_profile", None)
-            and not summary_variants
+            not getattr(args, "summary_profile", None) and not summary_variants
         )
+
+    # Runtime quiet/verbose: --cron implies quiet unless --verbose.
+    cron = getattr(args, "cron", False)
+    verbose = getattr(args, "verbose", False)
+    quiet_explicit = getattr(args, "quiet", False)
+    if verbose:
+        quiet = False
+    elif quiet_explicit:
+        quiet = True
+    elif cron:
+        quiet = True
+    else:
+        quiet = False
+
     return Config(
         root=Path(args.root),
         mail_root=Path(args.mail_root),
@@ -155,8 +157,8 @@ def _build_config(args: argparse.Namespace) -> Config:
         list_summary_profiles=getattr(args, "list_summary_profiles", False),
         list_newsletter_types=getattr(args, "list_newsletter_types", False),
         summary_routing_report=getattr(args, "summary_routing_report", False),
-        verbose=getattr(args, "verbose", False),
-        quiet=getattr(args, "quiet", False),
+        verbose=verbose,
+        quiet=quiet,
         final_review_enabled=getattr(args, "final_review", False),
         final_review_mode=getattr(args, "final_review_mode", DEFAULT_FINAL_REVIEW_MODE),
         final_review_profile=getattr(
@@ -178,6 +180,48 @@ def _build_config(args: argparse.Namespace) -> Config:
     )
 
 
+def _build_run_options(args: argparse.Namespace, config: Config):
+    cron = getattr(args, "cron", False)
+    # Detect whether quiet was explicitly passed via argparse store_true —
+    # if cron and not verbose and not --quiet, quiet comes from cron default.
+    quiet_arg = True if getattr(args, "quiet", False) else (None if cron else False)
+    if getattr(args, "verbose", False):
+        quiet_arg = False
+    elif getattr(args, "quiet", False):
+        quiet_arg = True
+
+    publish_latest = None
+    if getattr(args, "latest", False) or getattr(args, "publish_latest", False):
+        publish_latest = True
+    elif getattr(args, "no_latest", False):
+        publish_latest = False
+
+    return resolve_run_options(
+        dry_run=config.dry_run,
+        cron=cron,
+        quiet=quiet_arg,
+        verbose=config.verbose,
+        write_manifest=None,
+        publish_latest=publish_latest,
+        allow_partial_latest=getattr(args, "allow_partial_latest", False),
+        no_manifest=getattr(args, "no_manifest", False),
+    )
+
+
+def _build_grouping_config(args: argparse.Namespace) -> GroupingConfig:
+    if getattr(args, "no_grouping", False):
+        enabled = False
+    elif getattr(args, "grouping", False):
+        enabled = True
+    else:
+        enabled = True  # default on
+    return GroupingConfig(
+        enabled=enabled,
+        min_group_size=getattr(args, "grouping_min_size", 3),
+        report=getattr(args, "grouping_report", False),
+    )
+
+
 def _validate_config(
     config: Config,
     json_out: Path | None = None,
@@ -195,12 +239,16 @@ def _validate_config(
         config.state_dir,
         config.log_dir,
         config.db_path,
+        config.state_dir / "manifests",
+        config.state_dir / "rollup.lock",
+        config.output_dir / "latest.md",
+        config.output_dir / "latest.html",
     ]
     if json_out:
         writable.append(json_out)
     digest_at = generated_at or datetime.now().astimezone()
     for variant in (None, *config.summary_variants):
-        stem = digest_output_stem(digest_at, variant)
+        stem = digest_output_stem(digest_at, variant, run_id_short="preview")
         writable.extend(
             [
                 config.output_dir / f"{stem}.md",
@@ -211,9 +259,7 @@ def _validate_config(
         )
         if config.final_review_enabled:
             review_path = (
-                config.final_review_report_path
-                if variant is None
-                else None
+                config.final_review_report_path if variant is None else None
             )
             if review_path is None:
                 writable.append(config.output_dir / f"{stem}.final-review.json")
@@ -286,55 +332,6 @@ def _validate_final_review_config(config: Config) -> None:
     )
 
 
-def _run_final_review_if_enabled(
-    report: DigestReport,
-    config: Config,
-    conn,
-    digest_stem: str,
-    *,
-    use_explicit_report_path: bool = False,
-) -> FinalReviewResult | None:
-    if not config.final_review_enabled or config.dry_run:
-        return None
-    from rollup.final_review import (
-        execute_final_review,
-        print_final_review_summary,
-        write_final_review_report,
-    )
-
-    if use_explicit_report_path and config.final_review_report_path:
-        report_path = config.final_review_report_path
-    else:
-        report_path = config.output_dir / f"{digest_stem}.final-review.json"
-    result = execute_final_review(report, config, conn=conn)
-    write_final_review_report(result, report_path)
-    print_final_review_summary(result, report_path)
-    return result
-
-
-def _build_digest_report(
-    *,
-    generated_at: datetime,
-    lookback_days: int,
-    window_start: datetime,
-    window_end: datetime,
-    dated_entries,
-    undated_entries,
-    stats: DigestStats,
-    summary_metadata,
-) -> DigestReport:
-    return DigestReport(
-        generated_at=generated_at,
-        lookback_days=lookback_days,
-        window_start=window_start,
-        window_end=window_end,
-        dated_by_folder=group_dated_by_folder(dated_entries),
-        undated=tuple(undated_entries),
-        stats=stats,
-        summary_metadata=summary_metadata,
-    )
-
-
 def cmd_inventory(args: argparse.Namespace) -> int:
     config = _build_config(args)
     json_out = Path(args.json_out) if args.json_out else None
@@ -380,6 +377,8 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 def cmd_digest(args: argparse.Namespace) -> int:
     config = _build_config(args)
+    run_options = _build_run_options(args, config)
+    grouping = _build_grouping_config(args)
     generated_at = datetime.now().astimezone()
     try:
         warnings = _validate_config(config, generated_at=generated_at)
@@ -391,10 +390,10 @@ def cmd_digest(args: argparse.Namespace) -> int:
         print(w, file=sys.stderr)
 
     _setup_logging(
-        config.verbose,
-        config.quiet,
-        config.log_dir if not config.dry_run else None,
-        config.dry_run,
+        run_options.verbose,
+        run_options.quiet,
+        config.log_dir if not run_options.dry_run else None,
+        run_options.dry_run,
     )
     profile_set = _load_and_validate_profile_set(config)
     if config.list_newsletter_types:
@@ -418,251 +417,137 @@ def cmd_digest(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    window_start, window_end = compute_date_window(generated_at, config.lookback_days)
 
-    folders = list(iter_mbox_files(config.root))
-    folders = filter_folders(folders, config.folders_include, config.folders_exclude)
-    logger.info(
-        "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
-        config.root,
-        len(folders),
-        config.lookback_days,
-        config.dry_run,
-        config.no_ollama,
+    result = run_digest(
+        config,
+        run_options,
+        grouping=grouping,
+        manifest_config=default_manifest_config(config.state_dir),
     )
 
-    all_messages = []
-    parse_errors = 0
-    for folder in folders:
-        logger.info("Parsing %s (%s)", folder.folder_name, folder.mbox_path)
-        msgs, errors, folder_errors = parse_mbox_folder(
-            folder, config.max_body_chars, config.max_display_links
+    if result.stats is not None and not run_options.quiet:
+        print(render_stats_block(result.stats))
+    elif result.stats is not None and run_options.cron:
+        # Cron: still print a one-line status to stderr via logger at WARNING+ only.
+        logger.warning(
+            "Digest %s: included=%d parse_errors=%d",
+            result.status,
+            result.stats.dated_included + result.stats.undated_needing_review,
+            result.stats.parse_errors,
         )
-        if folder_errors:
-            logger.error("Folder %s: %s", folder.folder_name, folder_errors[0])
-            parse_errors += 1
-            continue
-        parse_errors += errors
-        all_messages.extend(msgs)
 
-    dated_entries, undated_entries, skipped_window, deduped = build_digest_entries(
-        all_messages, generated_at, config.lookback_days, config.no_ollama
-    )
+    if (
+        result.report
+        and result.report.summary_metadata
+        and config.summary_routing_report
+    ):
+        _print_routing_report(result.report.summary_metadata)
 
-    if not config.no_ollama and not config.dry_run:
-        from rollup.summarize import OllamaError, validate_ollama_url
+    if grouping.report and result.aggregated.grouping is not None:
+        from rollup.grouping import GroupingApplyResult, build_grouping_report
 
-        try:
-            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-        except OllamaError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
-
-    if config.final_review_enabled and not config.dry_run:
-        from rollup.summarize import OllamaError, validate_ollama_url
-
-        try:
-            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-        except OllamaError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
-
-    seen_keys: set[str] = set()
-    conn = None
-    if not config.dry_run:
-        from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
-
-        if not config.no_ollama:
-            from rollup.state import init_db_with_summaries
-
-            conn = init_db_with_summaries(config.db_path)
-        else:
-            conn = init_db(config.db_path)
-            if config.final_review_enabled:
-                ensure_final_review_schema(conn)
-        seen_keys = load_seen_keys(conn)
-
-    undated_to_render, skipped_seen = apply_undated_seen_filter(
-        undated_entries, seen_keys, config.include_seen_undated
-    )
-
-    summary_metadata = None
-    rendered_variants: dict[str, tuple[list, list]] = {}
-    if not config.no_ollama and not config.dry_run:
-        from rollup.summarize import execute_summary_plan
-
-        routing = config.summary_type_routing
-        if routing is None:
-            routing = not config.summary_profile and not config.summary_variants
-        cli_options = SummaryCliOptions(
-            summary_profile=config.summary_profile,
-            summary_variants=config.summary_variants,
-            summary_type_routing=routing,
-        )
-        all_entries = dated_entries + undated_to_render
-        plan = resolve_summary_plan(all_entries, profile_set, cli_options)
-        execution = execute_summary_plan(
-            entries=all_entries,
-            plan=plan,
-            ollama_url=config.ollama_url,
-            default_model=config.ollama_model,
-            max_chars=config.max_chars_for_llm,
-            allow_remote=config.allow_remote_ollama,
-            conn=conn,
-            rebuild=config.rebuild_summaries,
-            quiet=config.quiet,
-        )
-        dated_count = len(dated_entries)
-        for variant_name, rendered in execution.entries_by_variant.items():
-            rendered_variants[variant_name] = (
-                rendered[:dated_count],
-                rendered[dated_count:],
+        gr = result.aggregated.grouping
+        print(
+            build_grouping_report(
+                GroupingApplyResult(
+                    dated_items=gr.dated_items,
+                    undated_items=gr.undated_items,
+                    groups=gr.groups,
+                    reason_codes=gr.reason_codes,
+                )
             )
-        default_variant_name = (
-            "default"
-            if "default" in rendered_variants
-            else next(iter(rendered_variants))
-        )
-        dated_entries, undated_to_render = rendered_variants[default_variant_name]
-        summary_metadata = execution.summary_metadata_by_variant.get(
-            default_variant_name
         )
 
-    all_rendered = dated_entries + undated_to_render
-    ollama_c, cache_c, fallback_c = count_summary_sources(all_rendered)
-
-    stats = DigestStats(
-        folders_scanned=len(folders),
-        messages_parsed=len(all_messages),
-        dated_included=len(dated_entries),
-        undated_needing_review=len(undated_to_render),
-        skipped_outside_window=skipped_window,
-        skipped_seen_undated=skipped_seen,
-        deduped_messages=deduped,
-        parse_errors=parse_errors,
-        summaries_ollama=ollama_c,
-        summaries_cache=cache_c,
-        summaries_fallback=fallback_c,
-        summaries_errors=summary_metadata.summaries_errors if summary_metadata else 0,
-    )
-
-    report = _build_digest_report(
-        generated_at=generated_at,
-        lookback_days=config.lookback_days,
-        window_start=window_start,
-        window_end=window_end,
-        dated_entries=dated_entries,
-        undated_entries=undated_to_render,
-        stats=stats,
-        summary_metadata=summary_metadata,
-    )
-
-    print(render_stats_block(stats))
-    if summary_metadata and config.summary_routing_report:
-        _print_routing_report(summary_metadata)
-
-    if config.dry_run:
+    if result.error_message:
+        print(f"ERROR: {result.error_message}", file=sys.stderr)
+    if result.secondary_manifest_error:
+        print(
+            f"ERROR: Secondary manifest write failed: {result.secondary_manifest_error}",
+            file=sys.stderr,
+        )
+    if result.md_path and not run_options.quiet:
+        logger.info("Wrote %s", result.md_path)
+        logger.info("Wrote %s", result.html_path)
+    if run_options.dry_run:
         logger.info("Dry run — no files written, no state updated")
+
+    return result.exit_code
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from rollup.doctor import format_doctor_human, format_doctor_json, run_doctor
+
+    config = _build_config(args)
+    run_options = resolve_run_options(
+        dry_run=True,
+        cron=False,
+        quiet=getattr(args, "quiet", False),
+        verbose=getattr(args, "verbose", False),
+    )
+    # Doctor may enable ollama checks via --ollama on the doctor command.
+    report = run_doctor(
+        config,
+        run_options,
+        full=getattr(args, "full", False),
+        network=getattr(args, "network", False),
+    )
+    if getattr(args, "json", False):
+        sys.stdout.write(format_doctor_json(report))
+    else:
+        print(format_doctor_human(report))
+    return 0 if report.ok else 1
+
+
+def cmd_cron(args: argparse.Namespace) -> int:
+    from rollup.cron_helpers import (
+        SchedulerPaths,
+        format_cron_status,
+        render_crontab,
+        render_launchd_plist,
+        resolve_python,
+    )
+
+    sub = args.cron_command
+    if sub == "status":
+        print(format_cron_status(Path(args.state_dir)))
         return 0
 
-    try:
-        if rendered_variants and any(name != "default" for name in rendered_variants):
-            for variant_name, (
-                variant_dated,
-                variant_undated,
-            ) in rendered_variants.items():
-                variant_metadata = execution.summary_metadata_by_variant.get(
-                    variant_name
-                )
-                variant_stats = DigestStats(
-                    folders_scanned=stats.folders_scanned,
-                    messages_parsed=stats.messages_parsed,
-                    dated_included=len(variant_dated),
-                    undated_needing_review=len(variant_undated),
-                    skipped_outside_window=stats.skipped_outside_window,
-                    skipped_seen_undated=stats.skipped_seen_undated,
-                    deduped_messages=stats.deduped_messages,
-                    parse_errors=stats.parse_errors,
-                    summaries_ollama=(
-                        variant_metadata.summaries_ollama if variant_metadata else 0
-                    ),
-                    summaries_cache=(
-                        variant_metadata.summaries_cache if variant_metadata else 0
-                    ),
-                    summaries_fallback=(
-                        variant_metadata.summaries_fallback if variant_metadata else 0
-                    ),
-                    summaries_errors=(
-                        variant_metadata.summaries_errors if variant_metadata else 0
-                    ),
-                )
-                variant_report = _build_digest_report(
-                    generated_at=generated_at,
-                    lookback_days=config.lookback_days,
-                    window_start=window_start,
-                    window_end=window_end,
-                    dated_entries=variant_dated,
-                    undated_entries=variant_undated,
-                    stats=variant_stats,
-                    summary_metadata=variant_metadata,
-                )
-                variant_stem = digest_output_stem(generated_at, variant_name)
-                review_result = _run_final_review_if_enabled(
-                    variant_report,
-                    config,
-                    conn,
-                    variant_stem,
-                    use_explicit_report_path=False,
-                )
-                if review_result is not None:
-                    variant_report = replace(
-                        variant_report, final_review=review_result
-                    )
-                md = render_markdown(variant_report, config.max_display_links)
-                html_content = render_html(variant_report, config.max_display_links)
-                md_path, html_path = atomic_write_digest(
-                    config.output_dir,
-                    generated_at,
-                    md,
-                    html_content,
-                    variant_name=variant_name,
-                )
-                logger.info("Wrote %s", md_path)
-                logger.info("Wrote %s", html_path)
-        else:
-            default_stem = digest_output_stem(generated_at)
-            review_result = _run_final_review_if_enabled(
-                report,
-                config,
-                conn,
-                default_stem,
-                use_explicit_report_path=bool(config.final_review_report_path),
-            )
-            if review_result is not None:
-                report = replace(report, final_review=review_result)
-            md = render_markdown(report, config.max_display_links)
-            html_content = render_html(report, config.max_display_links)
-            md_path, html_path = atomic_write_digest(
-                config.output_dir, generated_at, md, html_content
-            )
-            logger.info("Wrote %s", md_path)
-            logger.info("Wrote %s", html_path)
+    python_path, warnings = resolve_python(getattr(args, "python", None))
+    for w in warnings:
+        print(f"WARNING: {w}", file=sys.stderr)
 
-        if conn is not None:
-            from rollup.state import upsert_seen_keys
+    workdir = Path(getattr(args, "workdir", ".")).expanduser().resolve()
+    paths = SchedulerPaths(
+        python=python_path,
+        workdir=workdir,
+        root=Path(args.root).expanduser().resolve(),
+        mail_root=Path(args.mail_root).expanduser().resolve(),
+        output_dir=Path(args.output_dir).expanduser().resolve(),
+        state_dir=Path(args.state_dir).expanduser().resolve(),
+        log_dir=Path(args.log_dir).expanduser().resolve(),
+    )
+    extra = []
+    if getattr(args, "ollama", False):
+        extra.append("--ollama")
 
-            rendered_undated_keys = [
-                e.classified.parsed.message_key for e in undated_to_render
-            ]
-            upsert_seen_keys(conn, rendered_undated_keys, generated_at)
-            conn.close()
-    except Exception as exc:
-        logger.error("Digest write failed: %s", exc)
-        if conn is not None:
-            conn.close()
-        return 1
+    if sub == "print-crontab":
+        schedule = getattr(args, "cron_schedule", "0 8 * * 0")
+        sys.stdout.write(render_crontab(paths, schedule=schedule, extra=extra or None))
+        return 0
 
-    return 0
+    if sub == "print-launchd":
+        plist = render_launchd_plist(
+            paths,
+            weekday=getattr(args, "weekday", 0),
+            hour=getattr(args, "hour", 8),
+            minute=getattr(args, "minute", 0),
+            extra=extra or None,
+        )
+        sys.stdout.buffer.write(plist)
+        return 0
+
+    print(f"Unknown cron command: {sub}", file=sys.stderr)
+    return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -693,6 +578,61 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Parse and report only; no output files, state DB, logs, or network/Ollama calls",
+    )
+    dig.add_argument(
+        "--cron",
+        action="store_true",
+        default=False,
+        help="Unattended mode: quieter logs, publish latest outputs, mode=cron",
+    )
+    dig.add_argument(
+        "--latest",
+        action="store_true",
+        default=False,
+        help="Publish output/latest.md and latest.html after a successful run",
+    )
+    dig.add_argument(
+        "--no-latest",
+        action="store_true",
+        default=False,
+        help="Do not publish latest.* even in --cron mode",
+    )
+    dig.add_argument(
+        "--allow-partial-latest",
+        action="store_true",
+        default=False,
+        help="Allow partial runs to update latest.* (default: only success)",
+    )
+    dig.add_argument(
+        "--no-manifest",
+        action="store_true",
+        default=False,
+        help="Skip writing a run manifest",
+    )
+    grouping_group = dig.add_mutually_exclusive_group()
+    grouping_group.add_argument(
+        "--grouping",
+        action="store_true",
+        default=False,
+        help="Enable deterministic grouping (default)",
+    )
+    grouping_group.add_argument(
+        "--no-grouping",
+        action="store_true",
+        default=False,
+        help="Disable grouping; one card per message",
+    )
+    dig.add_argument(
+        "--grouping-report",
+        action="store_true",
+        default=False,
+        help="Print grouping decisions to stdout",
+    )
+    dig.add_argument(
+        "--grouping-min-size",
+        type=int,
+        default=3,
+        help="Minimum messages to form a notification_stream group",
     )
     ollama_group = dig.add_mutually_exclusive_group()
     ollama_group.add_argument(
@@ -789,6 +729,78 @@ def build_parser() -> argparse.ArgumentParser:
         help="Bypass final review cache",
     )
 
+    doc = sub.add_parser(
+        "doctor",
+        help="Inspect local setup, safety, and configuration",
+    )
+    _add_common_args(doc)
+    doc.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Write JSON report to stdout (diagnostics stay on stderr)",
+    )
+    doc.add_argument(
+        "--full",
+        action="store_true",
+        default=False,
+        help="Run expensive read-only mbox sampling checks",
+    )
+    doc.add_argument(
+        "--network",
+        action="store_true",
+        default=False,
+        help="Probe Ollama even when --ollama is not set",
+    )
+    doc.add_argument(
+        "--ollama",
+        action="store_true",
+        default=False,
+        help="Treat Ollama as enabled for network/loopback checks",
+    )
+    doc.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
+    doc.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL)
+    doc.add_argument("--allow-remote-ollama", action="store_true", default=False)
+
+    cron = sub.add_parser(
+        "cron",
+        help="Scheduler helpers (print-launchd, print-crontab, status)",
+    )
+    cron_sub = cron.add_subparsers(dest="cron_command", required=True)
+    for name, help_text in (
+        ("print-launchd", "Print a macOS launchd LaunchAgent plist (preferred)"),
+        ("print-crontab", "Print a crontab line (alternative to launchd)"),
+        ("status", "Show last run status from manifests/latest.json"),
+    ):
+        p = cron_sub.add_parser(name, help=help_text)
+        _add_common_args(p)
+        if name != "status":
+            p.add_argument(
+                "--python",
+                help="Absolute path to Python interpreter (recommended)",
+            )
+            p.add_argument(
+                "--workdir",
+                default=".",
+                help="WorkingDirectory for the scheduled job",
+            )
+            p.add_argument(
+                "--ollama",
+                action="store_true",
+                default=False,
+                help="Include --ollama in the generated command",
+            )
+        if name == "print-crontab":
+            p.add_argument(
+                "--cron-schedule",
+                default="0 8 * * 0",
+                help="Crontab schedule expression (default: Sundays 08:00)",
+            )
+        if name == "print-launchd":
+            p.add_argument("--weekday", type=int, default=0, help="0=Sunday … 6=Saturday")
+            p.add_argument("--hour", type=int, default=8)
+            p.add_argument("--minute", type=int, default=0)
+
     return parser
 
 
@@ -820,6 +832,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(cmd_inventory(args))
     elif args.command == "digest":
         sys.exit(cmd_digest(args))
+    elif args.command == "doctor":
+        sys.exit(cmd_doctor(args))
+    elif args.command == "cron":
+        sys.exit(cmd_cron(args))
     else:
         parser.print_help()
         sys.exit(1)

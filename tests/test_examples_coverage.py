@@ -14,6 +14,12 @@ README_PATH = PROJECT_ROOT / "README.md"
 REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("inventory command", "rollup inventory"),
     ("digest command", "rollup digest"),
+    ("doctor command", "rollup doctor"),
+    ("cron print-launchd", "cron print-launchd"),
+    ("cron status", "cron status"),
+    ("cron mode", "--cron"),
+    ("grouping report", "--grouping-report"),
+    ("no grouping", "--no-grouping"),
     ("synthetic fixtures root", "tests/fixtures/Newsletters.sbd"),
     ("no-ollama mode", "--no-ollama"),
     ("ollama mode", "--ollama"),

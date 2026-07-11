@@ -87,16 +87,22 @@ def _decode_header_value(value: str | None) -> str:
         return value
 
 
-def _parse_date(date_raw: str) -> datetime | None:
+def _parse_date(date_raw: str) -> tuple[datetime | None, str | None]:
+    """Parse a Date header. Missing/invalid dates are not fatal parse errors.
+
+    Returns (datetime|None, anomaly_code|None). Anomaly codes:
+    - date_invalid: raw present but unparseable (message still usable as undated)
+    - None: missing date or successfully parsed
+    """
     if not date_raw.strip():
-        return None
+        return None, None
     try:
         dt = parsedate_to_datetime(date_raw)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
-        return dt
+        return dt, None
     except Exception:
-        return None
+        return None, "date_invalid"
 
 
 def _get_payload_text(part, max_bytes: int = 5_000_000) -> str:
@@ -322,18 +328,33 @@ def parse_message(
     max_body_chars: int,
     max_display_links: int,
 ) -> ParsedMessage:
+    """Parse one email message.
+
+    ``max_body_chars`` truncates extracted body text before content_hash,
+    classification, and preview. LLM input may be truncated further via
+    ``max_chars_for_llm`` at summarisation time.
+    """
     subject = _decode_header_value(msg.get("Subject"))
     sender = _decode_header_value(msg.get("From"))
     date_raw = msg.get("Date", "") or ""
-    date_parsed = _parse_date(date_raw)
+    date_parsed, date_anomaly = _parse_date(date_raw)
     message_id_header = msg.get("Message-ID")
 
     plain, html_raw = _walk_parts(msg)
     html_text = _html_to_text(html_raw) if html_raw else ""
     body_text = _choose_body(plain, html_text)
 
+    warnings: list[str] = []
+    if date_anomaly:
+        warnings.append(date_anomaly)
+
     if len(body_text) > max_body_chars:
         body_text = body_text[:max_body_chars]
+        warnings.append("body_truncated")
+
+    if not body_text.strip():
+        # Empty body with useful subject is a valid short notification, not fatal.
+        warnings.append("empty_body")
 
     if html_raw:
         html_heading_count, html_link_count, html_section_break_count = (
@@ -348,9 +369,9 @@ def parse_message(
     message_key, key_warnings = compute_message_key(
         message_id_header, folder_name, subject, sender, date_raw, body_text
     )
+    warnings.extend(key_warnings)
     content_hash = compute_content_hash(body_text)
     preview = _make_preview(body_text)
-    warnings = list(key_warnings)
 
     return ParsedMessage(
         message_key=message_key,

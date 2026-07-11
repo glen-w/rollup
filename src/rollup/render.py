@@ -15,8 +15,8 @@ from rollup.links import (
     render_link_html,
     render_link_markdown,
 )
+from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport, DigestStats
 from rollup.models import LinkItem
-from rollup.models import DigestEntry, DigestReport, DigestStats
 from rollup.final_review import format_final_review_digest_summary
 from rollup.summarize import clean_summary_output
 
@@ -107,17 +107,20 @@ def _format_newsletter_type(ntype: str) -> str:
 
 
 def _sort_entries_by_read_time(
-    entries: tuple[DigestEntry, ...],
-) -> tuple[DigestEntry, ...]:
-    return tuple(
-        sorted(
-            entries,
-            key=lambda entry: (
-                entry.classified.parsed.read_time_minutes,
-                entry.classified.parsed.subject.lower(),
-            ),
+    entries: tuple[DigestItem, ...],
+) -> tuple[DigestItem, ...]:
+    def key(item: DigestItem) -> tuple:
+        if isinstance(item, DigestGroup):
+            minutes = sum(
+                e.classified.parsed.read_time_minutes for e in item.entries
+            )
+            return (minutes, item.display_name.lower())
+        return (
+            item.classified.parsed.read_time_minutes,
+            item.classified.parsed.subject.lower(),
         )
-    )
+
+    return tuple(sorted(entries, key=key))
 
 
 def _folder_accent_css() -> str:
@@ -164,20 +167,27 @@ def _format_read_time(minutes: int) -> str:
     return f"🕐 {minutes} min"
 
 
-def _format_section_byline(entries: tuple[DigestEntry, ...]) -> str:
-    count = len(entries)
-    total_minutes = sum(
-        entry.classified.parsed.read_time_minutes for entry in entries
-    )
-    newsletter_word = "newsletter" if count == 1 else "newsletters"
+def _format_section_byline(entries: tuple[DigestItem, ...]) -> str:
+    flat_count = 0
+    total_minutes = 0
+    for item in entries:
+        if isinstance(item, DigestGroup):
+            flat_count += len(item.entries)
+            total_minutes += sum(
+                e.classified.parsed.read_time_minutes for e in item.entries
+            )
+        else:
+            flat_count += 1
+            total_minutes += item.classified.parsed.read_time_minutes
+    newsletter_word = "newsletter" if flat_count == 1 else "newsletters"
     minute_word = "minute" if total_minutes == 1 else "minutes"
     return (
-        f"{count} {newsletter_word}, "
+        f"{flat_count} {newsletter_word}, "
         f"{total_minutes} {minute_word} reading time"
     )
 
 
-def _render_section_byline_html(entries: tuple[DigestEntry, ...]) -> str:
+def _render_section_byline_html(entries: tuple[DigestItem, ...]) -> str:
     return (
         "<p class='folder-byline'>"
         f"<em>{html_module.escape(_format_section_byline(entries))}</em>"
@@ -455,6 +465,112 @@ def _render_run_details_md(report: DigestReport) -> list[str]:
     return lines
 
 
+def _truncate(text: str, max_chars: int) -> str:
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "…"
+
+
+def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
+    """Plain Markdown group structure — no HTML dependency."""
+    n = len(group.entries)
+    if group.group_type == "notification_stream":
+        lines = [
+            f"### {group.display_name} — {n} updates this week",
+            "",
+            f"Grouped notification stream ({n} messages). Newest first.",
+            "",
+        ]
+        for i, entry in enumerate(group.entries, start=1):
+            p = entry.classified.parsed
+            subject = _truncate(p.subject, 100)
+            date = (
+                p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+            )
+            preview = _truncate(entry.summary or p.preview or "", 200)
+            lines.append(f"{i}. **{date}** — {subject}")
+            if preview:
+                lines.append(f"   Preview: {preview}")
+            lines.append("")
+        return "\n".join(lines)
+
+    # daily_editions
+    lines = [
+        f"### {group.display_name} — {n} editions this week",
+        "",
+        f"Grouped daily editions ({n} messages).",
+        "",
+    ]
+    for entry in group.entries:
+        p = entry.classified.parsed
+        subject = _truncate(p.subject, 100)
+        date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+        preview = _truncate(entry.summary or p.preview or "", 200)
+        lines.append(f"#### {date} — {subject}")
+        if preview:
+            lines.append(f"Preview: {preview}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
+    gid = html_module.escape(group.group_id)
+    title = html_module.escape(
+        f"{group.display_name} — {len(group.entries)} "
+        f"{'updates' if group.group_type == 'notification_stream' else 'editions'} "
+        f"this week"
+    )
+    parts = [
+        f"<section class='digest-group' aria-labelledby='group-{gid}' "
+        f"data-group-type='{html_module.escape(group.group_type)}'>",
+        f"<h3 id='group-{gid}'>{title}</h3>",
+        f"<p class='group-chip'>Grouped · {len(group.entries)} messages</p>",
+    ]
+    if group.group_type == "notification_stream":
+        parts.append("<ul role='list' class='group-updates'>")
+        for entry in group.entries:
+            p = entry.classified.parsed
+            subject = html_module.escape(_truncate(p.subject, 100))
+            preview = html_module.escape(
+                _truncate(entry.summary or p.preview or "", 120)
+            )
+            if p.date_parsed:
+                dt = p.date_parsed.isoformat()
+                date_label = p.date_parsed.strftime("%Y-%m-%d")
+                time_html = f"<time datetime='{html_module.escape(dt)}'>{date_label}</time>"
+            else:
+                time_html = "<span>undated</span>"
+            parts.append(
+                f"<li><strong>{time_html}</strong> — {subject}"
+                + (f"<br><em>{preview}</em>" if preview else "")
+                + "</li>"
+            )
+        parts.append("</ul>")
+    else:
+        summary_text = html_module.escape(
+            f"Show {len(group.entries)} messages from {group.display_name}"
+        )
+        parts.append(f"<details><summary>{summary_text}</summary>")
+        for entry in group.entries:
+            parts.append(_render_entry_html(entry, max_display_links))
+        parts.append("</details>")
+    parts.append("</section>")
+    return "\n".join(parts)
+
+
+def _render_item_md(item: DigestItem, max_display_links: int) -> str:
+    if isinstance(item, DigestGroup):
+        return _render_group_md(item, max_display_links)
+    return _render_entry_md(item, max_display_links)
+
+
+def _render_item_html(item: DigestItem, max_display_links: int) -> str:
+    if isinstance(item, DigestGroup):
+        return _render_group_html(item, max_display_links)
+    return _render_entry_html(item, max_display_links)
+
+
 def _hidden_link_cue_text(hidden_count: int) -> str:
     return f"+{hidden_count} more links in original"
 
@@ -524,13 +640,13 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
     for folder, entries in sorted(report.dated_by_folder.items()):
         lines.append(f"## {_folder_display_name(folder)}")
         lines.append("")
-        for entry in entries:
-            lines.append(_render_entry_md(entry, max_display_links))
+        for item in entries:
+            lines.append(_render_item_md(item, max_display_links))
     if report.undated:
         lines.append("## Undated / needs review")
         lines.append("")
-        for entry in report.undated:
-            lines.append(_render_entry_md(entry, max_display_links))
+        for item in report.undated:
+            lines.append(_render_item_md(item, max_display_links))
     lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -647,6 +763,9 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         ".summary p{margin:0.5rem 0;}",
         ".link-domain{color:#666;font-size:0.9em;}",
         ".item-type{margin:0 0 0.75rem;font-size:0.9rem;color:#666;}",
+        ".digest-group{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ccc;border-radius:6px;}",
+        ".group-chip{font-size:0.85rem;color:#555;margin:0.25rem 0 0.75rem;}",
+        ".group-updates{margin:0.5rem 0;padding-left:1.25rem;}",
         _folder_accent_css(),
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
         ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",
@@ -668,16 +787,16 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
             f"<h2>{html_module.escape(_folder_display_name(folder))}</h2>"
             f"{_render_section_byline_html(entries)}"
         )
-        for entry in sorted_entries:
-            body_parts.append(_render_entry_html(entry, max_display_links))
+        for item in sorted_entries:
+            body_parts.append(_render_item_html(item, max_display_links))
         body_parts.append("</section>")
     if report.undated:
         body_parts.append(
             "<section id='undated'><h2>Undated / needs review</h2>"
             f"{_render_section_byline_html(report.undated)}"
         )
-        for entry in _sort_entries_by_read_time(report.undated):
-            body_parts.append(_render_entry_html(entry, max_display_links))
+        for item in _sort_entries_by_read_time(report.undated):
+            body_parts.append(_render_item_html(item, max_display_links))
         body_parts.append("</section>")
     body_parts.append(_render_run_details_html(report))
     body_parts.append(_EXPAND_COLLAPSE_SCRIPT)
@@ -695,12 +814,23 @@ def write_branding_assets(output_dir: Path) -> None:
 
 
 def digest_output_stem(
-    generated_at: datetime, variant_name: str | None = None
+    generated_at: datetime,
+    variant_name: str | None = None,
+    run_id_short: str | None = None,
 ) -> str:
-    """Filename stem for digest outputs (date + time so same-day runs do not overwrite)."""
-    timestamp = generated_at.strftime("%Y-%m-%d-%H%M%S")
+    """Filename stem for digest outputs.
+
+    Includes second precision and optional short run_id so same-second
+    concurrent runs do not collide.
+    """
+    timestamp = generated_at.strftime("%Y-%m-%dT%H%M%SZ")
+    if generated_at.tzinfo is not None:
+        # Prefer UTC-style compact stamp; fall back to local wall time format.
+        utc = generated_at.astimezone(__import__("datetime").timezone.utc)
+        timestamp = utc.strftime("%Y-%m-%dT%H%M%SZ")
+    rid = f"-{run_id_short}" if run_id_short else ""
     suffix = f".{variant_name}" if variant_name else ""
-    return f"{timestamp}-newsletter-digest{suffix}"
+    return f"{timestamp}{rid}-newsletter-digest{suffix}"
 
 
 def cleanup_stale_temps(output_dir: Path) -> None:
@@ -718,14 +848,19 @@ def atomic_write_digest(
     markdown: str,
     html_content: str,
     variant_name: str | None = None,
+    run_id_short: str | None = None,
 ) -> tuple[Path, Path]:
     """Write MD and HTML atomically via temp files + rename."""
     output_dir.mkdir(parents=True, exist_ok=True)
     cleanup_stale_temps(output_dir)
     write_branding_assets(output_dir)
-    stem = digest_output_stem(generated_at, variant_name)
+    stem = digest_output_stem(generated_at, variant_name, run_id_short=run_id_short)
     final_md = output_dir / f"{stem}.md"
     final_html = output_dir / f"{stem}.html"
+    if final_md.exists() or final_html.exists():
+        raise FileExistsError(
+            f"Digest output stem already exists: {stem} — refusing to overwrite"
+        )
     tmp_md = output_dir / f".tmp-{stem}.md"
     tmp_html = output_dir / f".tmp-{stem}.html"
 

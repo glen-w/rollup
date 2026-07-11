@@ -151,12 +151,12 @@ def main() -> None:
                 (
                     "<html><body><h1>Useful links</h1>"
                     '<p><a href="https://substack.com/app-link/post?publication_id=111&post_id=222&token=abcdef&utm_source=email">'
-                    "https://substack.com/app-link/post?publication_id=111&post_id=222&token=abcdef&utm_source=email"
+                    "Open post"
                     "</a></p>"
                     '<p><a href="https://events.teams.microsoft.com/event/123/register">Register</a></p>'
                     '<p><a href="https://calendar.google.com/calendar/event?action=RESPOND&text=Demo&dates=20260702T100000Z/20260702T110000Z&rst=1">Add to calendar</a></p>'
                     '<p><a href="https://calendar.google.com/calendar/event?action=RESPOND&text=Demo&dates=20260702T100000Z/20260702T110000Z&rst=2">RSVP copy</a></p>'
-                    '<p><a href="https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456">https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456</a></p>'
+                    '<p><a href="https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456">Open link</a></p>'
                     '<p><a href="https://eotrx.substackcdn.com/o/abc/p.gif?token=secret">pixel</a></p>'
                     '<p><a href="http://www.w3.org/1999/xhtml">xhtml</a></p>'
                     "</body></html>"
@@ -234,6 +234,51 @@ def main() -> None:
         ],
     )
     _write_mbox(classify_dir / "unclassified_empty", [])
+
+    # Grouping fixtures: notification stream + daily editions
+    grouping_dir = FIXTURE_ROOT / "grouping.sbd"
+    notif_msgs = [
+        _plain_msg(
+            f"Build failed on main #{i}",
+            "notifications@github.com",
+            "CI pipeline failed briefly.",
+            f"<notif-{i}@github.com>",
+            now - timedelta(days=i),
+        )
+        for i in range(5)
+    ]
+    _write_mbox(grouping_dir / "notifications", notif_msgs)
+    daily_msgs = [
+        _plain_msg(
+            f"The Daily — {(now - timedelta(days=i)).strftime('%Y-%m-%d')} edition",
+            "editor@daily.example",
+            "Morning briefing.\n\n## Markets\n\n- point\n\n## Politics\n\n- point\n",
+            f"<daily-{i}@daily.example>",
+            now - timedelta(days=i),
+        )
+        for i in range(5)
+    ]
+    _write_mbox(grouping_dir / "daily_digest", daily_msgs)
+
+    # Parse edge cases
+    edge_dir = FIXTURE_ROOT / "parse_edge_cases.sbd"
+    bad_date = _plain_msg(
+        "Bad Date",
+        "edge@example.com",
+        "Body with an unparseable date.",
+        "<bad-date@example.com>",
+        recent,
+    )
+    bad_date.replace_header("Date", "not-a-real-date")
+    _write_mbox(edge_dir / "bad_dates", [bad_date])
+    empty_body = _plain_msg(
+        "Empty Body Notification",
+        "edge@example.com",
+        "",
+        "<empty@example.com>",
+        recent,
+    )
+    _write_mbox(edge_dir / "empty_bodies", [empty_body])
 
     # Undated message in misc
     undated = _plain_msg(

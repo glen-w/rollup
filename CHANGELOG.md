@@ -2,6 +2,33 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.3.0 — 2026-07-11
+
+### Added
+
+- Unattended `--cron` mode with quieter logs, transactional `latest.md` / `latest.html`, and exit codes 0/1/2
+- Single-run advisory lock under `state/rollup.lock` with stale-lock recovery
+- Failure-safe run manifests (`state/manifests/`) with schema validation and privacy allowlist
+- `rollup doctor` diagnostics (`--json`, `--full`, `--network`)
+- `rollup cron print-launchd` / `print-crontab` / `status` helpers (launchd preferred on macOS)
+- Conservative deterministic grouping: `notification_stream`, `daily_editions`, standalone essays
+- Grouped Markdown + accessible HTML rendering; `--grouping-report` / `--no-grouping`
+- Typed pipeline stage results, injectable clock, atomic filesystem helpers
+- Evidence-based parse anomalies (`date_invalid`, `body_truncated`, `empty_body`) with clearer counter taxonomy
+- Docs: [docs/CRON.md](docs/CRON.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md), group-LLM design note
+
+### Changed
+
+- Digest output stems use UTC timestamps plus short run id to avoid collisions
+- Digest orchestration moved to `pipeline.py`; CLI focuses on argparse and exit mapping
+- Default grouping is enabled (disable with `--no-grouping` for per-message cards)
+
+### Compatibility
+
+- Existing CLI flags remain valid
+- With `--no-grouping`, digest structure matches prior per-message cards
+- SQLite migrations remain additive; opening a v0.2 `rollup.db` is supported
+
 ## 0.2.0 — 2026-07-02
 
 ### Added
