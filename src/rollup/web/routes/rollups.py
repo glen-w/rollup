@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, g, render_template, request
+from flask import Blueprint, g, render_template, request, url_for
 
 from rollup.interaction import get_interaction
 from rollup.links_sanitize import parse_links_json
 from rollup.payload_limits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from rollup.ratings import get_rating, list_reason_codes
-from rollup.web_ids import IdError, encode_opaque, validate_run_id
+from rollup.reader_body_store import reader_body_keys_present
+from rollup.web_ids import IdError, encode_opaque, encode_run_opaque, validate_run_id
 
 bp = Blueprint("rollups", __name__)
 
@@ -112,6 +113,9 @@ def rollup_detail(run_id: str):
     entry_cols = [c[0] for c in cur.description]
     entries_raw = cur.fetchall()
     reason_codes = list_reason_codes(g.db)
+    message_keys = [row[entry_cols.index("message_key")] for row in entries_raw]
+    bodies_present = reader_body_keys_present(g.db, message_keys)
+    run_enc = encode_run_opaque(run_id)
     entries = []
     for row in entries_raw:
         e = dict(zip(entry_cols, row))
@@ -127,7 +131,22 @@ def rollup_detail(run_id: str):
             e["source_enc"] = encode_opaque(e["source_key_observed"])
         else:
             e["source_enc"] = None
+        e["has_reader_body"] = e["message_key"] in bodies_present
+        e["body_url"] = url_for(
+            "messages.message_body",
+            id_enc=e["id_enc"],
+            run=run_enc,
+        )
         entries.append(e)
+
+    folder_sections: list[dict] = []
+    folder_index: dict[str, int] = {}
+    for e in entries:
+        folder = e.get("folder_name") or "misc"
+        if folder not in folder_index:
+            folder_index[folder] = len(folder_sections)
+            folder_sections.append({"folder_name": folder, "entries": []})
+        folder_sections[folder_index[folder]]["entries"].append(e)
 
     total_entries = g.db.execute(
         "SELECT COUNT(*) FROM rollup_entries WHERE run_id = ?", (run_id,)
@@ -137,6 +156,7 @@ def rollup_detail(run_id: str):
         "rollups/detail.html",
         run=run_dict,
         entries=entries,
+        folder_sections=folder_sections,
         reason_codes=reason_codes,
         show_dismissed=show_dismissed,
         page=page,

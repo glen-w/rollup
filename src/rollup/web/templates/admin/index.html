@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Admin — Rollup{% endblock %}
+{% block content %}
+<article class="admin-page">
+  <h1>Reader body administration</h1>
+  {% if loopback_warning %}
+  <p class="banner">This server is not on loopback. Local processes may access this interface.</p>
+  {% else %}
+  <p class="banner">Local administration only. Other processes on this machine can invoke these endpoints.</p>
+  {% endif %}
+
+  <details class="panel" open>
+    <summary>Overview</summary>
+    <div class="card-body">
+      <div class="stats-panel">
+        <ul class="stats">
+          <li>Total bodies: {{ stats.total_rows }}</li>
+          <li>Populated: {{ stats.populated }}</li>
+          <li>Empty indexed: {{ stats.empty }}</li>
+          <li>Truncated: {{ stats.truncated }}</li>
+          <li>Orphans: {{ stats.orphans }}</li>
+          <li>Coverage:
+            {% if stats.coverage_pct is none %}N/A ({{ stats.coverage_numerator }}/{{ stats.coverage_denominator }}){% else %}
+            {{ "%.1f"|format(stats.coverage_pct) }}% ({{ stats.coverage_numerator }}/{{ stats.coverage_denominator }}){% endif %}
+          </li>
+          <li>Database size: {{ stats.db_file_bytes }} bytes</li>
+          <li>Table storage: {{ stats.table_storage }}</li>
+        </ul>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>Integrity check</summary>
+    <div class="card-body">
+      <p>Schema version: {{ report.schema_version }}</p>
+      {% if report.issues %}
+      <ul>
+        {% for issue in report.issues %}
+        <li>{{ issue.code }}: {{ issue.count }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>No issues detected.</p>
+      {% endif %}
+    </div>
+  </details>
+</article>
+{% endblock %}

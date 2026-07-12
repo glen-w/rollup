@@ -76,7 +76,7 @@ def _report(entries: list[DigestEntry]) -> DigestReport:
 
 def test_schema_v8_tables(tmp_path: Path):
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 8
+    assert get_schema_version(conn) == SCHEMA_VERSION == 10
     tables = {
         r[0]
         for r in conn.execute(

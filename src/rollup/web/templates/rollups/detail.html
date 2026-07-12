@@ -2,40 +2,73 @@
 {% block title %}Rollup {{ run.run_id[:8] }}{% endblock %}
 {% block content %}
 <article class="rollup-detail">
-  <h1>Rollup {{ run.started_at or run.run_id }}</h1>
-  <p class="meta">
-    Status: {{ run.status }}
-    {% if run.degraded %} · degraded{% endif %}
-    {% if run.window_start %} · {{ run.window_start }} → {{ run.window_end }}{% endif %}
-  </p>
-  <ul class="stats">
-    <li>Included: {{ run.messages_included if run.messages_included is not none else "—" }}</li>
-    <li>Sources: {{ run.sources_included if run.sources_included is not none else "—" }}</li>
-    <li>Groups: {{ run.groups_created if run.groups_created is not none else "—" }}</li>
-    <li>Ollama: {{ run.summaries_ollama if run.summaries_ollama is not none else "—" }}</li>
-    <li>Cache: {{ run.summaries_cache if run.summaries_cache is not none else "—" }}</li>
-  </ul>
-  <p class="artifact-links">
-    {% if run.markdown_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}
-    {% if run.html_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='html') }}">HTML</a>{% endif %}
-    {% if run.manifest_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='manifest') }}">Manifest</a>{% endif %}
-  </p>
+  <h1 title="{{ run.started_at or '' }}">Rollup {% if run.started_at %}{{ run.started_at | human_datetime }}{% else %}{{ run.run_id }}{% endif %}</h1>
+  {% if run.window_start %}
+  <p class="rollup-subhead"><em>{{ run.window_start | human_date_range(run.window_end) }}{% if run.messages_included is not none %} · {{ run.messages_included }} newsletters{% endif %}</em></p>
+  {% endif %}
+
+  <details class="panel">
+    <summary>Run details · {{ run.status }}{% if run.degraded %} · degraded{% endif %}</summary>
+    <div class="card-body">
+      <div class="stats-panel">
+        <ul class="stats">
+          <li>Included: {{ run.messages_included if run.messages_included is not none else "—" }}</li>
+          <li>Sources: {{ run.sources_included if run.sources_included is not none else "—" }}</li>
+          <li>Groups: {{ run.groups_created if run.groups_created is not none else "—" }}</li>
+          <li>Ollama: {{ run.summaries_ollama if run.summaries_ollama is not none else "—" }}</li>
+          <li>Cache: {{ run.summaries_cache if run.summaries_cache is not none else "—" }}</li>
+        </ul>
+      </div>
+      <p class="artifact-links">
+        {% if run.markdown_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}
+        {% if run.html_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='html') }}">HTML</a>{% endif %}
+        {% if run.manifest_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='manifest') }}">Manifest</a>{% endif %}
+      </p>
+    </div>
+  </details>
 
   {% if run.entry_index_version == 0 %}
   <p class="banner">Entry-level browsing is unavailable for this historic run (metadata only). Regenerate a digest to index entries.</p>
   {% else %}
-  <p>
-    {% if show_dismissed %}
-      <a href="?">Hide dismissed</a>
-    {% else %}
-      <a href="?show_dismissed=1">Show dismissed</a>
-    {% endif %}
-  </p>
-  {% for e in entries %}
-    {% include "partials/entry_card.html" %}
-  {% else %}
-    <p class="empty">No entries on this page.</p>
-  {% endfor %}
+  <details class="panel" open>
+    <summary>Browse entries ({{ entries | length }} on this page)</summary>
+    <div class="card-body">
+      <p class="rollup-controls">
+        {% if show_dismissed %}
+          <a href="?">Hide dismissed</a>
+        {% else %}
+          <a href="?show_dismissed=1">Show dismissed</a>
+        {% endif %}
+        {% if entries %}
+         · <button type="button" id="expand-all-cards" aria-label="Expand all newsletter cards">Expand all</button>
+         · <button type="button" id="collapse-all-cards" aria-label="Collapse all newsletter cards">Collapse all</button>
+        {% endif %}
+      </p>
+
+      {% if folder_sections | length > 1 %}
+      <nav class="rollup-toc" aria-label="Contents">
+        <ul>
+          {% for section in folder_sections %}
+          <li><a href="#{{ folder_section_id(section.folder_name) }}">{{ folder_display_name(section.folder_name) }} ({{ section.entries | length }})</a></li>
+          {% endfor %}
+        </ul>
+      </nav>
+      {% endif %}
+
+      {% for section in folder_sections %}
+      <section id="{{ folder_section_id(section.folder_name) }}" class="folder-section {{ folder_accent_class(section.folder_name) }}">
+        <h2>{{ folder_display_name(section.folder_name) }}</h2>
+        <p class="folder-byline"><em>{{ section.entries | length }} newsletter{{ 's' if section.entries | length != 1 else '' }} on this page</em></p>
+        {% for e in section.entries %}
+          {% include "partials/entry_card.html" %}
+        {% endfor %}
+      </section>
+      {% else %}
+      <p class="empty">No entries on this page.</p>
+      {% endfor %}
+    </div>
+  </details>
+
   <nav class="pager">
     {% if has_prev %}<a href="?page={{ page - 1 }}{% if show_dismissed %}&show_dismissed=1{% endif %}">Previous</a>{% endif %}
     <span>Page {{ page }}</span>
@@ -43,4 +76,7 @@
   </nav>
   {% endif %}
 </article>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='reader.js') }}" defer></script>
 {% endblock %}

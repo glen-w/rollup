@@ -55,6 +55,26 @@ def encode_opaque(key: str) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+def encode_run_opaque(run_id: str) -> str:
+    return encode_opaque(validate_run_id(run_id))
+
+
+def decode_run_opaque(token: str) -> str:
+    if not isinstance(token, str) or not token:
+        raise IdError("empty opaque run id")
+    if len(token) > 1024:
+        raise IdError("opaque run id too long")
+    if "/" in token or "\\" in token or ".." in token:
+        raise IdError("opaque run id contains path characters")
+    pad = "=" * (-len(token) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(token + pad)
+        key = raw.decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise IdError("malformed opaque run id") from exc
+    return validate_run_id(key)
+
+
 def decode_opaque(token: str, *, kind: Literal["message", "source"]) -> str:
     if not isinstance(token, str) or not token:
         raise IdError("empty opaque id")

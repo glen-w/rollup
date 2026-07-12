@@ -112,10 +112,31 @@ def test_archive_and_detail(app_env):
     r = client.get("/rollups")
     assert r.status_code == 200
     assert run_id.encode() in r.data or b"Hello" in r.data or b"web" in r.data
+    assert b"/branding/rollup_logo.png" in r.data
+    assert b'class="brand"' in r.data
+    assert b"favicon.svg" in r.data
+    assert b"Saturday 1 June 2024" in r.data
+    assert b"Saturday 1 June, 2024" in r.data
     d = client.get(f"/rollups/{run_id}")
     assert d.status_code == 200
     assert b"Plain summary" in d.data
     assert b"<script>" not in d.data or b"&lt;script&gt;" in d.data
+    assert b"Saturday 1 June 2024" in d.data
+    assert b"Saturday 1 June, 2024" in d.data
+
+
+def test_branding_assets(app_env):
+    app, _run_id = app_env
+    client = app.test_client()
+    logo = client.get("/branding/rollup_logo.png")
+    assert logo.status_code == 200
+    assert logo.headers["Content-Type"].startswith("image/png")
+    assert logo.data[:8] == b"\x89PNG\r\n\x1a\n"
+    favicon = client.get("/static/favicon.svg")
+    assert favicon.status_code == 200
+    assert "image/svg+xml" in favicon.headers["Content-Type"]
+    assert b"&#x1F5DE;" in favicon.data
+    assert client.get("/branding/nope.png").status_code == 404
 
 
 def test_csrf_rejection(app_env):

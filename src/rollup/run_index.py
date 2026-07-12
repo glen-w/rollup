@@ -28,7 +28,13 @@ from rollup.payload_limits import (
     REPORT_SCHEMA_VERSION,
     clip_text,
 )
-from rollup.state import init_db
+from rollup.reader_bodies import (
+    ReaderBodyError,
+    ReaderBodyWrite,
+    build_reader_writes_for_report,
+)
+from rollup.reader_body_store import upsert_reader_bodies, upsert_reader_bodies_v2
+from rollup.state import get_schema_version, init_db
 from rollup.utc import format_utc, now_utc
 
 logger = logging.getLogger(__name__)
@@ -97,6 +103,7 @@ class RunIndexPayload:
     html_relpath: str | None
     index_source: str  # pipeline | manifest_backfill
     entries: list[IndexEntry] = field(default_factory=list)
+    reader_bodies: list[ReaderBodyWrite] = field(default_factory=list)
     expected_entry_count: int | None = None
     indexed_at: str | None = None
 
@@ -114,14 +121,13 @@ def _relative_path(path: Path | None, root: Path) -> str | None:
     if path is None:
         return None
     p = Path(path)
-    if p.is_absolute():
-        try:
-            rel = p.resolve().relative_to(root.resolve())
-        except ValueError as exc:
-            raise RunIndexError(f"artifact path escapes root: {path}") from exc
-        text = str(rel)
-    else:
-        text = str(p)
+    try:
+        # Always resolve so relative paths like "output/foo.md" with root
+        # "./output" become "foo.md" (not left as "output/foo.md").
+        rel = p.resolve().relative_to(Path(root).resolve())
+    except ValueError as exc:
+        raise RunIndexError(f"artifact path escapes root: {path}") from exc
+    text = str(rel)
     if text.startswith("/") or text.startswith("..") or ".." in Path(text).parts:
         raise RunIndexError(f"unsafe relative path: {text}")
     if len(text) > MAX_RELPATH_LEN:
@@ -291,6 +297,14 @@ def build_pipeline_payload(
     entries, collisions = flatten_report_entries(
         report, max_display_links=max_display_links
     )
+    try:
+        reader_bodies, _identical, _conflicts = build_reader_writes_for_report(report)
+    except ReaderBodyError as exc:
+        raise RunIndexError(str(exc)) from exc
+    entry_keys = {e.message_key for e in entries}
+    body_keys = {b.message_key for b in reader_bodies}
+    if entry_keys != body_keys:
+        raise RunIndexError("reader body keys mismatch entry keys")
     stats = report.stats
     sources = {e.source_key_observed for e in entries if e.source_key_observed}
     digest_fp = None
@@ -358,6 +372,7 @@ def build_pipeline_payload(
         html_relpath=_relative_path(html_path, output_dir),
         index_source="pipeline",
         entries=entries,
+        reader_bodies=reader_bodies,
         expected_entry_count=len(entries),
         indexed_at=format_utc(now_utc()),
     )
@@ -560,6 +575,12 @@ def index_rollup_run(db_path: Path, payload: RunIndexPayload) -> None:
                WHERE run_id = ?""",
             (entry_index_version, index_warning_count, payload.run_id),
         )
+        if payload.reader_bodies:
+            ver = get_schema_version(conn)
+            if ver >= 10:
+                upsert_reader_bodies_v2(conn, payload.reader_bodies, seen_at=indexed_at)
+            else:
+                upsert_reader_bodies(conn, payload.reader_bodies, seen_at=indexed_at)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -668,14 +689,14 @@ def backfill_run_from_manifest(
         entries=[],
         expected_entry_count=0,
     )
-    # Skip if already fully indexed
+    # Skip if already indexed (full entry index or prior metadata backfill).
     conn = init_db(db_path)
     try:
         row = conn.execute(
             "SELECT entry_index_version FROM rollup_runs WHERE run_id = ?",
             (run_id,),
         ).fetchone()
-        if row and int(row[0] or 0) > 0:
+        if row is not None:
             return False
     finally:
         conn.close()
@@ -693,6 +714,7 @@ def reindex_from_manifests(
     if not manifest_dir.is_dir():
         return 0
     written = 0
+    state_root = Path(state_dir).resolve()
     for path in sorted(manifest_dir.glob("*.json")):
         if path.name == "latest.json":
             continue
@@ -702,20 +724,28 @@ def reindex_from_manifests(
             logger.warning("Skipping manifest %s: %s", path, exc)
             continue
         try:
-            if backfill_run_from_manifest(
+            wrote = backfill_run_from_manifest(
                 db_path, data, state_dir=state_dir, output_dir=output_dir
-            ):
-                # Store manifest_relpath after success
-                rel = str(path.relative_to(state_dir.resolve()))
+            )
+            # Store/repair manifest_relpath (resolve both sides; state_dir may be relative).
+            run_id = data.get("run_id")
+            if run_id:
+                rel = str(path.resolve().relative_to(state_root))
+                _assert_safe_relpath(rel, field="manifest_relpath")
                 conn = init_db(db_path)
                 try:
                     conn.execute(
-                        "UPDATE rollup_runs SET manifest_relpath = ? WHERE run_id = ?",
-                        (rel, data.get("run_id")),
+                        """UPDATE rollup_runs
+                           SET manifest_relpath = ?
+                           WHERE run_id = ?
+                             AND (manifest_relpath IS NULL OR manifest_relpath = ''
+                                  OR manifest_relpath LIKE 'state/%')""",
+                        (rel, run_id),
                     )
                     conn.commit()
                 finally:
                     conn.close()
+            if wrote:
                 written += 1
         except Exception as exc:
             logger.warning("Backfill failed for %s: %s", path, exc)

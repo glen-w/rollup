@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.subject if meta and meta.subject else "Newsletter" }} — Rollup{% endblock %}
+{% block content %}
+<article class="reader-page">
+  <details class="newsletter-card" open>
+    <summary>
+      <strong>{{ meta.subject if meta and meta.subject else "Newsletter" }}</strong>
+      {% if meta and meta.sender %} — {{ meta.sender | display_sender }}{% endif %}
+      {% if meta and (meta.date_parsed or meta.date_raw) %} · {{ meta.date_parsed or meta.date_raw }}{% endif %}
+    </summary>
+    <div class="card-body">
+      {% if nav %}
+      <nav class="reader-nav" data-reader-nav
+        {% if nav.back %}data-back="{{ nav.back }}"{% endif %}
+        {% if nav.prev %}data-prev="{{ nav.prev }}"{% endif %}
+        {% if nav.next %}data-next="{{ nav.next }}"{% endif %}>
+        <a href="{{ nav.back }}">Back to rollup</a>
+        {% if nav.prev %} · <a href="{{ nav.prev }}">Previous</a>{% endif %}
+        {% if nav.next %} · <a href="{{ nav.next }}">Next</a>{% endif %}
+      </nav>
+      {% else %}
+      <p><a href="{{ url_for('rollups.list_rollups') }}">Back to archive</a></p>
+      {% endif %}
+
+      <details class="run-details" open>
+        <summary>Newsletter text</summary>
+        <div class="reader-body-content">
+          {{ body_html }}
+        </div>
+      </details>
+    </div>
+  </details>
+</article>
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='reader_nav.js') }}" defer></script>
+{% endblock %}

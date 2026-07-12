@@ -4,7 +4,7 @@
 
 # Rollup example commands
 
-Runnable examples for inventory, digest generation, summary routing, and local tooling.
+Runnable examples for inventory, digest generation, summary routing, the local web UI, and local tooling.
 
 **The rollup** is the weekly Markdown + HTML digest Rollup writes to `--output-dir` (default `./output`). Each run also copies `rollup_logo.png` and `favicon.ico` beside the HTML file.
 
@@ -52,6 +52,12 @@ python -m rollup digest --include-seen-undated
 python -m rollup digest --cron --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --no-grouping --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --grouping-report --root tests/fixtures/Newsletters.sbd
+```
+
+After a digest, browse the indexed archive (requires `pip install 'rollup[web]'`):
+
+```bash
+python -m rollup web --open
 ```
 
 ## Doctor
@@ -290,15 +296,25 @@ rollup sources import --from /tmp/sources.json --state-dir /tmp/rollup-state
 
 ## Local web UI
 
-Browse indexed rollups, rate emails, and review newsletter quality (loopback only). Requires `pip install 'rollup[web]'`.
+Browse indexed rollups, rate emails, and review newsletter quality. Binds to **loopback only** (`127.0.0.1` by default). Requires the optional Flask extra.
+
+Bring-up (install → digest that indexes into state → start the UI):
 
 ```bash
-rollup web
-rollup web --host 127.0.0.1 --port 8765 --open
-rollup web reindex --state-dir ./state --output-dir ./output
+pip install 'rollup[web]'   # or from a checkout: pip install -e '.[web]'
+python -m rollup digest --root tests/fixtures/Newsletters.sbd
+python -m rollup web --open
 ```
 
-See [docs/WEB.md](WEB.md) for security model, quality score, and backup notes.
+Variants:
+
+```bash
+python -m rollup web
+python -m rollup web --host 127.0.0.1 --port 8765 --open
+python -m rollup web reindex --state-dir ./state --output-dir ./output
+```
+
+See [WEB.md](WEB.md) for security model, quality score, and backup notes.
 
 ## Benchmark local models
 

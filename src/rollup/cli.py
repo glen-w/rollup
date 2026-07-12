@@ -852,6 +852,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_sources_subparser(sub)
 
+    from rollup.bodies_cmd import add_bodies_subparser
+
+    add_bodies_subparser(sub)
+
     from rollup.web.cli_web import register_web_parser
 
     register_web_parser(sub)
@@ -899,6 +903,10 @@ def main(argv: list[str] | None = None) -> None:
         from rollup.web.cli_web import cmd_web
 
         sys.exit(cmd_web(args))
+    elif args.command == "bodies":
+        from rollup.bodies_cmd import cmd_bodies
+
+        sys.exit(cmd_bodies(args))
     else:
         parser.print_help()
         sys.exit(1)

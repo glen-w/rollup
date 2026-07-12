@@ -24,10 +24,29 @@ Binds to **loopback only** (`127.0.0.1` by default; `::1` allowed). Non-loopback
 ## Safety
 
 - Never writes to Thunderbird/Gmail mail stores
-- Web writes update only `{state_dir}/rollup.db` (ratings, interaction, source policy overrides, run index)
+- Web writes update only `{state_dir}/rollup.db` (ratings, interaction, source policy overrides, run index, reader bodies)
 - CSRF tokens required on all POST forms
 - Archived HTML artifacts are served as **attachments** (not inline)
 - Digest Markdown/HTML generation is unchanged
+- Reader bodies are capped plaintext (32,000 characters) with inline http(s) links; images and raw HTML are excluded
+- Bodies never appear in manifests or default exports
+
+## Reader bodies
+
+Pipeline indexing stores plaintext bodies in `message_reader_bodies` when a digest run indexes entries. In the web UI, each entry card offers **Read newsletter** (lazy expander + full-page fallback at `/messages/<opaque>/body`).
+
+Historic runs without bodies require a new digest that includes those messages. Manifest reindex does not backfill bodies.
+
+CLI maintenance:
+
+```bash
+rollup bodies stats
+rollup bodies check
+rollup bodies backfill --dry-run
+rollup bodies prune --dry-run
+```
+
+Local **Admin** page (`/admin`) shows aggregate stats and integrity checks (no body snippets).
 
 ## Data model notes
 

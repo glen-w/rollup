@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
-from flask import Flask, abort, g, redirect, render_template, url_for
+from flask import Flask, abort, g, redirect, render_template, send_file, url_for
 
+from rollup.assets import LOGO_FILENAME, asset_bytes
 from rollup.state import init_db
 from rollup.web.csrf import init_csrf
 from rollup.web.headers import init_security_headers
 from rollup.web.secrets import load_or_create_secret
+
+_BRANDING = {
+    LOGO_FILENAME: "image/png",
+}
 
 
 def create_app(
@@ -43,6 +49,26 @@ def create_app(
     init_csrf(app)
     init_security_headers(app)
 
+    from rollup.web.format import (
+        external_link_attrs,
+        folder_accent_class,
+        folder_display_name,
+        folder_section_id,
+        format_display_sender,
+        format_human_date_range,
+        format_human_datetime,
+        format_newsletter_type,
+    )
+
+    app.jinja_env.filters["human_datetime"] = format_human_datetime
+    app.jinja_env.filters["human_date_range"] = format_human_date_range
+    app.jinja_env.filters["display_sender"] = format_display_sender
+    app.jinja_env.filters["newsletter_type_label"] = format_newsletter_type
+    app.jinja_env.globals["external_link_attrs"] = external_link_attrs
+    app.jinja_env.globals["folder_display_name"] = folder_display_name
+    app.jinja_env.globals["folder_accent_class"] = folder_accent_class
+    app.jinja_env.globals["folder_section_id"] = folder_section_id
+
     @app.before_request
     def _open_db() -> None:
         import sqlite3
@@ -70,6 +96,7 @@ def create_app(
             503,
         )
 
+    from rollup.web.routes.admin import bp as admin_bp
     from rollup.web.routes.artifacts import bp as artifacts_bp
     from rollup.web.routes.messages import bp as messages_bp
     from rollup.web.routes.rollups import bp as rollups_bp
@@ -79,6 +106,19 @@ def create_app(
     app.register_blueprint(sources_bp)
     app.register_blueprint(messages_bp)
     app.register_blueprint(artifacts_bp)
+    app.register_blueprint(admin_bp)
+
+    @app.get("/branding/<name>")
+    def branding(name: str):
+        mimetype = _BRANDING.get(name)
+        if mimetype is None:
+            abort(404)
+        return send_file(
+            BytesIO(asset_bytes(name)),
+            mimetype=mimetype,
+            download_name=name,
+            max_age=86_400,
+        )
 
     @app.get("/")
     def index():

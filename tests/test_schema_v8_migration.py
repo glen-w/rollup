@@ -123,7 +123,7 @@ def test_v7_to_v8_migration_preserves_overrides(tmp_path: Path):
         "SELECT sql FROM sqlite_master WHERE name='source_overrides'"
     ).fetchone()[0]
     ensure_web_schema(conn)
-    assert get_schema_version(conn) == 8 == SCHEMA_VERSION
+    assert get_schema_version(conn) == 8
     assert "rollup_runs" in {
         r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
@@ -350,6 +350,58 @@ def test_reject_absolute_and_dotdot_paths(tmp_path: Path):
         from rollup.run_index import _relative_path
 
         _relative_path(Path("../escape.md"), tmp_path / "out")
+
+
+def test_relative_path_strips_output_prefix(tmp_path: Path, monkeypatch):
+    from rollup.run_index import _relative_path
+
+    out = tmp_path / "output"
+    out.mkdir()
+    artifact = out / "digest.md"
+    artifact.write_text("x", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    # Relative path that includes the output dir name must resolve to basename.
+    assert _relative_path(Path("output/digest.md"), Path("output")) == "digest.md"
+    assert _relative_path(artifact, out) == "digest.md"
+
+
+def test_reindex_relative_state_dir(tmp_path: Path, monkeypatch):
+    from rollup.run_index import reindex_from_manifests
+
+    monkeypatch.chdir(tmp_path)
+    state = Path("state")
+    out = Path("output")
+    (state / "manifests").mkdir(parents=True)
+    out.mkdir()
+    (out / "a.md").write_text("md", encoding="utf-8")
+    (out / "a.html").write_text("html", encoding="utf-8")
+    run_id = str(uuid.uuid4())
+    man = {
+        "schema_version": 2,
+        "run_id": run_id,
+        "started_at": format_utc(NOW),
+        "completed_at": format_utc(NOW),
+        "status": "success",
+        "mode": "manual",
+        "dated_outputs_written": True,
+        "counts": {"messages_included": 1},
+        "outputs": {"markdown": "a.md", "html": "a.html"},
+        "window": {"lookback_days": 7},
+    }
+    (state / "manifests" / "m.json").write_text(
+        __import__("json").dumps(man), encoding="utf-8"
+    )
+    n = reindex_from_manifests(state / "rollup.db", state, out)
+    assert n == 1
+    conn = init_db(state / "rollup.db")
+    row = conn.execute(
+        "SELECT manifest_relpath, markdown_relpath FROM rollup_runs WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    assert row[0] == "manifests/m.json"
+    assert row[1] == "a.md"
+    assert reindex_from_manifests(state / "rollup.db", state, out) == 0
+    conn.close()
 
 
 def test_ratings_survive_artifact_deletion(tmp_path: Path):

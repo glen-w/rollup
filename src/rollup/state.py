@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -128,6 +128,44 @@ CREATE TABLE IF NOT EXISTS message_rating_reasons (
         ON DELETE RESTRICT
 );
 """
+
+MESSAGE_READER_BODIES_V9 = """
+CREATE TABLE IF NOT EXISTS message_reader_bodies (
+    message_key TEXT PRIMARY KEY CHECK (length(message_key) > 0),
+    content_hash TEXT NOT NULL CHECK (
+        length(content_hash) = 64 AND content_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+    stored_body_hash TEXT NOT NULL CHECK (
+        length(stored_body_hash) = 64 AND stored_body_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+    body_text TEXT NOT NULL,
+    truncated INTEGER NOT NULL CHECK (truncated IN (0, 1)),
+    updated_at TEXT NOT NULL CHECK (length(updated_at) > 0),
+    last_seen_at TEXT NOT NULL CHECK (length(last_seen_at) > 0)
+);
+"""
+
+_V9_REQUIRED_COLUMNS = frozenset(
+    {
+        "message_key",
+        "content_hash",
+        "stored_body_hash",
+        "body_text",
+        "truncated",
+        "updated_at",
+        "last_seen_at",
+    }
+)
+
+_V10_REQUIRED_COLUMNS = _V9_REQUIRED_COLUMNS | frozenset(
+    {
+        "reader_text_version",
+        "source_body_length",
+        "reader_content_hash",
+        "reader_hash_authoritative",
+        "first_indexed_at",
+    }
+)
 
 RATING_REASON_SEED = (
     ("not_relevant", "negative", "Not relevant", 10),
@@ -654,6 +692,155 @@ def ensure_web_schema(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1] for r in rows}
+
+
+def _reader_bodies_table_exists(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
+    ).fetchone()
+    return row is not None
+
+
+def _validate_reader_bodies_shape(
+    conn: sqlite3.Connection, *, required: frozenset[str]
+) -> None:
+    if not _reader_bodies_table_exists(conn):
+        raise sqlite3.DatabaseError("message_reader_bodies table missing")
+    cols = _table_columns(conn, "message_reader_bodies")
+    missing = required - cols
+    if missing:
+        raise sqlite3.DatabaseError(
+            f"message_reader_bodies missing columns: {sorted(missing)}"
+        )
+
+
+def _assert_not_in_transaction(conn: sqlite3.Connection) -> None:
+    if conn.in_transaction:
+        raise sqlite3.DatabaseError("migration must not run inside caller transaction")
+
+
+def ensure_message_reader_bodies_v9(conn: sqlite3.Connection) -> None:
+    """Schema v9: reader body store."""
+    apply_connection_pragmas(conn)
+    ver = get_schema_version(conn)
+    if ver > SCHEMA_VERSION:
+        raise sqlite3.DatabaseError(
+            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
+        )
+    if ver >= 9 and _reader_bodies_table_exists(conn):
+        _validate_reader_bodies_shape(conn, required=_V9_REQUIRED_COLUMNS)
+        return
+    if ver < 8:
+        raise sqlite3.DatabaseError("schema v8 required before v9 migration")
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, MESSAGE_READER_BODIES_V9)
+        _validate_reader_bodies_shape(conn, required=_V9_REQUIRED_COLUMNS)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after reader bodies v9: {fk_errors}"
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 9)"
+        )
+        conn.execute("UPDATE schema_version SET version = 9 WHERE id = 1")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
+    """Schema v10: reader provenance columns."""
+    apply_connection_pragmas(conn)
+    ver = get_schema_version(conn)
+    if ver > SCHEMA_VERSION:
+        raise sqlite3.DatabaseError(
+            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
+        )
+    if ver >= 10 and _reader_bodies_table_exists(conn):
+        _validate_reader_bodies_shape(conn, required=_V10_REQUIRED_COLUMNS)
+        return
+    if ver < 9 or not _reader_bodies_table_exists(conn):
+        ensure_message_reader_bodies_v9(conn)
+        ver = get_schema_version(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cols = _table_columns(conn, "message_reader_bodies")
+        if "reader_text_version" not in cols:
+            conn.execute(
+                "ALTER TABLE message_reader_bodies ADD COLUMN reader_text_version "
+                "INTEGER NOT NULL DEFAULT 0 CHECK (reader_text_version >= 0)"
+            )
+        if "source_body_length" not in cols:
+            conn.execute(
+                "ALTER TABLE message_reader_bodies ADD COLUMN source_body_length "
+                "INTEGER NOT NULL DEFAULT -1 CHECK (source_body_length >= -1)"
+            )
+        if "reader_content_hash" not in cols:
+            conn.execute(
+                "ALTER TABLE message_reader_bodies ADD COLUMN reader_content_hash TEXT"
+            )
+        if "reader_hash_authoritative" not in cols:
+            conn.execute(
+                "ALTER TABLE message_reader_bodies ADD COLUMN reader_hash_authoritative "
+                "INTEGER NOT NULL DEFAULT 0 CHECK (reader_hash_authoritative IN (0, 1))"
+            )
+        if "first_indexed_at" not in cols:
+            conn.execute(
+                "ALTER TABLE message_reader_bodies ADD COLUMN first_indexed_at TEXT"
+            )
+        conn.execute(
+            """UPDATE message_reader_bodies
+               SET first_indexed_at = COALESCE(first_indexed_at, updated_at),
+                   reader_text_version = COALESCE(reader_text_version, 0),
+                   source_body_length = COALESCE(source_body_length, -1),
+                   reader_hash_authoritative = COALESCE(reader_hash_authoritative, 0)
+               WHERE first_indexed_at IS NULL OR reader_text_version IS NULL"""
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reader_bodies_version "
+            "ON message_reader_bodies(reader_text_version)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reader_bodies_last_seen "
+            "ON message_reader_bodies(last_seen_at)"
+        )
+        _validate_reader_bodies_shape(conn, required=_V10_REQUIRED_COLUMNS)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after reader bodies v10: {fk_errors}"
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 10)"
+        )
+        conn.execute("UPDATE schema_version SET version = 10 WHERE id = 1")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def run_schema_migrations(conn: sqlite3.Connection) -> None:
+    """Authoritative ordered migration steps after MVP bootstrap."""
+    ver = get_schema_version(conn)
+    if ver > SCHEMA_VERSION:
+        raise sqlite3.DatabaseError(
+            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
+        )
+    ensure_source_registry_schema(conn)
+    ensure_web_schema(conn)
+    ensure_message_reader_bodies_v9(conn)
+    ensure_message_reader_bodies_v10(conn)
+
+
 def apply_connection_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
@@ -671,8 +858,7 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     conn.executescript(MVP_SCHEMA)
     _migrate_schema_version_singleton(conn)
     _bump_schema_version_at_least(conn, 1)
-    ensure_source_registry_schema(conn)
-    ensure_web_schema(conn)
+    run_schema_migrations(conn)
     return conn
 
 
@@ -687,8 +873,7 @@ def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     conn.executescript(SUMMARIES_SCHEMA_V4)
     ensure_final_review_schema(conn)
     ensure_group_summary_schema(conn)
-    ensure_source_registry_schema(conn)
-    ensure_web_schema(conn)
+    run_schema_migrations(conn)
     return conn
 
 

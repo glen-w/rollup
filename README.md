@@ -8,6 +8,25 @@ Local, read-only Thunderbird mbox newsletter digest for macOS.
 
 Rollup reads newsletters from your Thunderbird/Gmail mbox store, classifies them, and produces **the rollup** — weekly Markdown and HTML digests — without modifying any mail files.
 
+## Quick start (digest + web UI)
+
+Install the optional web extra once (`pip install -e ".[web]"` or `pip install 'rollup[web]'`), then:
+
+```bash
+# 7-day digest (indexes into state for the UI; default lookback is already 7)
+rollup digest --lookback-days 7
+
+# optional: with Ollama
+rollup digest --ollama --lookback-days 7
+
+# browse the archive (loopback only)
+rollup web --open
+```
+
+See [docs/WEB.md](docs/WEB.md).
+
+More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](CHANGELOG.md)
+
 ## Safety guarantee
 
 Rollup is **strictly read-only** with respect to your Thunderbird mail store. It never modifies, deletes, renames, or writes anything under your mail root (default: `Path.home() / "email" / "gmail"`).
@@ -36,6 +55,7 @@ From a git checkout:
 pip install .
 ```
 
+For the local browser UI (Flask), install the optional web extra: `pip install 'rollup[web]'` or `pip install -e '.[web]'` from a checkout. See [Quick start (digest + web UI)](#quick-start-digest--web-ui) and [docs/WEB.md](docs/WEB.md).
 ## Development setup
 
 ```bash
@@ -78,6 +98,12 @@ python -m rollup digest --root tests/fixtures/Newsletters.sbd --folder tech
 
 Explicit `--no-ollama` is equivalent to the default.
 
+Optional: after `pip install -e ".[web]"`, browse the indexed digest:
+
+```bash
+rollup web --open
+```
+
 ## Quick start (live mail with Ollama)
 
 From the project root, with Ollama running locally:
@@ -95,8 +121,6 @@ python -m rollup digest --ollama --summary-routing-report
 ```
 
 `--ollama` alone enables **type routing by default**. Each newsletter type is summarized with the profile/model mapped in the built-in profile set (for example, `essay` → `max` / `qwen3.6:27b`, `link_roundup` → `rough` / `llama3.2:3b`). Use `--summary-routing-report` to print which profiles and models were used.
-
-More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Commands
 
@@ -202,7 +226,11 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
    ```bash
    python -m rollup digest
    ```
-9. Enable Ollama (local loopback only by default; explicit opt-in):
+9. Browse the indexed archive (requires `pip install 'rollup[web]'` or `.[web]`):
+   ```bash
+   rollup web --open
+   ```
+10. Enable Ollama (local loopback only by default; explicit opt-in):
    ```bash
    python -m rollup digest --list-summary-profiles
    python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
@@ -382,7 +410,9 @@ Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Ea
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries are cached in `group_summary_by_key` (schema v6 also creates an unused forward-compatible `group_summary_generations` table). Source registry tables are schema **v7**; web archive/ratings tables are schema **v8**. New databases record **schema version 8** during non-dry-run initialization.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries are cached in `group_summary_by_key` (schema v6 also creates an unused forward-compatible `group_summary_generations` table). Source registry tables are schema **v7**; web archive/ratings tables are schema **v8**; reader plaintext bodies are schema **v9–v10** (`message_reader_bodies`). New databases record **schema version 10** during initialization.
+
+Reader bodies are stored in `rollup.db` (including `-wal`/`-shm` when present). They are a convenience cache, not a mailbox archive. Sources export/import excludes bodies. Backups of `rollup.db` are sensitive.
 
 Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, generation options (including `num_predict`), and the profile's `think` setting. Legacy cache rows remain readable when applicable.
 

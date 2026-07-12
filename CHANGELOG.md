@@ -2,6 +2,27 @@
 
 All notable changes to Rollup are documented in this file.
 
+## Unreleased
+
+## 0.5.1 — 2026-07-13
+
+### Added
+
+- **Reader bodies** (schema v9–v10): capped plaintext newsletter storage in `message_reader_bodies`, indexed during digest runs
+- Web UI **Read newsletter** expander (lazy fetch) and full-page reader at `/messages/<opaque>/body`
+- Versioned reader-text normalisation (`READER_TEXT_VERSION=1`) and provenance columns (schema v10)
+- `/admin` aggregate stats and integrity checks; `rollup bodies` CLI (`stats`, `check`, `backfill`, `prune`, `delete`, `vacuum`)
+- Rollup-aware reader navigation (prev/next/back) when opened from an entry card with run context
+
+### Fixed
+
+- Reader-body schema migration repairs databases where `schema_version` was ahead of the `message_reader_bodies` table
+
+### Compatibility
+
+- Opening a v8 `rollup.db` migrates additively to v10
+- Existing CLI digest Markdown/HTML outputs unchanged
+
 ## 0.5.0 — 2026-07-13
 
 ### Added
