@@ -2,6 +2,22 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.4.2 — 2026-07-12
+
+### Changed
+
+- `Config` no longer carries presentation/run-control flags (`dry_run`, `quiet`, `verbose`); `RunOptions` is the sole owner
+- `EffectiveRun` / `resolve_effective_run` captures effective runtime decisions once in `run_digest`
+- Manifest publication telemetry uses `dated_outputs_written`; readers still accept the legacy `outputs_published` field
+- Default mail paths are based on `Path.home()` instead of machine-specific `/Users/89298/...` literals
+
+### Fixed / Hardened
+
+- Provider exception policy now degrades only named provider transport/payload failures; programming faults hard-fail
+- Publication contracts clarified: final-review sidecar failures mark partial, latest publication failure still permits seen-state updates, and manifest/seen-state failures produce exit 2 when the digest is usable
+- `latest.md` / `latest.html` are published atomically as a pair
+- Final-review apply recomputes digest fingerprints before trusting cached or live review output
+
 ## 0.4.1 — 2026-07-12
 
 ### Changed

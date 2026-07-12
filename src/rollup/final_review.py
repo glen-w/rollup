@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rollup.config import Config
+from rollup.provider_errors import is_provider_call_error
 from rollup.final_review_profiles import (
     FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
     FINAL_REVIEW_RESERVED_OUTPUT_TOKENS,
@@ -688,6 +689,7 @@ def execute_final_review(
     config: Config,
     *,
     conn=None,
+    quiet: bool = True,
 ) -> FinalReviewResult:
     generated_at = datetime.now().astimezone()
     profile = resolve_final_review_profile(
@@ -771,9 +773,11 @@ def execute_final_review(
             prompt,
             ollama_url=config.ollama_url,
             profile=profile,
-            quiet=config.quiet,
+            quiet=quiet,
         )
     except Exception as exc:
+        if not is_provider_call_error(exc):
+            raise
         logger.warning("Final review model call failed: %s", exc)
         return _error_result(
             message=f"Final review model call failed: {exc}",

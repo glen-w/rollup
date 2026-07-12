@@ -17,7 +17,7 @@ LATEST_HTML = "latest.html"
 
 @dataclass(frozen=True)
 class PublicationResult:
-    outputs_published: bool
+    dated_outputs_written: bool
     latest_outputs_updated: bool
     latest_md: Path | None = None
     latest_html: Path | None = None
@@ -69,7 +69,7 @@ def publish_latest_outputs(
             allow_partial_latest,
         )
         return PublicationResult(
-            outputs_published=True,
+            dated_outputs_written=True,
             latest_outputs_updated=False,
         )
 
@@ -82,7 +82,7 @@ def publish_latest_outputs(
         ]
     )
     return PublicationResult(
-        outputs_published=True,
+        dated_outputs_written=True,
         latest_outputs_updated=True,
         latest_md=latest_md,
         latest_html=latest_html,

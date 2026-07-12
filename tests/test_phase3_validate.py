@@ -23,7 +23,6 @@ def _config(**kwargs) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -41,8 +40,6 @@ def _config(**kwargs) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=True,
         final_review_max_changed_chars_ratio=DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
     )
     base.update(kwargs)
@@ -87,6 +84,20 @@ def test_cron_apply_requires_allow() -> None:
                 final_review_enabled=True,
                 final_review_mode="apply",
                 final_review_allow_cron_apply=False,
+                no_ollama=False,
+            ),
+            run_options=RunOptions(cron=True),
+        )
+
+
+def test_cron_apply_non_conservative_rejected() -> None:
+    with pytest.raises(FinalReviewConfigError, match="conservative"):
+        validate_phase3_runtime_config(
+            _config(
+                final_review_enabled=True,
+                final_review_mode="apply",
+                final_review_allow_cron_apply=True,
+                final_review_apply_policy="standard",
                 no_ollama=False,
             ),
             run_options=RunOptions(cron=True),

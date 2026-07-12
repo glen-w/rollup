@@ -19,6 +19,7 @@ from rollup.ollama_stream import (
     consume_ollama_stream,
     is_stop_reason_cacheable,
 )
+from rollup.provider_errors import is_provider_call_error
 from rollup.summary_plan import (
     SummaryExecutionCollector,
     SummaryJob,
@@ -491,6 +492,8 @@ def apply_summaries(
                 classified, ollama_url, model, max_chars, quiet=quiet
             )
         except Exception as exc:
+            if not is_provider_call_error(exc):
+                raise
             logger.warning("Summary failed for %s: %s", parsed.subject, exc)
             result.append(_fallback_entry(entry))
             continue
@@ -779,6 +782,8 @@ def execute_summary_plan(
                     quiet=quiet,
                 )
             except Exception as exc:
+                if not is_provider_call_error(exc):
+                    raise
                 logger.warning("Summary failed for %s: %s", parsed.subject, exc)
                 fallback = _fallback_entry(entry)
                 rendered_entries.append(fallback)

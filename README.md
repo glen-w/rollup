@@ -10,7 +10,7 @@ Rollup reads newsletters from your Thunderbird/Gmail mbox store, classifies them
 
 ## Safety guarantee
 
-Rollup is **strictly read-only** with respect to your Thunderbird mail store. It never modifies, deletes, renames, or writes anything under your mail root (default: `/Users/89298/email/gmail`).
+Rollup is **strictly read-only** with respect to your Thunderbird mail store. It never modifies, deletes, renames, or writes anything under your mail root (default: `Path.home() / "email" / "gmail"`).
 
 All output, state, and logs are written outside the mail store.
 
@@ -46,13 +46,13 @@ pip install -e ".[dev]"
 
 No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls**.
 
-Optional LLM summarisation uses a local Ollama server and requires `--ollama` on the CLI. The `requests` library ships with Rollup for that path but is not loaded during default digest runs.
+Optional entry-level LLM summarisation uses a local Ollama server and requires `--ollama` on the CLI. Final review is separate: `--final-review` can call Ollama for whole-digest QA even when digest summarisation is still in preview mode. The `requests` library ships with Rollup for those paths but is not loaded during default digest runs.
 
 ## Network policy
 
 **Default digest performs no network calls.** Ollama is off unless you pass `--ollama`.
 
-When `--ollama` is enabled, Rollup calls the local Ollama HTTP API on loopback only, unless `--allow-remote-ollama` is explicitly passed.
+When `--ollama` or `--final-review` needs a model, Rollup calls the local Ollama HTTP API on loopback only, unless `--allow-remote-ollama` is explicitly passed.
 
 Summary-related flags (`--summary-profile`, `--rebuild-summaries`, and similar) are ignored on default runs; Rollup prints a warning if you pass them without `--ollama`.
 
@@ -113,13 +113,18 @@ See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CRON.md](docs/CRON.md), and
 3. Optionally enable `--ollama` for local AI summaries.
 4. Schedule with **launchd** on macOS (`rollup cron print-launchd`) — see [docs/CRON.md](docs/CRON.md).
 
-## Manual vs cron vs dry-run
+## Mode glossary
 
-| Mode | Flag | Writes digest? | Latest outputs? | Network? |
-|------|------|----------------|-----------------|----------|
-| Manual | (default) | yes | only with `--latest` | only with `--ollama` |
-| Cron / unattended | `--cron` | yes | yes (on success) | only with `--ollama` |
-| Dry-run | `--dry-run` | no | no | no |
+| Mode | Flags | Meaning |
+|------|-------|---------|
+| Manual | (default) | Writes dated Markdown + HTML; publishes `latest.*` only with `--latest` |
+| Cron / unattended | `--cron` | Quieter, non-interactive run; publishes `latest.*` on success by default |
+| Dry-run | `--dry-run` | Parse and report only; no output files, state, logs, or network |
+| Preview-summary | default / `--no-ollama` | Uses short body excerpts for entries; not a dry-run |
+| Ollama summaries | `--ollama` | Uses local Ollama for entry summaries and type routing |
+| Final-review-only | `--final-review` without `--ollama` | Uses Ollama for whole-digest QA while entries remain preview summaries |
+| Report | `--final-review-mode report` | Writes the final-review JSON sidecar and leaves digest content unchanged |
+| Apply | `--final-review-mode apply` | Applies validated summary-only fixes; cron requires `--final-review-allow-cron-apply` |
 
 **Preview summaries** (default) are short body excerpts — not the same as dry-run.
 
@@ -137,6 +142,8 @@ Every non-dry-run digest writes a privacy-safe JSON manifest under
 `state/manifests/`. Successful runs that publish latest also update
 `state/manifests/latest.json`.
 
+Exit codes are `0` for success, `1` for hard failure, and `2` for a usable digest with material degradation. See [docs/CRON.md](docs/CRON.md#exit-codes) for the degradation rules.
+
 ## Grouping
 
 By default Rollup groups high-frequency notification streams and daily editions
@@ -149,7 +156,7 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
 |------|-------|--------------|
 | Basic | (default) | Preview summaries — fast, private, no AI server |
 | Local AI | `--ollama` | Local Ollama summaries with type-routed profiles |
-| QA | `--ollama --final-review` | Plus whole-digest editorial report |
+| QA | `--final-review` | Whole-digest editorial report; can run with preview or Ollama summaries |
 
 ## What Rollup will never do
 
@@ -157,12 +164,12 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
 - Call cloud email APIs (no Gmail API)
 - Require Ollama for default digests or CI tests
 - Open a browser or prompt interactively in `--cron` mode
-- Store message bodies or subjects in run manifests
+- Store message bodies, subjects, prompts, model responses, or patch text in run manifests
 
 ## Live-run checklist
 
 1. **Before copying real mail**, confirm `.gitignore` contains `fixtures/`.
-2. **Never commit** files copied from `/Users/89298/email/gmail`.
+2. **Never commit** files copied from your live mail root, for example `~/email/gmail`.
 3. Bootstrap Python env (see Development setup above).
 4. Run `rollup doctor` against your paths.
 5. Run against committed synthetic fixtures first:
@@ -172,11 +179,11 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
    ```
 6. Optional local real-mail copy (gitignored):
    ```bash
-   cp -R /Users/89298/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
+   cp -R ~/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
    ```
 7. Small live tests before a full run:
    ```bash
-   python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
+   python -m rollup inventory --root ~/email/gmail/Newsletters.sbd
    python -m rollup digest --folder hoops
    python -m rollup digest --folder tech
    ```
@@ -197,8 +204,8 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--root` | `/Users/89298/email/gmail/Newsletters.sbd` | Newsletter mbox folder |
-| `--mail-root` | `/Users/89298/email/gmail` | Safety boundary for writes |
+| `--root` | `Path.home() / "email" / "gmail" / "Newsletters.sbd"` | Newsletter mbox folder |
+| `--mail-root` | `Path.home() / "email" / "gmail"` | Safety boundary for writes |
 | `--output-dir` | `./output` | Digest Markdown + HTML |
 | `--state-dir` | `./state` | SQLite: `rollup.db` |
 | `--log-dir` | `./logs` | Run logs (non-dry-run) |

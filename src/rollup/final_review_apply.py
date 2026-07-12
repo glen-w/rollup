@@ -50,6 +50,7 @@ def should_globally_skip_apply(
     result: FinalReviewResult,
     *,
     policy: ApplyPolicy | None = None,
+    report: DigestReport | None = None,
 ) -> ApplySkipReason | None:
     """Return a stable skip code, or None to proceed past publication gates."""
     if result.review_source == "error":
@@ -65,6 +66,11 @@ def should_globally_skip_apply(
         return "fingerprint_missing"
     if echo != result.digest_fingerprint:
         return "fingerprint_mismatch"
+    if report is not None:
+        from rollup.final_review import compute_digest_fingerprint
+
+        if compute_digest_fingerprint(report) != result.digest_fingerprint:
+            return "fingerprint_mismatch"
     # Issue-id uniqueness among non-empty ids
     seen: set[str] = set()
     for issue in result.issues:
@@ -290,7 +296,7 @@ def apply_final_review_patches(
         reasons.append(f"global_skip:{code}")
         return report, _make_result()
 
-    skip = should_globally_skip_apply(result, policy=resolved)
+    skip = should_globally_skip_apply(result, policy=resolved, report=report)
     if skip is not None:
         return _global_skip(skip)
 

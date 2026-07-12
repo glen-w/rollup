@@ -38,7 +38,7 @@ REQUIRED_FIELDS = frozenset(
         "mode",
         "rollup_version",
         "counts",
-        "outputs_published",
+        "dated_outputs_written",
         "latest_outputs_updated",
     }
 )
@@ -66,8 +66,12 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "ollama_enabled",
         "models_used",
         "outputs",
-        "outputs_published",
+        "dated_outputs_written",
+        "outputs_published",  # legacy read alias accepted via normalize
         "latest_outputs_updated",
+        "seen_state_updated",
+        "seen_state_failed",
+        "manifest_write_failed",
         "previous_successful_run_id",
         "warnings",
         "errors",
@@ -128,13 +132,18 @@ def validate_manifest(data: dict[str, Any]) -> None:
     if not isinstance(data, dict):
         raise ManifestValidationError("Manifest must be a JSON object")
 
-    missing = REQUIRED_FIELDS - set(data)
+    # Legacy writers used outputs_published; normalize for required-field checks.
+    normalized = dict(data)
+    if "dated_outputs_written" not in normalized and "outputs_published" in normalized:
+        normalized["dated_outputs_written"] = normalized["outputs_published"]
+
+    missing = REQUIRED_FIELDS - set(normalized)
     if missing:
         raise ManifestValidationError(
             f"Missing required fields: {', '.join(sorted(missing))}"
         )
 
-    version = data["schema_version"]
+    version = normalized["schema_version"]
     if not isinstance(version, int):
         raise ManifestValidationError("schema_version must be an integer")
     if version not in SUPPORTED_SCHEMA_VERSIONS:
@@ -145,16 +154,16 @@ def validate_manifest(data: dict[str, Any]) -> None:
             )
         raise ManifestValidationError(f"Unsupported schema_version={version}")
 
-    if data["status"] not in STATUS_ENUM:
-        raise ManifestValidationError(f"Invalid status: {data['status']}")
-    if data["mode"] not in MODE_ENUM:
-        raise ManifestValidationError(f"Invalid mode: {data['mode']}")
+    if normalized["status"] not in STATUS_ENUM:
+        raise ManifestValidationError(f"Invalid status: {normalized['status']}")
+    if normalized["mode"] not in MODE_ENUM:
+        raise ManifestValidationError(f"Invalid mode: {normalized['mode']}")
 
-    for key in ("outputs_published", "latest_outputs_updated"):
-        if not isinstance(data[key], bool):
+    for key in ("dated_outputs_written", "latest_outputs_updated"):
+        if not isinstance(normalized[key], bool):
             raise ManifestValidationError(f"{key} must be a boolean")
 
-    counts = data["counts"]
+    counts = normalized["counts"]
     if not isinstance(counts, dict):
         raise ManifestValidationError("counts must be an object")
     for key, value in counts.items():
@@ -223,7 +232,8 @@ class ManifestBuilder:
     window_end: datetime
     status: RunStatus | None = None
     completed_at: datetime | None = None
-    outputs_published: bool = False
+    outputs_published: bool = False  # legacy alias; prefer dated_outputs_written
+    dated_outputs_written: bool = False
     latest_outputs_updated: bool = False
     previous_successful_run_id: str | None = None
     md_path: Path | None = None
@@ -253,12 +263,19 @@ class ManifestBuilder:
         *,
         md_path: Path | None,
         html_path: Path | None,
-        outputs_published: bool,
+        dated_outputs_written: bool | None = None,
         latest_outputs_updated: bool,
+        outputs_published: bool | None = None,
     ) -> None:
         self.md_path = md_path
         self.html_path = html_path
-        self.outputs_published = outputs_published
+        written = (
+            dated_outputs_written
+            if dated_outputs_written is not None
+            else bool(outputs_published)
+        )
+        self.dated_outputs_written = written
+        self.outputs_published = written  # keep legacy field in sync
         self.latest_outputs_updated = latest_outputs_updated
 
     def finalize(
@@ -403,8 +420,17 @@ class ManifestBuilder:
                 "markdown": _relative_path(self.md_path, self.config.output_dir),
                 "html": _relative_path(self.html_path, self.config.output_dir),
             },
-            "outputs_published": self.outputs_published,
+            "dated_outputs_written": self.dated_outputs_written,
             "latest_outputs_updated": self.latest_outputs_updated,
+            "seen_state_updated": bool(
+                agg.seen_state_updated if agg is not None else False
+            ),
+            "seen_state_failed": bool(
+                agg.seen_state_failed if agg is not None else False
+            ),
+            "manifest_write_failed": bool(
+                agg.manifest_write_failed if agg is not None else False
+            ),
             "previous_successful_run_id": self.previous_successful_run_id,
             "warnings": warnings,
             "errors": errors,

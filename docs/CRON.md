@@ -11,6 +11,7 @@ Crontab remains a portable alternative.
 | **Preview summaries** | Short excerpts taken from each message body when `--ollama` is off |
 | **Dry-run** | `--dry-run` — parse and report only; **no** output files, state, logs, or network |
 | **Cron mode** | `--cron` — quieter logs, publish `latest.*`, `mode=cron` in the run manifest |
+| **Partial latest** | `--allow-partial-latest` — permit `latest.*` updates for partial runs; default is success-only |
 
 Do not confuse preview summaries with dry-run.
 
@@ -40,7 +41,19 @@ Stale locks (dead PID or older than 6 hours) are recovered automatically.
 | 1 | Hard failure (safety, lock, missing root, invalid config, write failure, no usable digest) |
 | 2 | Partial success — usable digest written, but material issues occurred |
 
-**Partial (exit 2) includes:** high parse/summary error rates, final-review overall fail, publication/`latest.*` failure, and **degraded group summaries** (stream/cache operational errors or all attempted group blurbs failed). A global apply skip (e.g. missing fingerprint echo) alone does **not** force partial when the digest is otherwise successful—check the manifest `final_review` block.
+Degradation details:
+
+| Condition | Exit | Durable-write behavior |
+|-----------|------|------------------------|
+| Final-review sidecar write fails | 2 | Dated digest remains usable; sidecar is outside the dated-output transaction |
+| Final-review overall status is `fail` | 2 | Dated digest remains usable; inspect the final-review sidecar or manifest block |
+| `latest.*` publication fails | 2 | Dated digest remains the source of truth; seen-state update still runs to avoid repeating undated items solely because latest aliases failed |
+| Manifest write fails after a usable digest | 2 | Dated digest may exist, but the run is degraded because cron status cannot be trusted |
+| Seen-state update fails after a usable digest | 2 | Dated digest may exist, but undated items may repeat on future runs |
+| Group summaries degrade | 2 | Member summaries still render; cache/read/write or stream errors are recorded |
+| High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
+
+A global apply skip (e.g. missing fingerprint echo) alone does **not** force partial when the digest is otherwise successful—check the manifest `final_review` block.
 
 **Invalid Phase-3 flags** (e.g. `--group-summaries` without `--ollama`, non-`primary` variant policy, cron apply without `--final-review-allow-cron-apply`) fail before the run with exit **1**.
 
@@ -105,3 +118,23 @@ On successful `--cron` (or `--latest`) runs, Rollup atomically updates:
 - `output/latest.html`
 
 Partial/failed runs do **not** replace last-known-good latest digests by default.
+Pass `--allow-partial-latest` only if you want partial but usable runs to update
+the `latest.*` aliases. `latest.md` and `latest.html` are published as one file
+set, so they do not point at different runs.
+
+## Durable write ordering
+
+For non-dry-run digests, durable writes are ordered so the dated digest is the
+source of truth:
+
+1. Write dated Markdown + HTML outputs.
+2. If requested and allowed by status, atomically publish `latest.md` and
+   `latest.html` together.
+3. Update seen-state for rendered undated items. This still runs when `latest.*`
+   publication fails, because the dated digest exists.
+4. Write the run manifest. `dated_outputs_written` records whether the dated
+   Markdown + HTML outputs were written; `latest_outputs_updated` records whether
+   the latest aliases moved.
+
+Readers still accept the legacy manifest key `outputs_published` as an alias for
+`dated_outputs_written`, but new manifests write `dated_outputs_written`.

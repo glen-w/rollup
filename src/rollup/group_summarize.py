@@ -25,6 +25,7 @@ from time import perf_counter
 
 from rollup.config import Config
 from rollup.final_review_codes import GroupSummaryErrorCode
+from rollup.provider_errors import is_provider_call_error
 from rollup.models import (
     DigestEntry,
     DigestGroup,
@@ -166,6 +167,8 @@ def _call_ollama_for_group(
         )
         resp.raise_for_status()
     except Exception as exc:
+        if not is_provider_call_error(exc):
+            raise
         logger.warning("group_summarize HTTP error: %s", exc)
         stats["stream_failures"] += 1
         return None, "ollama_http_error"
@@ -179,6 +182,8 @@ def _call_ollama_for_group(
             started_at=started,
         )
     except Exception as exc:
+        if not is_provider_call_error(exc):
+            raise
         logger.warning("group_summarize stream consumer failed: %s", exc)
         stats["stream_failures"] += 1
         return None, "stream_malformed"
@@ -222,7 +227,7 @@ def _get_cached(
         stats["degraded"] = True
         logger.warning("group_summarize cache read error: %s", exc)
         return None
-    except Exception as exc:
+    except sqlite3.Error as exc:
         stats["errors"] += 1
         stats["error_counts"]["cache_read_error"] += 1
         stats["degraded"] = True
@@ -255,7 +260,7 @@ def _store_cached(
             summary=summary,
             created_at=datetime.now().astimezone(),
         )
-    except Exception as exc:
+    except sqlite3.Error as exc:
         stats["errors"] += 1
         stats["cache_write_errors"] += 1
         stats["error_counts"]["cache_write_error"] += 1

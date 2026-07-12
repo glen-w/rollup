@@ -34,7 +34,6 @@ def _minimal_config(tmp_path: Path) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -52,8 +51,6 @@ def _minimal_config(tmp_path: Path) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=False,
     )
 
 

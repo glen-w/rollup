@@ -7,6 +7,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from rollup.classify import classify_message
 from rollup.filter import make_digest_entry
@@ -409,7 +410,7 @@ def test_apply_summaries_continues_after_one_failure(
     mock_check: MagicMock, mock_summarize: MagicMock
 ) -> None:
     mock_check.return_value = (True, "ok")
-    mock_summarize.side_effect = [RuntimeError("timeout"), _generation()]
+    mock_summarize.side_effect = [requests.Timeout("timeout"), _generation()]
     entries = [_entry("body one"), _entry("body two")]
     result = apply_summaries(
         entries,
@@ -422,6 +423,24 @@ def test_apply_summaries_continues_after_one_failure(
     assert result[0].summary_source == "preview_fallback"
     assert result[1].summary_source == "ollama"
     assert result[1].summary == "Bullet summary"
+
+
+@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize.check_ollama_available")
+def test_apply_summaries_type_error_propagates(
+    mock_check: MagicMock, mock_summarize: MagicMock
+) -> None:
+    mock_check.return_value = (True, "ok")
+    mock_summarize.side_effect = TypeError("bad call")
+
+    with pytest.raises(TypeError, match="bad call"):
+        apply_summaries(
+            [_entry("body one")],
+            "http://localhost:11434/api/generate",
+            "llama3.2:3b",
+            30000,
+            allow_remote=False,
+        )
 
 
 @patch("rollup.summarize.check_ollama_available")

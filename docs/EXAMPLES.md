@@ -21,6 +21,12 @@ See [README.md](../README.md) for setup, safety guarantees, and configuration de
 
 If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
 
+Mode shorthand: `--dry-run` parses only and writes nothing; preview-summary mode
+is the normal no-Ollama digest; `--ollama` enables entry LLM summaries;
+`--final-review` runs whole-digest QA and can use Ollama even without `--ollama`;
+`--final-review-mode report` writes advisory QA only, while `apply` applies
+validated summary-only fixes.
+
 ## Inventory
 
 Discover mbox folders and message counts (read-only; no body parsing):
@@ -29,7 +35,7 @@ Discover mbox folders and message counts (read-only; no body parsing):
 python -m rollup inventory
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
 python -m rollup inventory --json-out ./output/inventory.json
-python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
+python -m rollup inventory --root ~/email/gmail/Newsletters.sbd
 ```
 
 ## Digest without Ollama (default)
@@ -197,7 +203,7 @@ Incremental checks before a full live digest:
 ```bash
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --root tests/fixtures/Newsletters.sbd
-python -m rollup inventory --root /Users/89298/email/gmail/Newsletters.sbd
+python -m rollup inventory --root ~/email/gmail/Newsletters.sbd
 python -m rollup digest --folder hoops
 python -m rollup digest --folder tech
 python -m rollup digest
@@ -210,7 +216,7 @@ Explicit `--no-ollama` is equivalent to omitting both `--ollama` and `--no-ollam
 Optional gitignored local mail copy:
 
 ```bash
-cp -R /Users/89298/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
+cp -R ~/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
 python -m rollup digest --root ./fixtures/Newsletters.sbd
 ```
 

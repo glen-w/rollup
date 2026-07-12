@@ -125,7 +125,7 @@ def format_cron_status(state_dir: Path) -> str:
         f"mode: {latest.get('mode')}",
         f"started_at: {latest.get('started_at')}",
         f"completed_at: {latest.get('completed_at')}",
-        f"outputs_published: {latest.get('outputs_published')}",
+        f"dated_outputs_written: {latest.get('dated_outputs_written', latest.get('outputs_published'))}",
         f"latest_outputs_updated: {latest.get('latest_outputs_updated')}",
     ]
     counts = latest.get("counts") or {}

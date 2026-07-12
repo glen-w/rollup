@@ -53,7 +53,7 @@ def test_cron_digest_writes_manifest_and_latest(tmp_path: Path) -> None:
     payload = json.loads(latest.read_text(encoding="utf-8"))
     assert payload["status"] == "success"
     assert payload["mode"] == "cron"
-    assert payload["outputs_published"] is True
+    assert payload.get("dated_outputs_written", payload.get("outputs_published")) is True
     assert payload["latest_outputs_updated"] is True
     assert "subject" not in payload
     assert "body_text" not in payload

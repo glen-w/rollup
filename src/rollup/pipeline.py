@@ -11,6 +11,7 @@ from typing import Any, Literal
 from rollup.clock import Clock, DEFAULT_CLOCK
 from rollup.config import Config, compute_date_window
 from rollup.discovery import filter_folders, iter_mbox_files
+from rollup.effective_run import resolve_effective_run
 from rollup.filter import (
     apply_undated_seen_filter,
     build_digest_entries,
@@ -163,7 +164,7 @@ class AggregatedResults:
     summarize: SummarizeResult | None = None
     review: ReviewResult | None = None
     renders: list[RenderResult] = field(default_factory=list)
-    outputs_published: bool = False
+    dated_outputs_written: bool = False
     latest_outputs_updated: bool = False
     usable_digest: bool = False
     hard_failure: bool = False
@@ -171,6 +172,9 @@ class AggregatedResults:
     final_review_failed: bool = False
     ollama_enabled: bool = False
     publication_failed: bool = False
+    seen_state_failed: bool = False
+    seen_state_updated: bool = False
+    manifest_write_failed: bool = False
     group_summaries_degraded: bool = False
     apply_patches_applied: int = 0
     apply_patches_attempted: int = 0
@@ -185,6 +189,15 @@ class AggregatedResults:
     apply_policy_unattended: bool | None = None
     apply_policy_max_patches: int | None = None
     apply_policy_max_changed_chars: int | None = None
+
+    # Compatibility alias used during rename migration in tests/helpers.
+    @property
+    def outputs_published(self) -> bool:
+        return self.dated_outputs_written
+
+    @outputs_published.setter
+    def outputs_published(self, value: bool) -> None:
+        self.dated_outputs_written = value
 
 
 @dataclass(frozen=True)
@@ -251,6 +264,12 @@ def derive_run_status(
         return "partial"
 
     if aggregated.group_summaries_degraded:
+        return "partial"
+
+    if aggregated.seen_state_failed:
+        return "partial"
+
+    if aggregated.manifest_write_failed:
         return "partial"
 
     return "success"
@@ -417,8 +436,11 @@ def stage_summarize(
     undated_entries: list[DigestEntry],
     profile_set,
     conn,
+    *,
+    allow_network: bool,
+    quiet: bool,
 ) -> SummarizeResult:
-    if config.no_ollama or config.dry_run:
+    if not allow_network:
         return SummarizeResult(
             dated_entries=tuple(dated_entries),
             undated_entries=tuple(undated_entries),
@@ -447,7 +469,7 @@ def stage_summarize(
         allow_remote=config.allow_remote_ollama,
         conn=conn,
         rebuild=config.rebuild_summaries,
-        quiet=config.quiet,
+        quiet=quiet,
     )
     dated_count = len(dated_entries)
     rendered_variants: dict[str, tuple[list[DigestEntry], list[DigestEntry]]] = {}
@@ -523,12 +545,8 @@ def run_digest(
         generated_at, config.lookback_days
     )
 
-    from rollup.phase3_validate import validate_phase3_runtime_config
-
-    _phase3 = validate_phase3_runtime_config(
-        config, run_options=run_options, grouping=grouping
-    )
-    resolved_apply_policy = _phase3.apply_policy
+    effective_run = resolve_effective_run(config, run_options, grouping=grouping)
+    resolved_apply_policy = effective_run.apply_policy
 
     lock = None
     conn = None
@@ -591,7 +609,7 @@ def run_digest(
             get_canonical_newsletter_types(),
         )
 
-        if not config.no_ollama and not run_options.dry_run:
+        if effective_run.allow_summary_network:
             from rollup.summarize import OllamaError, validate_ollama_url
 
             try:
@@ -601,7 +619,7 @@ def run_digest(
                 error_message = str(exc)
                 raise
 
-        if config.final_review_enabled and not run_options.dry_run:
+        if effective_run.allow_final_review_network:
             from rollup.summarize import OllamaError, validate_ollama_url
 
             try:
@@ -665,7 +683,13 @@ def run_digest(
         flat_undated = _flatten_items_to_entries(grouping_result.undated_items)
 
         summarize_result = stage_summarize(
-            config, flat_dated, flat_undated, profile_set, conn
+            config,
+            flat_dated,
+            flat_undated,
+            profile_set,
+            conn,
+            allow_network=effective_run.allow_summary_network,
+            quiet=run_options.quiet,
         )
         aggregated.summarize = summarize_result
 
@@ -722,12 +746,7 @@ def run_digest(
             else None,
         )
 
-        if (
-            config.group_summaries_enabled
-            and not config.no_ollama
-            and grouping.enabled
-            and not run_options.dry_run
-        ):
+        if effective_run.allow_group_summary_network:
             from rollup.group_summarize import apply_group_summaries
 
             new_dated, new_undated, gsm = apply_group_summaries(
@@ -821,10 +840,16 @@ def run_digest(
                     summary_metadata=variant_metadata,
                 )
                 variant_report = _maybe_final_review(
-                    variant_report, config, conn, generated_at, variant_name,
+                    variant_report,
+                    config,
+                    conn,
+                    generated_at,
+                    variant_name,
                     use_explicit_path=False,
                     aggregated=aggregated,
                     apply_policy=resolved_apply_policy,
+                    dry_run=run_options.dry_run,
+                    quiet=run_options.quiet,
                 )
                 stem = digest_output_stem(
                     generated_at, variant_name, run_id_short=ctx.run_id_short
@@ -865,6 +890,8 @@ def run_digest(
                 use_explicit_path=bool(config.final_review_report_path),
                 aggregated=aggregated,
                 apply_policy=resolved_apply_policy,
+                dry_run=run_options.dry_run,
+                quiet=run_options.quiet,
             )
             md = render_markdown(report, config.max_display_links)
             html_content = render_html(report, config.max_display_links)
@@ -885,10 +912,12 @@ def run_digest(
                 )
             )
 
-        aggregated.outputs_published = True
+        aggregated.dated_outputs_written = True
         aggregated.usable_digest = True
 
         # Publish latest outputs transactionally when requested.
+        # Dated digests are the durable source of truth; latest failure still
+        # permits seen-state updates below.
         status = derive_run_status(aggregated, dry_run=False)
         if run_options.publish_latest and md_path and html_path:
             from rollup.publication import publish_latest_outputs
@@ -903,7 +932,15 @@ def run_digest(
                     allow_partial_latest=run_options.allow_partial_latest,
                 )
                 aggregated.latest_outputs_updated = pub.latest_outputs_updated
-            except Exception as pub_exc:
+            except OSError as pub_exc:
+                aggregated.publication_failed = True
+                logger.error("Latest publication failed: %s", pub_exc)
+                ctx.add_event(
+                    "publication_failed",
+                    str(pub_exc),
+                    level="error",
+                )
+            except (ValueError, FileNotFoundError) as pub_exc:
                 aggregated.publication_failed = True
                 logger.error("Latest publication failed: %s", pub_exc)
                 ctx.add_event(
@@ -919,14 +956,25 @@ def run_digest(
                 e.classified.parsed.message_key
                 for e in summarize_result.undated_entries
             ]
-            upsert_seen_keys(conn, rendered_undated_keys, generated_at)
+            try:
+                upsert_seen_keys(conn, rendered_undated_keys, generated_at)
+                aggregated.seen_state_updated = True
+            except Exception as seen_exc:
+                # Digest exists; safe consequence is repetition → partial.
+                aggregated.seen_state_failed = True
+                logger.error("Seen-state update failed: %s", seen_exc)
+                ctx.add_event(
+                    "seen_state_failed",
+                    str(seen_exc),
+                    level="error",
+                )
 
         status = derive_run_status(aggregated, dry_run=False)
         if manifest_builder is not None:
             manifest_builder.set_outputs(
                 md_path=md_path,
                 html_path=html_path,
-                outputs_published=aggregated.outputs_published,
+                dated_outputs_written=aggregated.dated_outputs_written,
                 latest_outputs_updated=aggregated.latest_outputs_updated,
             )
             manifest_builder.finalize(
@@ -968,9 +1016,10 @@ def run_digest(
                     manifest_path = written
             except Exception as manifest_exc:
                 secondary_manifest_error = str(manifest_exc)
-                logger.error(
-                    "Secondary manifest write error: %s", secondary_manifest_error
-                )
+                aggregated.manifest_write_failed = True
+                logger.error("Manifest write failed: %s", manifest_exc)
+                if status in ("success", "partial", "dry_run"):
+                    status = derive_run_status(aggregated, dry_run=False)
 
     return DigestRunResult(
         status=status,
@@ -1026,8 +1075,10 @@ def _maybe_final_review(
     use_explicit_path: bool,
     aggregated: AggregatedResults,
     apply_policy=None,
+    dry_run: bool = False,
+    quiet: bool = True,
 ) -> DigestReport:
-    if not config.final_review_enabled or config.dry_run:
+    if not config.final_review_enabled or dry_run:
         return report
     from rollup.final_review import (
         execute_final_review,
@@ -1046,9 +1097,15 @@ def _maybe_final_review(
         report_path = config.final_review_report_path
     else:
         report_path = config.output_dir / f"{stem}.final-review.json"
-    result = execute_final_review(report, config, conn=conn)
-    write_final_review_report(result, report_path)
-    print_final_review_summary(result, report_path)
+    result = execute_final_review(report, config, conn=conn, quiet=quiet)
+    try:
+        write_final_review_report(result, report_path)
+    except OSError as sidecar_exc:
+        # Sidecar is not part of the dated-digest transaction → partial.
+        logger.error("Final-review sidecar write failed: %s", sidecar_exc)
+        aggregated.final_review_failed = True
+    else:
+        print_final_review_summary(result, report_path)
     if result.overall_status == "fail":
         aggregated.final_review_failed = True
 

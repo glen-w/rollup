@@ -1,6 +1,6 @@
 # Design note: group-level LLM summaries
 
-**Status:** shipped in 0.4.0; hardened in 0.4.1.
+**Status:** shipped in 0.4.0; hardened in 0.4.1 and 0.4.2.
 
 ## Behaviour (enforced)
 
@@ -13,6 +13,8 @@
 - `max_group_summary_calls` bounds **network attempts** (including retries); cache
   hits do not consume the budget.
 - Cache write failures still render the summary and mark the run degraded.
+- Cache read failures degrade the whole run (exit 2) when the digest remains
+  usable.
 - Unsupported `group_summary_variant_policy` values other than `primary` are rejected
   at validation time.
 

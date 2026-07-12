@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from rollup.final_review import (
     _parse_issue,
     _result_from_cached_json,
+    execute_final_review,
     parse_final_review_response,
 )
+from test_final_review import _config, _report
 
 
 def test_safe_auto_fix_string_true_is_false() -> None:
@@ -142,3 +146,20 @@ def test_malformed_cached_payload_error_source() -> None:
         review_input_hash="ih",
     )
     assert result.review_source == "error"
+
+
+def test_provider_type_error_hard_fails_smoke(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "rollup.final_review.OllamaAvailabilityCache.check",
+        lambda self, model: (True, "ok"),
+    )
+    monkeypatch.setattr(
+        "rollup.final_review.call_final_review_model",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("bad provider call")),
+    )
+
+    with pytest.raises(TypeError, match="bad provider call"):
+        execute_final_review(
+            _report(),
+            _config(tmp_path, no_ollama=False, final_review_enabled=True),
+        )

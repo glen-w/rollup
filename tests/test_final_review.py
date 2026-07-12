@@ -132,7 +132,6 @@ def _config(tmp_path: Path, **overrides) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -150,8 +149,6 @@ def _config(tmp_path: Path, **overrides) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=True,
         final_review_enabled=True,
         final_review_mode="report",
         final_review_profile="strict",
@@ -411,6 +408,41 @@ def test_final_review_cache_key_dimensions(tmp_path: Path) -> None:
         options={"format": "json"},
     )
     assert cached is not None
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"digest_fingerprint": "other-fp"},
+        {"review_input_hash": "other-ih"},
+        {"model": "other-model"},
+        {"profile_name": "concise"},
+        {"prompt_version": "final_review_v_next"},
+    ],
+)
+def test_fr_cache_isolation_dimensions(tmp_path: Path, override) -> None:
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    base = dict(
+        digest_fingerprint="fp",
+        review_input_hash="ih",
+        provider="ollama",
+        profile_name="strict",
+        model="qwen2.5:7b",
+        prompt_version=FINAL_REVIEW_PROMPT_VERSION,
+        temperature=0.1,
+        num_ctx=FINAL_REVIEW_DEFAULT_NUM_CTX,
+        options={"format": "json"},
+    )
+    store_final_review_generation(
+        conn,
+        **base,
+        result_json='{"overall_status":"pass"}',
+        created_at=datetime.now().astimezone(),
+    )
+
+    assert get_final_review_generation(conn, **base) is not None
+    assert get_final_review_generation(conn, **{**base, **override}) is None
+    conn.close()
 
 
 @patch("rollup.ollama_stream.consume_ollama_stream")

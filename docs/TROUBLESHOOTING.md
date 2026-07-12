@@ -41,6 +41,14 @@ lookback or regenerate fixtures with `python tests/generate_fixtures.py`.
 Default digests do not need Ollama. If you passed `--ollama`, start the local
 server or omit the flag to use preview summaries.
 
+### Provider errors vs programming faults
+
+Rollup degrades only named provider transport/payload failures, such as
+`requests.RequestException`, malformed provider JSON, or Unicode decode errors
+from provider payloads. Programming faults such as `TypeError` or
+`AttributeError` are not converted into fallbacks; they hard-fail so the bug is
+visible.
+
 ### Parse anomalies vs fatal errors
 
 | Kind | Meaning |
@@ -65,7 +73,12 @@ rollup cron status
 ```
 
 Manifests are local operational records (paths and folder names may be sensitive
-on shared machines). They never store message bodies, subjects, or Message-IDs.
+on shared machines). They never store message bodies, subjects, Message-IDs,
+prompts, model responses, or patch text.
+
+Structured logs follow the same privacy rule: they may record status, counters,
+codes, and bounded exception messages, but not newsletter subject/body text,
+prompts, model responses, or patch contents.
 
 Schema v2 may include `final_review` (apply skip reason, reject counts by code,
 auto-edited prose flag) and `group_summaries` (ollama_calls, cache hits, stream /
@@ -78,9 +91,15 @@ Check the manifest `final_review.apply_global_skip_reason` and logs. Common code
 `unattended_patch_cap`, `unattended_char_cap`. Cron apply also requires
 `--final-review-allow-cron-apply` and conservative policy.
 
+Final-review apply binds patches to the digest fingerprint. Live model responses
+may echo either `echoed_digest_fingerprint` or the schema alias
+`digest_fingerprint`; cached results preserve only the model/cache echo and never
+synthesise a missing echo from the host-computed fingerprint. Missing or
+mismatched echoes skip the whole patch set.
+
 ### Group summaries degraded / exit 2
 
-Partial exit with a usable digest usually means stream failures, cache write
+Partial exit with a usable digest usually means stream failures, cache read/write
 errors, or all attempted group blurbs failed. Member entry summaries still render;
 deterministic group headers remain when a blurb is omitted.
 

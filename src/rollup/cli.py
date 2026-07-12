@@ -116,19 +116,6 @@ def _build_config(args: argparse.Namespace) -> Config:
             not getattr(args, "summary_profile", None) and not summary_variants
         )
 
-    # Runtime quiet/verbose: --cron implies quiet unless --verbose.
-    cron = getattr(args, "cron", False)
-    verbose = getattr(args, "verbose", False)
-    quiet_explicit = getattr(args, "quiet", False)
-    if verbose:
-        quiet = False
-    elif quiet_explicit:
-        quiet = True
-    elif cron:
-        quiet = True
-    else:
-        quiet = False
-
     return Config(
         root=Path(args.root),
         mail_root=Path(args.mail_root),
@@ -138,7 +125,6 @@ def _build_config(args: argparse.Namespace) -> Config:
         lookback_days=getattr(args, "lookback_days", DEFAULT_LOOKBACK_DAYS),
         folders_include=tuple(getattr(args, "folder", None) or []),
         folders_exclude=tuple(getattr(args, "exclude_folder", None) or []),
-        dry_run=getattr(args, "dry_run", False),
         no_ollama=_resolve_no_ollama(args),
         include_seen_undated=getattr(args, "include_seen_undated", False),
         rebuild_summaries=getattr(args, "rebuild_summaries", False),
@@ -158,8 +144,6 @@ def _build_config(args: argparse.Namespace) -> Config:
         list_summary_profiles=getattr(args, "list_summary_profiles", False),
         list_newsletter_types=getattr(args, "list_newsletter_types", False),
         summary_routing_report=getattr(args, "summary_routing_report", False),
-        verbose=verbose,
-        quiet=quiet,
         final_review_enabled=getattr(args, "final_review", False),
         final_review_mode=getattr(args, "final_review_mode", DEFAULT_FINAL_REVIEW_MODE),
         final_review_profile=getattr(
@@ -203,7 +187,7 @@ def _build_config(args: argparse.Namespace) -> Config:
     )
 
 
-def _build_run_options(args: argparse.Namespace, config: Config):
+def _build_run_options(args: argparse.Namespace):
     cron = getattr(args, "cron", False)
     # Detect whether quiet was explicitly passed via argparse store_true —
     # if cron and not verbose and not --quiet, quiet comes from cron default.
@@ -220,10 +204,10 @@ def _build_run_options(args: argparse.Namespace, config: Config):
         publish_latest = False
 
     return resolve_run_options(
-        dry_run=config.dry_run,
+        dry_run=getattr(args, "dry_run", False),
         cron=cron,
         quiet=quiet_arg,
-        verbose=config.verbose,
+        verbose=getattr(args, "verbose", False),
         write_manifest=None,
         publish_latest=publish_latest,
         allow_partial_latest=getattr(args, "allow_partial_latest", False),
@@ -347,6 +331,7 @@ def _validate_final_review_config(
     config: Config,
     *,
     cron: bool = False,
+    dry_run: bool = False,
     grouping_enabled: bool = True,
 ) -> None:
     from rollup.phase3_validate import validate_phase3_runtime_config
@@ -354,7 +339,7 @@ def _validate_final_review_config(
 
     validate_phase3_runtime_config(
         config,
-        run_options=RunOptions(cron=cron, dry_run=config.dry_run),
+        run_options=RunOptions(cron=cron, dry_run=dry_run),
         grouping=GroupingConfig(enabled=grouping_enabled),
     )
 
@@ -371,7 +356,12 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     for w in warnings:
         print(w, file=sys.stderr)
 
-    _setup_logging(config.verbose, config.quiet, None, dry_run=True)
+    _setup_logging(
+        getattr(args, "verbose", False),
+        getattr(args, "quiet", False),
+        None,
+        dry_run=True,
+    )
     logger.info("Reading newsletter root: %s", config.root.resolve())
 
     inventory = build_inventory(config.root)
@@ -404,7 +394,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 def cmd_digest(args: argparse.Namespace) -> int:
     config = _build_config(args)
-    run_options = _build_run_options(args, config)
+    run_options = _build_run_options(args)
     grouping = _build_grouping_config(args)
     generated_at = datetime.now().astimezone()
     try:
@@ -439,20 +429,18 @@ def cmd_digest(args: argparse.Namespace) -> int:
         return 0
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
+
     try:
-        _validate_final_review_config(
-            config, cron=run_options.cron, grouping_enabled=grouping.enabled
+        result = run_digest(
+            config,
+            run_options,
+            grouping=grouping,
+            manifest_config=default_manifest_config(config.state_dir),
         )
     except Exception as exc:
+        # Effective-run validation (Phase-3) and unexpected hard errors.
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-
-    result = run_digest(
-        config,
-        run_options,
-        grouping=grouping,
-        manifest_config=default_manifest_config(config.state_dir),
-    )
 
     if result.stats is not None and not run_options.quiet:
         print(render_stats_block(result.stats))

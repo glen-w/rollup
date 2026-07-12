@@ -34,7 +34,6 @@ def _config(tmp_path: Path):
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=True,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -52,8 +51,6 @@ def _config(tmp_path: Path):
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=False,
     )
 
 

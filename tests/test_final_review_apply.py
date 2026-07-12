@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.final_review import compute_digest_fingerprint
 from rollup.final_review_apply import (
     apply_final_review_patches,
     should_globally_skip_apply,
@@ -67,7 +68,6 @@ def _config(**kwargs) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -85,8 +85,6 @@ def _config(**kwargs) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=True,
         final_review_max_changed_chars_ratio=DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
     )
     base.update(kwargs)
@@ -118,7 +116,25 @@ def _report(entry: DigestEntry) -> DigestReport:
     )
 
 
-def _result(*, patches=(), status="pass", safe=True, source="ollama") -> FinalReviewResult:
+_SENTINEL = object()
+
+
+def _result(
+    *,
+    patches=(),
+    status="pass",
+    safe=True,
+    source="ollama",
+    report: DigestReport | None = None,
+    echo=_SENTINEL,
+    fingerprint=_SENTINEL,
+) -> FinalReviewResult:
+    resolved_fingerprint = (
+        compute_digest_fingerprint(report)
+        if fingerprint is _SENTINEL and report is not None
+        else ("fp" if fingerprint is _SENTINEL else fingerprint)
+    )
+    resolved_echo = resolved_fingerprint if echo is _SENTINEL else echo
     return FinalReviewResult(
         overall_status=status,
         safe_to_publish=safe,
@@ -140,9 +156,9 @@ def _result(*, patches=(), status="pass", safe=True, source="ollama") -> FinalRe
         model="m",
         prompt_version="final_review_v2_apply",
         generated_at=datetime.now(timezone.utc),
-        digest_fingerprint="fp",
+        digest_fingerprint=resolved_fingerprint,
         review_input_hash="ih",
-        echoed_digest_fingerprint="fp",
+        echoed_digest_fingerprint=resolved_echo,
         review_mode="apply",
     )
 
@@ -163,6 +179,7 @@ def test_apply_updates_summary_purely() -> None:
     replacement = original.replace("sigma tau.", "sigma tau!")
     assert abs(len(replacement) - len(original)) / max(len(original), 40) <= 0.08
     result = _result(
+        report=report,
         patches=(
             FinalReviewPatch(
                 entry_id="mid:1",
@@ -200,6 +217,7 @@ def test_reject_new_url() -> None:
         "https://example.com/a and https://evil.example/x",
     )
     result = _result(
+        report=report,
         patches=(
             FinalReviewPatch(
                 entry_id="mid:1",

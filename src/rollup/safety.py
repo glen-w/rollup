@@ -65,6 +65,7 @@ def validate_read_root(
             "WARNING: Reading live Thunderbird data. Recommend testing with:\n"
             "  python -m rollup inventory --root tests/fixtures/Newsletters.sbd\n"
             "Before copying real mail, confirm .gitignore contains fixtures/.\n"
-            "Never commit files copied from /Users/89298/email/gmail."
+            "Never commit files copied from your live mail root "
+            f"({mail_root})."
         )
     return warnings

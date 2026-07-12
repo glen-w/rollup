@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.final_review import compute_digest_fingerprint
 from rollup.final_review_apply import (
     apply_final_review_patches,
     should_globally_skip_apply,
@@ -67,7 +69,6 @@ def _config(**kwargs) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=True,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -85,8 +86,6 @@ def _config(**kwargs) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=True,
         final_review_max_changed_chars_ratio=DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
         final_review_apply_policy="standard",
         final_review_max_patches_unattended=5,
@@ -125,6 +124,7 @@ BASE = (
     "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda "
     "mu nu xi omicron pi rho sigma tau."
 )
+_SENTINEL = object()
 
 
 def _issue(
@@ -152,11 +152,18 @@ def _result(
     status="pass",
     safe=True,
     source="ollama",
-    echo="fp",
-    fingerprint="fp",
+    report: DigestReport | None = None,
+    echo=_SENTINEL,
+    fingerprint=_SENTINEL,
 ) -> FinalReviewResult:
     if issues is None:
         issues = (_issue("iss-1"),)
+    resolved_fingerprint = (
+        compute_digest_fingerprint(report)
+        if fingerprint is _SENTINEL and report is not None
+        else ("fp" if fingerprint is _SENTINEL else fingerprint)
+    )
+    resolved_echo = resolved_fingerprint if echo is _SENTINEL else echo
     return FinalReviewResult(
         overall_status=status,
         safe_to_publish=safe,
@@ -167,9 +174,9 @@ def _result(
         model="m",
         prompt_version="final_review_v2_apply",
         generated_at=datetime.now(timezone.utc),
-        digest_fingerprint=fingerprint,
+        digest_fingerprint=resolved_fingerprint,
         review_input_hash="ih",
-        echoed_digest_fingerprint=echo,
+        echoed_digest_fingerprint=resolved_echo,
         review_mode="apply",
     )
 
@@ -222,11 +229,31 @@ def test_issue_ids_not_unique_global_skip() -> None:
     assert should_globally_skip_apply(result) == "issue_ids_not_unique"
 
 
+def test_mutated_summary_after_fingerprint_global_skips() -> None:
+    entry = _entry("mid:1", BASE)
+    report = _report(entry)
+    result = _result(
+        report=report,
+        patches=(_patch("mid:1", _tiny_edit(BASE), "iss-1"),),
+    )
+    mutated_report = _report(replace(entry, summary=BASE + " Mutated after review."))
+
+    new_report, stats = apply_final_review_patches(mutated_report, result, _config())
+
+    assert stats.applied == 0
+    assert stats.global_skip_reason == "fingerprint_mismatch"
+    assert new_report.dated_by_folder["tech"][0].summary == mutated_report.dated_by_folder[
+        "tech"
+    ][0].summary
+
+
 # --- Linkage / safe_auto_fix ---
 
 
 def test_missing_issue_id_rejects() -> None:
+    report = _report(_entry("mid:1", BASE))
     result = _result(
+        report=report,
         patches=(
             FinalReviewPatch(
                 entry_id="mid:1",
@@ -237,25 +264,57 @@ def test_missing_issue_id_rejects() -> None:
             ),
         )
     )
-    _, stats = apply_final_review_patches(_report(_entry("mid:1", BASE)), result, _config())
+    _, stats = apply_final_review_patches(report, result, _config())
     assert stats.applied == 0
     assert dict(stats.reject_counts).get("missing_issue_id") == 1
 
 
 def test_safe_auto_fix_must_be_literal_true() -> None:
+    report = _report(_entry("mid:1", BASE))
     result = _result(
+        report=report,
         issues=(_issue("iss-1", safe=False),),
         patches=(_patch("mid:1", _tiny_edit(BASE), "iss-1"),),
     )
-    _, stats = apply_final_review_patches(_report(_entry("mid:1", BASE)), result, _config())
+    _, stats = apply_final_review_patches(report, result, _config())
     assert stats.applied == 0
     assert dict(stats.reject_counts).get("safe_auto_fix_not_true") == 1
 
 
 def test_unknown_issue_id() -> None:
-    result = _result(patches=(_patch("mid:1", _tiny_edit(BASE), "nope"),))
-    _, stats = apply_final_review_patches(_report(_entry("mid:1", BASE)), result, _config())
+    report = _report(_entry("mid:1", BASE))
+    result = _result(
+        report=report, patches=(_patch("mid:1", _tiny_edit(BASE), "nope"),)
+    )
+    _, stats = apply_final_review_patches(report, result, _config())
     assert dict(stats.reject_counts).get("unknown_issue_id") == 1
+
+
+def test_apply_binds_entry_id_and_summary_fingerprint() -> None:
+    entry = _entry("mid:1", BASE)
+    report = _report(entry)
+
+    unknown_entry_result = _result(
+        report=report,
+        issues=(_issue("iss-1", entry_id="missing-mid"),),
+        patches=(_patch("missing-mid", _tiny_edit(BASE), "iss-1"),),
+    )
+    _, unknown_stats = apply_final_review_patches(
+        report, unknown_entry_result, _config()
+    )
+    assert unknown_stats.applied == 0
+    assert dict(unknown_stats.reject_counts).get("unknown_entry") == 1
+
+    reviewed_result = _result(
+        report=report,
+        patches=(_patch("mid:1", _tiny_edit(BASE), "iss-1"),),
+    )
+    mutated_report = _report(replace(entry, summary=BASE + " Mutated."))
+    _, mutated_stats = apply_final_review_patches(
+        mutated_report, reviewed_result, _config()
+    )
+    assert mutated_stats.applied == 0
+    assert mutated_stats.global_skip_reason == "fingerprint_mismatch"
 
 
 # --- Duplicates / conflicts ---
@@ -267,8 +326,9 @@ def test_duplicate_entry_and_issue() -> None:
         _patch("mid:1", _tiny_edit(BASE, "!"), "iss-1"),
         _patch("mid:1", _tiny_edit(BASE, "?"), "iss-2"),
     )
-    result = _result(issues=issues, patches=patches)
-    _, stats = apply_final_review_patches(_report(_entry("mid:1", BASE)), result, _config())
+    report = _report(_entry("mid:1", BASE))
+    result = _result(report=report, issues=issues, patches=patches)
+    _, stats = apply_final_review_patches(report, result, _config())
     assert stats.applied == 0
     assert dict(stats.reject_counts).get("conflicting_replacement") == 2
 
@@ -281,8 +341,9 @@ def test_duplicate_issue_id_across_patches() -> None:
         _patch("mid:1", _tiny_edit(BASE, "!"), "iss-1"),
         _patch("mid:2", _tiny_edit(BASE, "!"), "iss-1"),
     )
-    result = _result(issues=issues, patches=patches)
-    new_report, stats = apply_final_review_patches(_report(e1, e2), result, _config())
+    report = _report(e1, e2)
+    result = _result(report=report, issues=issues, patches=patches)
+    new_report, stats = apply_final_review_patches(report, result, _config())
     assert stats.applied == 1
     assert dict(stats.reject_counts).get("duplicate_issue_id") == 1
     assert new_report.dated_by_folder["tech"][0].summary != BASE
@@ -307,9 +368,10 @@ def test_unattended_patch_cap_whole_set() -> None:
         preserve_links=True,
         preserve_quotes=True,
     )
-    result = _result(issues=issues, patches=patches)
+    report = _report(*entries)
+    result = _result(report=report, issues=issues, patches=patches)
     new_report, stats = apply_final_review_patches(
-        _report(*entries), result, _config(), policy=policy
+        report, result, _config(), policy=policy
     )
     assert stats.global_skip_reason == "unattended_patch_cap"
     assert stats.applied == 0
@@ -333,9 +395,10 @@ def test_unattended_exactly_five_applies() -> None:
         preserve_links=True,
         preserve_quotes=True,
     )
-    result = _result(issues=issues, patches=patches)
+    report = _report(*entries)
+    result = _result(report=report, issues=issues, patches=patches)
     _, stats = apply_final_review_patches(
-        _report(*entries), result, _config(), policy=policy
+        report, result, _config(), policy=policy
     )
     assert stats.applied == 5
     assert stats.global_skip_reason is None
@@ -343,9 +406,6 @@ def test_unattended_exactly_five_applies() -> None:
 
 def test_unattended_char_cap_801_whole_set() -> None:
     # One large edit: delta > 800 under unattended.
-    original = "x" * 100
-    replacement = "y" * 902  # delta = 802
-    entry = _entry("mid:1", original)
     policy = resolve_apply_policy(
         cron=False,
         apply_policy_name="conservative",
@@ -356,18 +416,18 @@ def test_unattended_char_cap_801_whole_set() -> None:
         preserve_links=True,
         preserve_quotes=True,
     )
-    result = _result(
-        patches=(_patch("mid:1", replacement, "iss-1"),),
-    )
     # Ratio may also reject; raise ratio ceiling for this test.
     cfg = _config(final_review_max_changed_chars_ratio=0.5)
     # abs ceiling is max(200, 0.5*orig_len)=200 for short orig — use longer original
     original = "word " * 80  # 400 chars
     replacement = original + ("z" * 801)
     entry = _entry("mid:1", original)
-    result = _result(patches=(_patch("mid:1", replacement, "iss-1"),))
+    report = _report(entry)
+    result = _result(
+        report=report, patches=(_patch("mid:1", replacement, "iss-1"),)
+    )
     _, stats = apply_final_review_patches(
-        _report(entry), result, cfg, policy=policy
+        report, result, cfg, policy=policy
     )
     # Either abs ceiling or unattended char cap — must not apply
     assert stats.applied == 0
@@ -381,7 +441,8 @@ def test_invalid_patches_do_not_block_later_interactive() -> None:
         _patch("mid:1", BASE + " https://evil.example/x", "iss-1"),  # URL reject
         _patch("mid:2", _tiny_edit(BASE), "iss-2"),
     )
-    result = _result(issues=issues, patches=patches)
+    report = _report(e1, e2)
+    result = _result(report=report, issues=issues, patches=patches)
     cfg = _config(
         final_review_apply_policy="standard",
         final_review_max_changed_chars_ratio=0.5,
@@ -397,7 +458,7 @@ def test_invalid_patches_do_not_block_later_interactive() -> None:
         preserve_quotes=True,
     )
     new_report, stats = apply_final_review_patches(
-        _report(e1, e2), result, cfg, policy=policy
+        report, result, cfg, policy=policy
     )
     assert stats.applied == 1
     assert new_report.dated_by_folder["tech"][1].summary != BASE
@@ -410,9 +471,12 @@ def test_nfkc_identical_rejects() -> None:
     # Compatibility equivalent: ﬁ (U+FB01) vs fi
     original = "Alpha beta gamma delta epsilon zeta eta theta " + "fi" * 20
     replacement = "Alpha beta gamma delta epsilon zeta eta theta " + "\ufb01" * 20
-    result = _result(patches=(_patch("mid:1", replacement, "iss-1"),))
+    report = _report(_entry("mid:1", original))
+    result = _result(
+        report=report, patches=(_patch("mid:1", replacement, "iss-1"),)
+    )
     _, stats = apply_final_review_patches(
-        _report(_entry("mid:1", original)),
+        report,
         result,
         _config(final_review_max_changed_chars_ratio=0.5),
     )
@@ -424,9 +488,12 @@ def test_crlf_vs_lf_counts_as_delta_not_identity() -> None:
     replacement = BASE + "\r\nline"
     # Not NFKC-identical after whitespace collapse? \n vs \r\n may collapse differently
     # whitespace split collapses both to same — may be identical_nfkc
-    result = _result(patches=(_patch("mid:1", replacement, "iss-1"),))
+    report = _report(_entry("mid:1", original))
+    result = _result(
+        report=report, patches=(_patch("mid:1", replacement, "iss-1"),)
+    )
     _, stats = apply_final_review_patches(
-        _report(_entry("mid:1", original)),
+        report,
         result,
         _config(final_review_max_changed_chars_ratio=0.5),
     )
@@ -437,9 +504,12 @@ def test_crlf_vs_lf_counts_as_delta_not_identity() -> None:
 def test_emoji_edit_applies_when_within_ratio() -> None:
     original = BASE
     replacement = BASE.replace("tau.", "tau 😀.")
-    result = _result(patches=(_patch("mid:1", replacement, "iss-1"),))
+    report = _report(_entry("mid:1", original))
+    result = _result(
+        report=report, patches=(_patch("mid:1", replacement, "iss-1"),)
+    )
     _, stats = apply_final_review_patches(
-        _report(_entry("mid:1", original)),
+        report,
         result,
         _config(final_review_max_changed_chars_ratio=0.5),
     )

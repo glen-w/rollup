@@ -20,6 +20,11 @@ from rollup.models import (
     DigestGroup,
     ParsedMessage,
 )
+from rollup.state import (
+    get_group_summary_generation,
+    init_db_with_summaries,
+    store_group_summary_generation,
+)
 
 
 def _entry(key: str, summary: str = "usable summary text here") -> DigestEntry:
@@ -80,7 +85,6 @@ def _config(**kwargs) -> Config:
         lookback_days=7,
         folders_include=(),
         folders_exclude=(),
-        dry_run=False,
         no_ollama=False,
         include_seen_undated=False,
         rebuild_summaries=False,
@@ -98,8 +102,6 @@ def _config(**kwargs) -> Config:
         list_summary_profiles=False,
         list_newsletter_types=False,
         summary_routing_report=False,
-        verbose=False,
-        quiet=True,
         final_review_max_changed_chars_ratio=DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
         min_usable_member_summaries=2,
     )
@@ -202,6 +204,118 @@ def test_cache_write_failure_still_returns_summary() -> None:
     assert new_dated["tech"][0].group_summary == "Generated group summary blurb."
     assert meta.cache_write_errors == 1
     assert meta.degraded is True
+
+
+def test_group_budget_mixed_hits_retries_failures() -> None:
+    g_hit_before_budget = _group("hit-before")
+    g_retry_success = _group("retry-success")
+    g_fail_exhausts_budget = _group("fail-budget")
+    g_hit_after_budget = _group("hit-after")
+    g_skipped_after_budget = _group("skip-after")
+    dated = {
+        "tech": (
+            g_hit_before_budget,
+            g_retry_success,
+            g_fail_exhausts_budget,
+            g_hit_after_budget,
+            g_skipped_after_budget,
+        )
+    }
+
+    cache_hits = {
+        "hit-before": "Cached before budget.",
+        "hit-after": "Cached after budget.",
+    }
+
+    def fake_get(_conn, cache_key, stats):
+        for group_id, summary in cache_hits.items():
+            if group_id in cache_key:
+                return summary
+        return None
+
+    call_count = {"n": 0}
+
+    def fake_cache_key(group, _config):
+        return f"cache-key:{group.group_id}"
+
+    def fake_call(_prompt, _config, *, stats):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            stats["stream_failures"] += 1
+            return None, "ollama_http_error"
+        if call_count["n"] == 2:
+            return "Retry eventually succeeded.", None
+        stats["stream_failures"] += 1
+        return None, "ollama_http_error"
+
+    with (
+        patch("rollup.group_summarize._group_cache_key", side_effect=fake_cache_key),
+        patch("rollup.group_summarize._get_cached", side_effect=fake_get),
+        patch("rollup.group_summarize._store_cached"),
+        patch("rollup.group_summarize._call_ollama_for_group", side_effect=fake_call),
+    ):
+        new_dated, _, meta = apply_group_summaries(
+            dated, (), _config(), MagicMock(), max_calls=4
+        )
+
+    groups = new_dated["tech"]
+    assert groups[0].group_summary == "Cached before budget."
+    assert groups[1].group_summary == "Retry eventually succeeded."
+    assert groups[2].group_summary is None
+    assert groups[3].group_summary == "Cached after budget."
+    assert groups[4].group_summary is None
+    assert meta.cache_hits == 2
+    assert meta.ollama_calls == 4
+    assert meta.groups_succeeded == 3
+    assert meta.groups_failed == 1
+    assert meta.groups_skipped_budget == 1
+    assert meta.degraded is True
+    assert dict(meta.error_counts)["budget_skipped"] == 1
+
+
+def test_group_summary_cache_read_failure_degrades() -> None:
+    def fail_read(_conn, _cache_key, stats):
+        stats["errors"] += 1
+        stats["error_counts"]["cache_read_error"] += 1
+        stats["degraded"] = True
+        return None
+
+    def ok_call(_prompt, _config, *, stats):
+        return "Generated after cache read failure.", None
+
+    with (
+        patch("rollup.group_summarize._get_cached", side_effect=fail_read),
+        patch("rollup.group_summarize._call_ollama_for_group", side_effect=ok_call),
+        patch("rollup.group_summarize._store_cached"),
+    ):
+        new_dated, _, meta = apply_group_summaries(
+            {"tech": (_group("cache-read"),)}, (), _config(), MagicMock(), max_calls=2
+        )
+
+    assert new_dated["tech"][0].group_summary == "Generated after cache read failure."
+    assert meta.degraded is True
+    assert dict(meta.error_counts)["cache_read_error"] == 1
+
+
+def test_group_summary_generations_no_runtime_dml(tmp_path: Path) -> None:
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    store_group_summary_generation(
+        conn,
+        cache_key="cache-key",
+        summary="by-key group summary",
+        created_at=datetime.now(timezone.utc),
+    )
+    assert get_group_summary_generation(conn, cache_key="cache-key") == (
+        "by-key group summary"
+    )
+    generations = conn.execute(
+        "SELECT COUNT(*) FROM group_summary_generations"
+    ).fetchone()[0]
+    by_key = conn.execute("SELECT COUNT(*) FROM group_summary_by_key").fetchone()[0]
+    conn.close()
+
+    assert generations == 0
+    assert by_key == 1
 
 
 def test_max_output_chars_constant_is_group_specific() -> None:

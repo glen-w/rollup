@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
-DEFAULT_MAIL_ROOT = Path("/Users/89298/email/gmail")
+DEFAULT_MAIL_ROOT = Path.home() / "email" / "gmail"
 DEFAULT_NEWSLETTER_ROOT = DEFAULT_MAIL_ROOT / "Newsletters.sbd"
 DEFAULT_OUTPUT_DIR = Path("./output")
 DEFAULT_STATE_DIR = Path("./state")
@@ -33,7 +33,6 @@ class Config:
     lookback_days: int
     folders_include: tuple[str, ...]
     folders_exclude: tuple[str, ...]
-    dry_run: bool
     no_ollama: bool
     include_seen_undated: bool
     rebuild_summaries: bool
@@ -51,8 +50,6 @@ class Config:
     list_summary_profiles: bool
     list_newsletter_types: bool
     summary_routing_report: bool
-    verbose: bool
-    quiet: bool
     final_review_enabled: bool = False
     final_review_mode: str = DEFAULT_FINAL_REVIEW_MODE
     final_review_profile: str = DEFAULT_FINAL_REVIEW_PROFILE
