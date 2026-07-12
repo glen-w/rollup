@@ -279,8 +279,29 @@ def resolve_summary_plan(
     entries: list[DigestEntry],
     profile_set: SummaryProfileSet,
     cli_options: SummaryCliOptions,
+    *,
+    policy_by_message_key: dict[str, object] | None = None,
+    warnings: list[str] | None = None,
 ) -> SummaryPlan:
-    """Resolve summary routing for already-classified digest entries."""
+    """Resolve summary routing for already-classified digest entries.
+
+    Precedence: variants > source override > CLI profile > type route > default.
+    """
+    warn = warnings if warnings is not None else []
+    policies = policy_by_message_key or {}
+
+    def _source_profile(entry: DigestEntry) -> str | None:
+        policy = policies.get(entry.classified.parsed.message_key)
+        override = getattr(policy, "summary_profile_override", None) if policy else None
+        if not override:
+            return None
+        try:
+            _resolve_profile(profile_set, override)
+            return str(override)
+        except (UnknownSummaryProfileError, DisabledSummaryProfileError) as exc:
+            warn.append(str(exc))
+            return None
+
     if cli_options.summary_variants:
         jobs_by_variant: dict[str, tuple[SummaryJob, ...]] = {}
         for variant_name in cli_options.summary_variants:
@@ -297,48 +318,47 @@ def resolve_summary_plan(
             output_variants=tuple(cli_options.summary_variants),
         )
 
-    if cli_options.summary_profile:
-        profile_name = cli_options.summary_profile
-        profile = _resolve_profile(profile_set, profile_name)
-        jobs = tuple(
-            _build_job(entry, profile_name, profile, "default") for entry in entries
-        )
-        return SummaryPlan(
-            mode="single_profile",
-            selected_profiles=(profile_name,),
-            type_routes_used={},
-            jobs_by_variant={"default": jobs},
-            output_variants=("default",),
-        )
-
-    if cli_options.summary_type_routing:
-        route_jobs: list[SummaryJob] = []
-        routes_used: dict[str, str] = {}
-        for entry in entries:
+    # Per-entry resolution with source override beating CLI / routes.
+    route_jobs: list[SummaryJob] = []
+    routes_used: dict[str, str] = {}
+    selected: set[str] = set()
+    used_source = False
+    used_cli = False
+    used_route = False
+    for entry in entries:
+        profile_name = _source_profile(entry)
+        if profile_name is not None:
+            used_source = True
+        elif cli_options.summary_profile:
+            profile_name = cli_options.summary_profile
+            used_cli = True
+        elif cli_options.summary_type_routing:
             profile_name = _resolve_routed_profile_name(
                 profile_set, entry.classified.newsletter_type
             )
-            profile = _resolve_profile(profile_set, profile_name)
             routes_used[entry.classified.newsletter_type] = profile_name
-            route_jobs.append(_build_job(entry, profile_name, profile, "default"))
-        return SummaryPlan(
-            mode="type_routed",
-            selected_profiles=tuple(sorted(set(routes_used.values()))),
-            type_routes_used=routes_used,
-            jobs_by_variant={"default": tuple(route_jobs)},
-            output_variants=("default",),
-        )
+            used_route = True
+        else:
+            profile_name = profile_set.default_profile
+            if cli_options.summary_type_routing is False and not cli_options.summary_profile:
+                # Preserve prior type-routing when pipeline enables it via flag;
+                # default profile path when neither CLI nor routing requested.
+                pass
+        profile = _resolve_profile(profile_set, profile_name)
+        selected.add(profile_name)
+        route_jobs.append(_build_job(entry, profile_name, profile, "default"))
 
-    profile_name = profile_set.default_profile
-    profile = _resolve_profile(profile_set, profile_name)
-    jobs = tuple(
-        _build_job(entry, profile_name, profile, "default") for entry in entries
-    )
+    if used_route and not used_source and not used_cli:
+        mode: SummaryRoutingMode = "type_routed"
+    elif used_cli or used_source:
+        mode = "single_profile"
+    else:
+        mode = "single_profile"
     return SummaryPlan(
-        mode="single_profile",
-        selected_profiles=(profile_name,),
-        type_routes_used={},
-        jobs_by_variant={"default": jobs},
+        mode=mode,
+        selected_profiles=tuple(sorted(selected)),
+        type_routes_used=routes_used,
+        jobs_by_variant={"default": tuple(route_jobs)},
         output_variants=("default",),
     )
 

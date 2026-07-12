@@ -19,6 +19,7 @@ GroupType = Literal[
     "standalone",
     "notification_stream",
     "daily_editions",
+    "sender_batch",
 ]
 GroupRenderMode = Literal["compact", "expandable"]
 FinalReviewIssueType = Literal[
@@ -124,6 +125,8 @@ class ParsedMessage:
     read_time_minutes: int
     preview: str
     parse_warnings: tuple[str, ...]
+    source_key: str | None = None
+    list_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -317,6 +320,7 @@ class DigestReviewEntry:
     summary_source: str
     summary: str | None
     link_labels: tuple[str, ...]
+    source_key: str | None = None
 
 
 @dataclass(frozen=True)

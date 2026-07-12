@@ -339,6 +339,7 @@ def apply_final_review_patches(
         elif issues_by_id[patch.issue_id].safe_auto_fix is not True:
             code = "safe_auto_fix_not_true"
         elif patch.field != "summary":
+            # Source policy / display / priority / grouping are not patchable.
             code = "invalid_field"
         else:
             entry = entry_index.get(patch.entry_id)

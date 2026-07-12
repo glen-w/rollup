@@ -261,6 +261,33 @@ rollup digest --root tests/fixtures/Newsletters.sbd --ollama --group-summaries \
   --mail-root /tmp/rollup-mail --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
 ```
 
+## Source registry
+
+Persistent per-newsletter controls (see [SOURCES.md](SOURCES.md)):
+
+```bash
+# After a digest has observed senders
+rollup sources list --state-dir /tmp/rollup-state
+rollup sources show from:alerts@github.com --state-dir /tmp/rollup-state --json
+
+# Disable a noisy source
+rollup sources disable from:noisy@example.com --state-dir /tmp/rollup-state
+
+# Force a daily newsletter into weekly sender batches
+rollup sources set list:news.example.com --grouping sender_batch --priority 80 \
+  --state-dir /tmp/rollup-state
+
+# Always surface undated notifications from a source (still within lookback)
+rollup sources set from:alerts@github.com --always-surface --state-dir /tmp/rollup-state
+
+# Override a misclassified type
+rollup sources set from:editor@daily.example --type essay --state-dir /tmp/rollup-state
+
+# Backup / restore overrides
+rollup sources export --out /tmp/sources.json --state-dir /tmp/rollup-state
+rollup sources import --from /tmp/sources.json --state-dir /tmp/rollup-state
+```
+
 ## Benchmark local models
 
 Compare local Ollama-compatible models on fixed prompts:

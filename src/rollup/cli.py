@@ -848,6 +848,10 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--hour", type=int, default=8)
             p.add_argument("--minute", type=int, default=0)
 
+    from rollup.sources_cmd import add_sources_subparser
+
+    add_sources_subparser(sub)
+
     return parser
 
 
@@ -883,6 +887,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(cmd_doctor(args))
     elif args.command == "cron":
         sys.exit(cmd_cron(args))
+    elif args.command == "sources":
+        from rollup.sources_cmd import cmd_sources
+
+        sys.exit(cmd_sources(args))
     else:
         parser.print_help()
         sys.exit(1)

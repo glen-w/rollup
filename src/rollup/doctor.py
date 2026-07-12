@@ -183,6 +183,40 @@ def _check_sqlite(config: Config) -> DoctorCheck:
     )
 
 
+def _check_source_registry(config: Config) -> list[DoctorCheck]:
+    try:
+        from rollup.source_doctor import run_source_doctor
+        from rollup.state import init_db
+
+        conn = init_db(config.db_path)
+        try:
+            report = run_source_doctor(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        return [
+            DoctorCheck(
+                id="source_registry",
+                status="fail",
+                message=f"Source registry doctor failed: {exc}",
+                fix="Run rollup sources doctor after fixing state DB permissions",
+            )
+        ]
+    out: list[DoctorCheck] = []
+    for check in report.get("checks", []):
+        status = check.get("status", "info")
+        if status not in ("pass", "warn", "fail", "info"):
+            status = "info"
+        out.append(
+            DoctorCheck(
+                id=str(check.get("id", "source_registry")),
+                status=status,  # type: ignore[arg-type]
+                message=str(check.get("message", "")),
+            )
+        )
+    return out
+
+
 def _check_last_manifest(config: Config) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     manifest_dir = config.state_dir / "manifests"
@@ -421,6 +455,7 @@ def run_doctor(
         checks.append(_check_msf_ignored(config))
 
     checks.append(_check_sqlite(config))
+    checks.extend(_check_source_registry(config))
     checks.extend(_check_last_manifest(config))
 
     loopback = _check_ollama_loopback(config, run_options)

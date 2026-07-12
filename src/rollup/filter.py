@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Mapping
 
 from rollup.classify import classify_message
 from rollup.config import compute_date_window
@@ -13,6 +15,20 @@ from rollup.models import (
     ParsedMessage,
     SummarySource,
 )
+from rollup.source_models import SourcePolicy, SourceRegistrySnapshot
+from rollup.source_policy import apply_effective_type, priority_sort_prefix
+
+
+@dataclass(frozen=True)
+class BuildDigestResult:
+    dated_entries: list[DigestEntry]
+    undated_entries: list[DigestEntry]
+    skipped_outside_window: int
+    deduped_messages: int
+    skipped_disabled_source: int = 0
+    type_overrides_applied: int = 0
+    classifier_disagreements: int = 0
+    policy_by_message_key: dict[str, SourcePolicy | None] | None = None
 
 
 def dedupe_messages(messages: list[ParsedMessage]) -> tuple[list[ParsedMessage], int]:
@@ -63,10 +79,23 @@ def split_dated_undated(
     return dated, undated, skipped
 
 
-def _sort_dated(messages: list[ParsedMessage]) -> list[ParsedMessage]:
+def _priority_for(
+    msg: ParsedMessage, snapshot: SourceRegistrySnapshot | None
+) -> int:
+    if snapshot is None or not msg.source_key:
+        return 0
+    policy = snapshot.policy_for(msg.source_key)
+    return policy.priority if policy else 0
+
+
+def _sort_dated(
+    messages: list[ParsedMessage],
+    snapshot: SourceRegistrySnapshot | None = None,
+) -> list[ParsedMessage]:
     return sorted(
         messages,
         key=lambda m: (
+            *priority_sort_prefix(_priority_for(m, snapshot)),
             -(m.date_parsed.timestamp() if m.date_parsed else 0),
             m.sender.lower(),
             m.subject.lower(),
@@ -74,10 +103,18 @@ def _sort_dated(messages: list[ParsedMessage]) -> list[ParsedMessage]:
     )
 
 
-def _sort_undated(messages: list[ParsedMessage]) -> list[ParsedMessage]:
+def _sort_undated(
+    messages: list[ParsedMessage],
+    snapshot: SourceRegistrySnapshot | None = None,
+) -> list[ParsedMessage]:
     return sorted(
         messages,
-        key=lambda m: (m.folder_name.lower(), m.sender.lower(), m.subject.lower()),
+        key=lambda m: (
+            *priority_sort_prefix(_priority_for(m, snapshot)),
+            m.folder_name.lower(),
+            m.sender.lower(),
+            m.subject.lower(),
+        ),
     )
 
 
@@ -100,11 +137,11 @@ def make_digest_entry(
                 summary=parsed.preview,
                 summary_source="preview_fallback",
             )
-        return DigestEntry(classified=classified, summary=None, summary_source="none")
+        return DigestEntry(
+            classified=classified, summary=None, summary_source="none"
+        )
     return DigestEntry(
-        classified=classified,
-        summary=summary,
-        summary_source=summary_source or "ollama",
+        classified=classified, summary=summary, summary_source="ollama"
     )
 
 
@@ -123,44 +160,117 @@ def build_digest_entries(
     generated_at: datetime,
     lookback_days: int,
     no_ollama: bool,
-) -> tuple[list[DigestEntry], list[DigestEntry], int, int]:
-    """Classify and split messages. Returns dated entries, undated entries, skipped, deduped."""
+    snapshot: SourceRegistrySnapshot | None = None,
+) -> BuildDigestResult | tuple[list[DigestEntry], list[DigestEntry], int, int]:
+    """Classify and split messages.
+
+    When ``snapshot`` is provided, returns BuildDigestResult with source counters.
+    Without snapshot (legacy tests), returns the historical 4-tuple.
+    """
     deduped, dedup_count = dedupe_messages(messages)
     window_start, window_end = compute_date_window(generated_at, lookback_days)
     dated_msgs, undated_msgs, skipped = split_dated_undated(
         deduped, window_start, window_end
     )
-    dated_sorted = _sort_dated(dated_msgs)
-    undated_sorted = _sort_undated(undated_msgs)
 
-    dated_entries = [
-        make_digest_entry(classify_message(m), no_ollama=no_ollama)
-        for m in dated_sorted
-    ]
-    undated_entries = [
-        make_digest_entry(classify_message(m), no_ollama=no_ollama)
-        for m in undated_sorted
-    ]
-    return dated_entries, undated_entries, skipped, dedup_count
+    # Drop disabled sources (after window split — window always wins).
+    skipped_disabled = 0
+    if snapshot is not None:
+        dated_msgs, n1 = _filter_disabled(dated_msgs, snapshot)
+        undated_msgs, n2 = _filter_disabled(undated_msgs, snapshot)
+        skipped_disabled = n1 + n2
+
+    dated_sorted = _sort_dated(dated_msgs, snapshot)
+    undated_sorted = _sort_undated(undated_msgs, snapshot)
+
+    type_overrides = 0
+    disagreements = 0
+    policy_by_mk: dict[str, SourcePolicy | None] = {}
+
+    dated_entries: list[DigestEntry] = []
+    for m in dated_sorted:
+        classified = classify_message(m)
+        policy = snapshot.policy_for(m.source_key) if snapshot else None
+        classified, _det, _eff, disagreed = apply_effective_type(classified, policy)
+        if policy and policy.newsletter_type_override:
+            type_overrides += 1
+        if disagreed:
+            disagreements += 1
+        entry = make_digest_entry(classified, no_ollama=no_ollama)
+        dated_entries.append(entry)
+        policy_by_mk[m.message_key] = policy
+
+    undated_entries: list[DigestEntry] = []
+    for m in undated_sorted:
+        classified = classify_message(m)
+        policy = snapshot.policy_for(m.source_key) if snapshot else None
+        classified, _det, _eff, disagreed = apply_effective_type(classified, policy)
+        if policy and policy.newsletter_type_override:
+            type_overrides += 1
+        if disagreed:
+            disagreements += 1
+        entry = make_digest_entry(classified, no_ollama=no_ollama)
+        undated_entries.append(entry)
+        policy_by_mk[m.message_key] = policy
+
+    if snapshot is None:
+        return dated_entries, undated_entries, skipped, dedup_count
+    return BuildDigestResult(
+        dated_entries=dated_entries,
+        undated_entries=undated_entries,
+        skipped_outside_window=skipped,
+        deduped_messages=dedup_count,
+        skipped_disabled_source=skipped_disabled,
+        type_overrides_applied=type_overrides,
+        classifier_disagreements=disagreements,
+        policy_by_message_key=policy_by_mk,
+    )
+
+
+def _filter_disabled(
+    messages: list[ParsedMessage], snapshot: SourceRegistrySnapshot
+) -> tuple[list[ParsedMessage], int]:
+    kept: list[ParsedMessage] = []
+    skipped = 0
+    for msg in messages:
+        policy = snapshot.policy_for(msg.source_key)
+        if policy is not None and not policy.enabled:
+            skipped += 1
+            continue
+        kept.append(msg)
+    return kept, skipped
 
 
 def apply_undated_seen_filter(
     undated_entries: list[DigestEntry],
     seen_keys: set[str],
     include_seen: bool,
-) -> tuple[list[DigestEntry], int]:
-    """Filter undated entries by seen_messages. Returns (to_render, skipped_seen)."""
+    snapshot: SourceRegistrySnapshot | None = None,
+) -> tuple[list[DigestEntry], int, int]:
+    """Filter undated entries by seen_messages.
+
+    Returns (to_render, skipped_seen, always_surface_included).
+    always_surface bypasses seen suppression when enabled.
+    """
     if include_seen:
-        return undated_entries, 0
+        return undated_entries, 0, 0
     to_render: list[DigestEntry] = []
     skipped = 0
+    always_surfaced = 0
     for entry in undated_entries:
         key = entry.classified.parsed.message_key
-        if key in seen_keys:
-            skipped += 1
-        else:
+        if key not in seen_keys:
             to_render.append(entry)
-    return to_render, skipped
+            continue
+        policy = None
+        if snapshot is not None:
+            policy = snapshot.policy_for(entry.classified.parsed.source_key)
+        if policy is not None and policy.enabled and policy.always_surface:
+            to_render.append(entry)
+            always_surfaced += 1
+        else:
+            skipped += 1
+    return to_render, skipped, always_surfaced
 
 
 def empty_stats() -> DigestStats:

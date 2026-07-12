@@ -114,6 +114,7 @@ def _corpus_entry_from_digest_entry(
         summary_source=entry.summary_source,
         summary=_truncate_summary(entry.summary, max_chars=max_summary_chars),
         link_labels=_link_labels_for_entry(entry),
+        source_key=parsed.source_key,
     )
 
 

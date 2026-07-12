@@ -18,6 +18,7 @@ from bs4.element import NavigableString, Tag
 
 from rollup.links import clean_href
 from rollup.models import LinkItem, ParsedMessage
+from rollup.source_identity import compute_source_key, normalize_list_id
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +340,19 @@ def parse_message(
     date_raw = msg.get("Date", "") or ""
     date_parsed, date_anomaly = _parse_date(date_raw)
     message_id_header = msg.get("Message-ID")
+    list_id_raw = None
+    if hasattr(msg, "get_all"):
+        list_vals = msg.get_all("List-ID") or msg.get_all("List-Id") or []
+        for candidate in list_vals:
+            if candidate is not None and str(candidate).strip():
+                list_id_raw = str(candidate)
+                break
+    if list_id_raw is None:
+        list_id_raw = msg.get("List-ID") or msg.get("List-Id")
+    list_id = normalize_list_id(list_id_raw)
+    source_key = compute_source_key(
+        msg, list_id_header=list_id_raw, from_header=sender
+    )
 
     plain, html_raw = _walk_parts(msg)
     html_text = _html_to_text(html_raw) if html_raw else ""
@@ -392,6 +406,8 @@ def parse_message(
         read_time_minutes=_read_time_minutes(body_text),
         preview=preview,
         parse_warnings=tuple(warnings),
+        source_key=source_key,
+        list_id=list_id,
     )
 
 

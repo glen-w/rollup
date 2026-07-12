@@ -99,11 +99,12 @@ Rollup exposes:
 | `digest` | Generate the weekly Markdown + HTML digest |
 | `doctor` | Setup, safety, and environment diagnostics |
 | `cron` | Print launchd/crontab snippets; show last-run status |
+| `sources` | Manage persistent newsletter source registry |
 
 Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--cron`,
 `--ollama`, `--grouping` / `--no-grouping`, and `--final-review`.
 
-See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CRON.md](docs/CRON.md), and
+See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/SOURCES.md](docs/SOURCES.md), [docs/CRON.md](docs/CRON.md), and
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Recommended personal setup

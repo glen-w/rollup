@@ -18,7 +18,7 @@ LOCK_FILENAME = "rollup.lock"
 
 
 class RunLockError(Exception):
-    """Raised when a digest run cannot acquire the process lock."""
+    """Raised when a state operation cannot acquire the process lock."""
 
     def __init__(
         self,
@@ -26,10 +26,12 @@ class RunLockError(Exception):
         *,
         reason: Literal["already_running"] = "already_running",
         other_run_id: str | None = None,
+        other_operation: str | None = None,
     ) -> None:
         super().__init__(message)
         self.reason = reason
         self.other_run_id = other_run_id
+        self.other_operation = other_operation
 
 
 def _pid_alive(pid: int) -> bool:
@@ -137,14 +139,15 @@ def _unlock_fd(fd: int) -> None:
         pass
 
 
-def acquire_run_lock(
+def acquire_state_lock(
     state_dir: Path,
     run_id: str,
     *,
+    operation: str = "digest",
     started_at: datetime | None = None,
     ttl_seconds: int = DEFAULT_LOCK_TTL_SECONDS,
 ) -> RunLock:
-    """Acquire a non-blocking lock under state_dir. Never under the mail root."""
+    """Acquire a non-blocking state-operation lock under state_dir."""
     state_dir = Path(state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
     lock_path = state_dir / LOCK_FILENAME
@@ -155,10 +158,13 @@ def acquire_run_lock(
         payload = _read_lock_payload(lock_path)
         if not _is_stale(payload, ttl_seconds=ttl_seconds):
             other = (payload or {}).get("run_id", "unknown")
+            other_op = (payload or {}).get("operation", "digest")
             raise RunLockError(
-                f"ERROR: Another digest run is in progress (run_id={other})",
+                f"ERROR: Another state operation is in progress "
+                f"(operation={other_op}, run_id={other})",
                 reason="already_running",
                 other_run_id=str(other),
+                other_operation=str(other_op),
             )
         try:
             lock_path.unlink(missing_ok=True)
@@ -174,15 +180,19 @@ def acquire_run_lock(
         os.close(fd)
         payload = _read_lock_payload(lock_path)
         other = (payload or {}).get("run_id", "unknown")
+        other_op = (payload or {}).get("operation", "digest")
         raise RunLockError(
-            f"ERROR: Another digest run is in progress (run_id={other})",
+            f"ERROR: Another state operation is in progress "
+            f"(operation={other_op}, run_id={other})",
             reason="already_running",
             other_run_id=str(other),
+            other_operation=str(other_op),
         ) from exc
 
     payload = {
         "pid": os.getpid(),
         "run_id": run_id,
+        "operation": operation,
         "started_at": started.isoformat(),
         "acquired_at": time.time(),
     }
@@ -200,4 +210,21 @@ def acquire_run_lock(
         run_id=run_id,
         fd=fd,
         stale_recovered=stale_recovered,
+    )
+
+
+def acquire_run_lock(
+    state_dir: Path,
+    run_id: str,
+    *,
+    started_at: datetime | None = None,
+    ttl_seconds: int = DEFAULT_LOCK_TTL_SECONDS,
+) -> RunLock:
+    """Backward-compatible alias for digest lock acquisition."""
+    return acquire_state_lock(
+        state_dir,
+        run_id,
+        operation="digest",
+        started_at=started_at,
+        ttl_seconds=ttl_seconds,
     )

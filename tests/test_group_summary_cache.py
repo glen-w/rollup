@@ -18,8 +18,8 @@ from rollup.state import (
 
 def test_schema_version_is_six(tmp_path: Path) -> None:
     conn = init_db_with_summaries(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == 6
-    assert SCHEMA_VERSION == 6
+    assert get_schema_version(conn) == 7
+    assert SCHEMA_VERSION == 7
     conn.close()
 
 
@@ -46,7 +46,7 @@ def test_entry_cache_survives_v6_init(tmp_path: Path) -> None:
     conn.close()
 
     conn2 = init_db_with_summaries(db)
-    assert get_schema_version(conn2) == 6
+    assert get_schema_version(conn2) == 7
     hit = get_cached_summary_generation(
         conn2,
         message_key="mid:1",

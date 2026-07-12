@@ -371,7 +371,9 @@ def test_doctor_default_no_network_no_write(tmp_path: Path, monkeypatch) -> None
 
 def test_lock_contention_digest_exit_1(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    lock = acquire_run_lock(config.state_dir, "already-running", started_at=NOW)
+    lock = acquire_run_lock(
+        config.state_dir, "already-running", started_at=datetime.now(timezone.utc)
+    )
     try:
         result = _run(config)
     finally:
@@ -379,7 +381,7 @@ def test_lock_contention_digest_exit_1(tmp_path: Path) -> None:
 
     assert result.exit_code == EXIT_FAILURE
     assert result.aggregated.hard_failure is True
-    assert "Another digest run" in (result.error_message or "")
+    assert "Another state operation" in (result.error_message or "")
 
 
 def test_allow_partial_latest_true_updates_latest(tmp_path: Path, monkeypatch) -> None:

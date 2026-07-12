@@ -48,7 +48,9 @@ GROUP_SUMMARY_MAX_RETRIES = 1  # total attempts = 1 + retries
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _GROUP_SUMMARY_PROMPT_PATH = PROMPTS_DIR / "group_summary.txt"
 
-_ELIGIBLE_GROUP_TYPES = frozenset({"notification_stream", "daily_editions"})
+_ELIGIBLE_GROUP_TYPES = frozenset(
+    {"notification_stream", "daily_editions", "sender_batch"}
+)
 
 _MAX_MEMBER_SUMMARY_CHARS = 400
 _MAX_PROMPT_CHARS_DEFAULT = 12_000

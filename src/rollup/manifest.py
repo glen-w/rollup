@@ -78,6 +78,7 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "parse_error_summary",
         "final_review",
         "group_summaries",
+        "source_registry",
     }
 )
 
@@ -95,6 +96,8 @@ COUNTS_ALLOWLIST = frozenset(
         "groups_created",
         "messages_in_groups",
         "standalone_cards",
+        "messages_skipped_disabled_source",
+        "messages_always_surface_included",
     }
 )
 
@@ -328,6 +331,12 @@ class ManifestBuilder:
                 grouping_meta.messages_in_groups if grouping_meta else 0
             ),
             "standalone_cards": grouping_meta.standalone_cards if grouping_meta else 0,
+            "messages_skipped_disabled_source": (
+                filt.counts.skipped_disabled_source if filt else 0
+            ),
+            "messages_always_surface_included": (
+                filt.counts.always_surface_included if filt else 0
+            ),
         }
 
         classification_counts: dict[str, int] = {}
@@ -356,6 +365,38 @@ class ManifestBuilder:
                     )
                     src = entry.summary_source
                     summary_source_counts[src] = summary_source_counts.get(src, 0) + 1
+
+        snap = getattr(agg, "source_snapshot", None) if agg else None
+        source_registry = {
+            "registry_schema_version": (
+                snap.registry_schema_version if snap else 0
+            ),
+            "policy_state_revision": (
+                snap.policy_state_revision if snap else ""
+            ),
+            "sources_known": snap.known_count if snap else 0,
+            "sources_discovered_this_run": (
+                snap.discovered_this_run if snap else 0
+            ),
+            "sources_disabled_skipped": (
+                filt.counts.skipped_disabled_source if filt else 0
+            ),
+            "sources_always_surface_included": (
+                filt.counts.always_surface_included if filt else 0
+            ),
+            "sources_type_overrides_applied": (
+                filt.counts.type_overrides_applied if filt else 0
+            ),
+            "sources_grouping_overrides_applied": (
+                filt.counts.grouping_overrides_applied if filt else 0
+            ),
+            "sources_classifier_disagreements": (
+                filt.counts.classifier_disagreements if filt else 0
+            ),
+            "messages_unidentifiable_source": (
+                snap.messages_unidentifiable_source if snap else 0
+            ),
+        }
 
         warnings: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = list(self.failure_errors)
@@ -414,6 +455,7 @@ class ManifestBuilder:
             "grouping_counts": (
                 grouping_meta.grouping_counts if grouping_meta else {}
             ),
+            "source_registry": source_registry,
             "ollama_enabled": not self.config.no_ollama,
             "models_used": models_used,
             "outputs": {

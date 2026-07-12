@@ -84,7 +84,9 @@ def test_undated_seen_filter() -> None:
 
     p = _make_parsed("undated-key", None)
     entry = make_digest_entry(classify_message(p), no_ollama=True)
-    rendered, skipped = apply_undated_seen_filter([entry], {"undated-key"}, False)
+    rendered, skipped, _surfaced = apply_undated_seen_filter(
+        [entry], {"undated-key"}, False
+    )
     assert len(rendered) == 0
     assert skipped == 1
 

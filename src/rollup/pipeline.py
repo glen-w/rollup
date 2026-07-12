@@ -80,6 +80,11 @@ class FilterCounts:
     deduped_messages: int = 0
     dated_included: int = 0
     undated_included: int = 0
+    skipped_disabled_source: int = 0
+    always_surface_included: int = 0
+    type_overrides_applied: int = 0
+    classifier_disagreements: int = 0
+    grouping_overrides_applied: int = 0
 
 
 @dataclass(frozen=True)
@@ -167,6 +172,7 @@ class AggregatedResults:
     dated_outputs_written: bool = False
     latest_outputs_updated: bool = False
     usable_digest: bool = False
+    source_snapshot: Any | None = None
     hard_failure: bool = False
     hard_failure_reason: str | None = None
     final_review_failed: bool = False
@@ -348,12 +354,31 @@ def stage_filter(
     no_ollama: bool,
     seen_keys: set[str],
     include_seen_undated: bool,
+    snapshot=None,
 ) -> FilterResult:
-    dated_entries, undated_entries, skipped_window, deduped = build_digest_entries(
-        list(messages), generated_at, lookback_days, no_ollama
+    from rollup.filter import BuildDigestResult
+
+    built = build_digest_entries(
+        list(messages),
+        generated_at,
+        lookback_days,
+        no_ollama,
+        snapshot=snapshot,
     )
-    undated_to_render, skipped_seen = apply_undated_seen_filter(
-        undated_entries, seen_keys, include_seen_undated
+    if isinstance(built, BuildDigestResult):
+        dated_entries = built.dated_entries
+        undated_entries = built.undated_entries
+        skipped_window = built.skipped_outside_window
+        deduped = built.deduped_messages
+        skipped_disabled = built.skipped_disabled_source
+        type_overrides = built.type_overrides_applied
+        disagreements = built.classifier_disagreements
+    else:
+        dated_entries, undated_entries, skipped_window, deduped = built
+        skipped_disabled = type_overrides = disagreements = 0
+
+    undated_to_render, skipped_seen, always_surfaced = apply_undated_seen_filter(
+        undated_entries, seen_keys, include_seen_undated, snapshot=snapshot
     )
     counts = FilterCounts(
         skipped_outside_window=skipped_window,
@@ -361,6 +386,10 @@ def stage_filter(
         deduped_messages=deduped,
         dated_included=len(dated_entries),
         undated_included=len(undated_to_render),
+        skipped_disabled_source=skipped_disabled,
+        always_surface_included=always_surfaced,
+        type_overrides_applied=type_overrides,
+        classifier_disagreements=disagreements,
     )
     return FilterResult(
         dated_entries=tuple(dated_entries),
@@ -373,6 +402,7 @@ def stage_group(
     dated_entries: tuple[DigestEntry, ...],
     undated_entries: tuple[DigestEntry, ...],
     grouping: GroupingConfig,
+    snapshot=None,
 ) -> GroupingResult:
     """Apply grouping when enabled; otherwise pass entries through as items."""
     if not grouping.enabled:
@@ -382,7 +412,9 @@ def stage_group(
         )
     from rollup.grouping import apply_grouping
 
-    applied = apply_grouping(dated_entries, undated_entries, grouping)
+    applied = apply_grouping(
+        dated_entries, undated_entries, grouping, snapshot=snapshot
+    )
     return GroupingResult(
         dated_items=applied.dated_items,
         undated_items=applied.undated_items,
@@ -439,6 +471,7 @@ def stage_summarize(
     *,
     allow_network: bool,
     quiet: bool,
+    snapshot=None,
 ) -> SummarizeResult:
     if not allow_network:
         return SummarizeResult(
@@ -459,7 +492,22 @@ def stage_summarize(
         summary_type_routing=routing,
     )
     all_entries = dated_entries + undated_entries
-    plan = resolve_summary_plan(all_entries, profile_set, cli_options)
+    policy_by_mk: dict[str, object] = {}
+    if snapshot is not None:
+        for entry in all_entries:
+            policy_by_mk[entry.classified.parsed.message_key] = snapshot.policy_for(
+                entry.classified.parsed.source_key
+            )
+    plan_warnings: list[str] = []
+    plan = resolve_summary_plan(
+        all_entries,
+        profile_set,
+        cli_options,
+        policy_by_message_key=policy_by_mk,
+        warnings=plan_warnings,
+    )
+    for msg in plan_warnings:
+        logger.warning("%s", msg)
     execution = execute_summary_plan(
         entries=all_entries,
         plan=plan,
@@ -644,7 +692,13 @@ def run_digest(
         aggregated.parse = parse_result
 
         seen_keys: set[str] = set()
+        snapshot = None
         if not run_options.dry_run:
+            from rollup.source_models import empty_defaults_snapshot
+            from rollup.source_registry import (
+                load_SourceRegistrySnapshot,
+                observe_sources,
+            )
             from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
 
             if not config.no_ollama:
@@ -660,6 +714,26 @@ def run_digest(
 
                     ensure_group_summary_schema(conn)
             seen_keys = load_seen_keys(conn)
+            observe_result = observe_sources(
+                conn, parse_result.messages, generated_at=generated_at
+            )
+            needed = {
+                m.source_key for m in parse_result.messages if m.source_key
+            }
+            snapshot = load_SourceRegistrySnapshot(
+                conn,
+                needed,
+                discovered_this_run=observe_result.discovered_this_run,
+                messages_unidentifiable_source=observe_result.messages_unidentifiable,
+            )
+        else:
+            from rollup.source_models import empty_defaults_snapshot
+
+            snapshot = empty_defaults_snapshot(
+                messages_unidentifiable_source=sum(
+                    1 for m in parse_result.messages if not m.source_key
+                )
+            )
 
         filter_result = stage_filter(
             parse_result.messages,
@@ -668,6 +742,7 @@ def run_digest(
             no_ollama=config.no_ollama,
             seen_keys=seen_keys,
             include_seen_undated=config.include_seen_undated,
+            snapshot=snapshot,
         )
         aggregated.filter = filter_result
 
@@ -675,6 +750,7 @@ def run_digest(
             filter_result.dated_entries,
             filter_result.undated_entries,
             grouping,
+            snapshot=snapshot,
         )
         aggregated.grouping = grouping_result
 
@@ -690,8 +766,10 @@ def run_digest(
             conn,
             allow_network=effective_run.allow_summary_network,
             quiet=run_options.quiet,
+            snapshot=snapshot,
         )
         aggregated.summarize = summarize_result
+        aggregated.source_snapshot = snapshot  # type: ignore[attr-defined]
 
         # Rebuild item structure with summaries when grouping is active.
         if grouping.enabled and grouping_result.groups:

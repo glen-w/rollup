@@ -108,14 +108,31 @@ def _format_newsletter_type(ntype: str) -> str:
 
 def _sort_entries_by_read_time(
     entries: tuple[DigestItem, ...],
+    *,
+    priority_for=None,
 ) -> tuple[DigestItem, ...]:
+    from rollup.source_policy import group_priority, priority_sort_prefix
+
     def key(item: DigestItem) -> tuple:
         if isinstance(item, DigestGroup):
+            pri = 0
+            if priority_for is not None:
+                pols = [priority_for(e) for e in item.entries]
+                # priority_for returns int priority for entries
+                pri = max((int(p or 0) for p in pols), default=0)
             minutes = sum(
                 e.classified.parsed.read_time_minutes for e in item.entries
             )
-            return (minutes, item.display_name.lower())
+            return (
+                *priority_sort_prefix(pri),
+                minutes,
+                item.display_name.lower(),
+            )
+        pri = 0
+        if priority_for is not None:
+            pri = int(priority_for(item) or 0)
         return (
+            *priority_sort_prefix(pri),
             item.classified.parsed.read_time_minutes,
             item.classified.parsed.subject.lower(),
         )

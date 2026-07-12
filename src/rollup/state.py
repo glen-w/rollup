@@ -8,7 +8,9 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+
+BUSY_TIMEOUT_MS = 5000
 
 MVP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -19,6 +21,86 @@ CREATE TABLE IF NOT EXISTS schema_version (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     version INTEGER NOT NULL
 );
+"""
+
+SOURCE_REGISTRY_SCHEMA_V7 = """
+CREATE TABLE IF NOT EXISTS sources (
+    source_key TEXT PRIMARY KEY,
+    identity_version INTEGER NOT NULL DEFAULT 1,
+    lifecycle TEXT NOT NULL DEFAULT 'active'
+        CHECK (lifecycle IN ('active', 'superseded')),
+    superseded_by TEXT,
+    display_name_observed TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (superseded_by) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS source_observations (
+    source_key TEXT PRIMARY KEY,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    message_count_total INTEGER NOT NULL DEFAULT 0
+        CHECK (message_count_total >= 0),
+    observed_from_addrs_json TEXT NOT NULL,
+    observed_list_id TEXT,
+    last_folder_name TEXT,
+    last_detected_newsletter_type TEXT,
+    cadence_label TEXT NOT NULL
+        CHECK (cadence_label IN (
+            'unknown', 'realtime', 'daily', 'several_per_week', 'weekly', 'irregular'
+        )),
+    cadence_confidence REAL NOT NULL
+        CHECK (cadence_confidence >= 0 AND cadence_confidence <= 1),
+    cadence_sample_count INTEGER NOT NULL DEFAULT 0
+        CHECK (cadence_sample_count >= 0),
+    cadence_median_hours REAL,
+    cadence_calculated_at TEXT,
+    last_subject_family TEXT,
+    FOREIGN KEY (source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS source_overrides (
+    source_key TEXT PRIMARY KEY,
+    enabled INTEGER CHECK (enabled IS NULL OR enabled IN (0, 1)),
+    always_surface INTEGER CHECK (always_surface IS NULL OR always_surface IN (0, 1)),
+    priority INTEGER CHECK (priority IS NULL OR (priority >= 0 AND priority <= 100)),
+    newsletter_type TEXT,
+    grouping_policy TEXT,
+    summary_profile TEXT,
+    expected_cadence TEXT,
+    display_name TEXT,
+    notes TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL CHECK (updated_by IN ('cli', 'import')),
+    FOREIGN KEY (source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS source_aliases (
+    alias_key TEXT PRIMARY KEY,
+    canonical_source_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    note TEXT,
+    CHECK (alias_key != canonical_source_key),
+    FOREIGN KEY (canonical_source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS source_observation_dedup (
+    source_key TEXT NOT NULL,
+    message_key TEXT NOT NULL,
+    first_observed_at TEXT NOT NULL,
+    PRIMARY KEY (source_key, message_key),
+    FOREIGN KEY (source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE TABLE IF NOT EXISTS source_cadence_samples (
+    source_key TEXT NOT NULL,
+    message_key TEXT NOT NULL,
+    date_parsed TEXT NOT NULL,
+    PRIMARY KEY (source_key, message_key),
+    FOREIGN KEY (source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_source_observations_last_seen
+    ON source_observations(last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_source_aliases_canonical
+    ON source_aliases(canonical_source_key);
+CREATE INDEX IF NOT EXISTS idx_source_cadence_samples_dated
+    ON source_cadence_samples(source_key, date_parsed);
 """
 
 SUMMARIES_SCHEMA_V2 = """
@@ -287,26 +369,88 @@ def get_schema_version(conn: sqlite3.Connection) -> int:
 
 def ensure_final_review_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(FINAL_REVIEW_SCHEMA_V5)
-    _set_schema_version(conn)
+    _bump_schema_version_at_least(conn, 5)
 
 
 def ensure_group_summary_schema(conn: sqlite3.Connection) -> None:
     """Additive schema v6: group summary caches. Preserves all prior tables."""
     conn.executescript(GROUP_SUMMARY_SCHEMA_V6)
     conn.executescript(GROUP_SUMMARY_BY_KEY_SCHEMA)
-    _set_schema_version(conn)
+    _bump_schema_version_at_least(conn, 6)
+
+
+def _bump_schema_version_at_least(conn: sqlite3.Connection, version: int) -> None:
+    _migrate_schema_version_singleton(conn)
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)",
+        (version,),
+    )
+    conn.execute(
+        "UPDATE schema_version SET version = ? WHERE id = 1 AND version < ?",
+        (version, version),
+    )
+    conn.commit()
+
+
+def _exec_ddl_statements(conn: sqlite3.Connection, script: str) -> None:
+    """Execute DDL without executescript's implicit commit (safe inside a txn)."""
+    for stmt in script.split(";"):
+        text = stmt.strip()
+        if text:
+            conn.execute(text)
+
+
+def ensure_source_registry_schema(conn: sqlite3.Connection) -> None:
+    """Atomic schema v7: source registry tables. Rollback leaves valid prior DB."""
+    apply_connection_pragmas(conn)
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='sources'"
+    ).fetchone()
+    if row is not None and get_schema_version(conn) >= 7:
+        return
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, SOURCE_REGISTRY_SCHEMA_V7)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after source registry migrate: {fk_errors}"
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 7)"
+        )
+        conn.execute("UPDATE schema_version SET version = 7 WHERE id = 1")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def apply_connection_pragmas(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+
+
+def connect_db(db_path: Path) -> sqlite3.Connection:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    apply_connection_pragmas(conn)
+    return conn
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = connect_db(db_path)
     conn.executescript(MVP_SCHEMA)
-    _set_schema_version(conn)
+    _migrate_schema_version_singleton(conn)
+    _bump_schema_version_at_least(conn, 1)
+    ensure_source_registry_schema(conn)
     return conn
 
 
 def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
-    conn = init_db(db_path)
+    conn = connect_db(db_path)
+    conn.executescript(MVP_SCHEMA)
+    _migrate_schema_version_singleton(conn)
     conn.executescript(SUMMARIES_SCHEMA_V2)
     conn.executescript(SUMMARIES_SCHEMA_V3)
     _migrate_summaries_schema(conn)
@@ -314,6 +458,7 @@ def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     conn.executescript(SUMMARIES_SCHEMA_V4)
     ensure_final_review_schema(conn)
     ensure_group_summary_schema(conn)
+    ensure_source_registry_schema(conn)
     return conn
 
 

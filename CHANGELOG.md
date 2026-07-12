@@ -2,6 +2,24 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.4.3 — 2026-07-12
+
+### Added
+
+- Persistent **source registry** in SQLite (schema **v7**): identity, observations, overrides, aliases, cadence samples, observation dedup
+- Canonical source keys: `list:` (List-ID) outranks `from:` (From address); unidentifiable messages stay out of the registry
+- CLI: `rollup sources list|show|set|clear|enable|disable|alias|export|import|doctor`
+- Pipeline integration: observe → immutable snapshot → filter/group/summary/render; dry-run opens no DB
+- Grouping policy `sender_batch` plus exact contracts for standalone / notification_stream / daily_editions / auto
+- Manifest `source_registry` telemetry block (counts only; privacy-allowlisted)
+- Docs: [docs/SOURCES.md](docs/SOURCES.md)
+
+### Compatibility
+
+- Default digests with an empty registry and gated inference remain behaviour-compatible with 0.4.x
+- Opening a v6 `rollup.db` migrates additively to v7
+- Manifest schema remains **v2** (additive `source_registry` block)
+
 ## 0.4.2 — 2026-07-12
 
 ### Changed
