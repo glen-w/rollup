@@ -46,6 +46,8 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("final review mode apply", "--final-review-mode apply"),
     ("final review allow cron apply", "--final-review-allow-cron-apply"),
     ("group summaries", "--group-summaries"),
+    ("web command", "rollup web"),
+    ("web reindex", "rollup web reindex"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),
 )

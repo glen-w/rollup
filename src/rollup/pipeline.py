@@ -1099,6 +1099,50 @@ def run_digest(
                 if status in ("success", "partial", "dry_run"):
                     status = derive_run_status(aggregated, dry_run=False)
 
+    # Index for web UI after artifacts (+ manifest when enabled). Dedicated DB txn.
+    if (
+        not run_options.dry_run
+        and aggregated.dated_outputs_written
+        and status in ("success", "partial")
+        and report is not None
+        and md_path is not None
+        and html_path is not None
+    ):
+        manifests_required = run_options.write_manifest
+        manifests_ok = (not manifests_required) or (
+            manifest_path is not None and not aggregated.manifest_write_failed
+        )
+        if manifests_ok:
+            try:
+                from rollup import __version__
+                from rollup.run_index import build_pipeline_payload, index_rollup_run
+                from rollup.utc import now_utc
+
+                payload = build_pipeline_payload(
+                    run_id=ctx.run_id,
+                    report=report,
+                    status=status,
+                    mode=run_options.mode,
+                    rollup_version=__version__,
+                    started_at=ctx.run_start_time,
+                    completed_at=now_utc(),
+                    md_path=md_path,
+                    html_path=html_path,
+                    manifest_path=manifest_path,
+                    output_dir=config.output_dir,
+                    state_dir=config.state_dir,
+                    aggregated=aggregated,
+                    max_display_links=config.max_display_links,
+                )
+                index_rollup_run(config.db_path, payload)
+            except Exception as index_exc:
+                logger.error("Web run index failed: %s", index_exc)
+                ctx.add_event("web_index_failed", str(index_exc), level="error")
+        else:
+            logger.warning(
+                "Skipping web run index: manifest required but missing/failed"
+            )
+
     return DigestRunResult(
         status=status,
         exit_code=status_to_exit_code(status),

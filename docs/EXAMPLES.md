@@ -288,6 +288,18 @@ rollup sources export --out /tmp/sources.json --state-dir /tmp/rollup-state
 rollup sources import --from /tmp/sources.json --state-dir /tmp/rollup-state
 ```
 
+## Local web UI
+
+Browse indexed rollups, rate emails, and review newsletter quality (loopback only). Requires `pip install 'rollup[web]'`.
+
+```bash
+rollup web
+rollup web --host 127.0.0.1 --port 8765 --open
+rollup web reindex --state-dir ./state --output-dir ./output
+```
+
+See [docs/WEB.md](WEB.md) for security model, quality score, and backup notes.
+
 ## Benchmark local models
 
 Compare local Ollama-compatible models on fixed prompts:

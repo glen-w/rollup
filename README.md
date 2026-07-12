@@ -48,6 +48,15 @@ No Ollama server is required. The default `rollup digest` run uses preview excer
 
 Optional entry-level LLM summarisation uses a local Ollama server and requires `--ollama` on the CLI. Final review is separate: `--final-review` can call Ollama for whole-digest QA even when digest summarisation is still in preview mode. The `requests` library ships with Rollup for those paths but is not loaded during default digest runs.
 
+Optional web UI (requires Flask):
+
+```bash
+pip install -e ".[dev,web]"
+rollup web --open
+```
+
+See [docs/WEB.md](docs/WEB.md).
+
 ## Network policy
 
 **Default digest performs no network calls.** Ollama is off unless you pass `--ollama`.
@@ -100,11 +109,12 @@ Rollup exposes:
 | `doctor` | Setup, safety, and environment diagnostics |
 | `cron` | Print launchd/crontab snippets; show last-run status |
 | `sources` | Manage persistent newsletter source registry |
+| `web` | Local loopback UI for archive, ratings, and source quality |
 
 Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--cron`,
 `--ollama`, `--grouping` / `--no-grouping`, and `--final-review`.
 
-See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/SOURCES.md](docs/SOURCES.md), [docs/CRON.md](docs/CRON.md), and
+See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/SOURCES.md](docs/SOURCES.md), [docs/WEB.md](docs/WEB.md), [docs/CRON.md](docs/CRON.md), and
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Recommended personal setup
@@ -372,7 +382,7 @@ Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Ea
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries are cached in `group_summary_by_key` (schema v6 also creates an unused forward-compatible `group_summary_generations` table). New databases record **schema version 6** during non-dry-run initialization.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries are cached in `group_summary_by_key` (schema v6 also creates an unused forward-compatible `group_summary_generations` table). Source registry tables are schema **v7**; web archive/ratings tables are schema **v8**. New databases record **schema version 8** during non-dry-run initialization.
 
 Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, generation options (including `num_predict`), and the profile's `think` setting. Legacy cache rows remain readable when applicable.
 
@@ -404,6 +414,8 @@ src/rollup/prompts/               # bundled Ollama + final-review prompt templat
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes
+docs/WEB.md                       # local web UI
+docs/SOURCES.md                   # source registry
 CHANGELOG.md                      # release notes
 fixtures/                         # gitignored — local real-mail copies
 output/                           # generated rollups (the rollup)

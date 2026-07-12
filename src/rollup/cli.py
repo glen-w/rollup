@@ -852,6 +852,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_sources_subparser(sub)
 
+    from rollup.web.cli_web import register_web_parser
+
+    register_web_parser(sub)
+
     return parser
 
 
@@ -891,6 +895,10 @@ def main(argv: list[str] | None = None) -> None:
         from rollup.sources_cmd import cmd_sources
 
         sys.exit(cmd_sources(args))
+    elif args.command == "web":
+        from rollup.web.cli_web import cmd_web
+
+        sys.exit(cmd_web(args))
     else:
         parser.print_help()
         sys.exit(1)

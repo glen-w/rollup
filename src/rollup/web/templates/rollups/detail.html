@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Rollup {{ run.run_id[:8] }}{% endblock %}
+{% block content %}
+<article class="rollup-detail">
+  <h1>Rollup {{ run.started_at or run.run_id }}</h1>
+  <p class="meta">
+    Status: {{ run.status }}
+    {% if run.degraded %} · degraded{% endif %}
+    {% if run.window_start %} · {{ run.window_start }} → {{ run.window_end }}{% endif %}
+  </p>
+  <ul class="stats">
+    <li>Included: {{ run.messages_included if run.messages_included is not none else "—" }}</li>
+    <li>Sources: {{ run.sources_included if run.sources_included is not none else "—" }}</li>
+    <li>Groups: {{ run.groups_created if run.groups_created is not none else "—" }}</li>
+    <li>Ollama: {{ run.summaries_ollama if run.summaries_ollama is not none else "—" }}</li>
+    <li>Cache: {{ run.summaries_cache if run.summaries_cache is not none else "—" }}</li>
+  </ul>
+  <p class="artifact-links">
+    {% if run.markdown_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}
+    {% if run.html_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='html') }}">HTML</a>{% endif %}
+    {% if run.manifest_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='manifest') }}">Manifest</a>{% endif %}
+  </p>
+
+  {% if run.entry_index_version == 0 %}
+  <p class="banner">Entry-level browsing is unavailable for this historic run (metadata only). Regenerate a digest to index entries.</p>
+  {% else %}
+  <p>
+    {% if show_dismissed %}
+      <a href="?">Hide dismissed</a>
+    {% else %}
+      <a href="?show_dismissed=1">Show dismissed</a>
+    {% endif %}
+  </p>
+  {% for e in entries %}
+    {% include "partials/entry_card.html" %}
+  {% else %}
+    <p class="empty">No entries on this page.</p>
+  {% endfor %}
+  <nav class="pager">
+    {% if has_prev %}<a href="?page={{ page - 1 }}{% if show_dismissed %}&show_dismissed=1{% endif %}">Previous</a>{% endif %}
+    <span>Page {{ page }}</span>
+    {% if has_next %}<a href="?page={{ page + 1 }}{% if show_dismissed %}&show_dismissed=1{% endif %}">Next</a>{% endif %}
+  </nav>
+  {% endif %}
+</article>
+{% endblock %}

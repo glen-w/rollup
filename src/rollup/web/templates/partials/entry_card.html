@@ -1,0 +1,93 @@
+<section class="entry-card" data-message-key="{{ e.id_enc }}">
+  <header>
+    <h2>{{ e.subject or "(no subject)" }}</h2>
+    <p class="meta">
+      {{ e.sender or "—" }}
+      · {{ e.date_parsed or e.date_raw or "Undated" }}
+      {% if e.group_display_name %} · group: {{ e.group_display_name }}{% endif %}
+      {% if e.source_enc %}
+        · <a href="{{ url_for('sources.source_detail', id_enc=e.source_enc) }}">source</a>
+      {% endif %}
+    </p>
+  </header>
+
+  {% if e.summary %}
+  <p class="summary">{{ e.summary }}</p>
+  {% else %}
+  <p class="summary muted">No summary</p>
+  {% endif %}
+
+  {% if e.links %}
+  <ul class="entry-links">
+    {% for link in e.links %}
+    <li><a href="{{ link.href }}" rel="noopener noreferrer">{{ link.label or link.href }}</a></li>
+    {% endfor %}
+  </ul>
+  {% elif e.primary_link %}
+  <p><a href="{{ e.primary_link }}" rel="noopener noreferrer">Original</a></p>
+  {% endif %}
+
+  <div class="controls">
+    <form method="post" action="{{ url_for('messages.message_read', id_enc=e.id_enc) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      {% if e.interaction.is_read %}
+        <input type="hidden" name="action" value="unread">
+        <button type="submit">Mark unread</button>
+      {% else %}
+        <input type="hidden" name="action" value="read">
+        <button type="submit">Mark read</button>
+      {% endif %}
+    </form>
+    <form method="post" action="{{ url_for('messages.message_save', id_enc=e.id_enc) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      {% if e.interaction.is_saved %}
+        <input type="hidden" name="action" value="unsave">
+        <button type="submit">Unsave</button>
+      {% else %}
+        <input type="hidden" name="action" value="save">
+        <button type="submit">Save</button>
+      {% endif %}
+    </form>
+    <form method="post" action="{{ url_for('messages.message_dismiss', id_enc=e.id_enc) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      {% if e.interaction.is_dismissed %}
+        <input type="hidden" name="action" value="undismiss">
+        <button type="submit">Undismiss</button>
+      {% else %}
+        <input type="hidden" name="action" value="dismiss">
+        <button type="submit">Dismiss</button>
+      {% endif %}
+    </form>
+  </div>
+
+  <form method="post" action="{{ url_for('messages.message_rating', id_enc=e.id_enc) }}" class="rating-form" data-rating-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.path }}">
+    <fieldset class="stars" role="radiogroup" aria-label="Star rating">
+      <legend>Rating</legend>
+      {% for n in range(1, 6) %}
+      <label>
+        <input type="radio" name="stars" value="{{ n }}"
+          {% if e.rating and e.rating.stars == n %}checked{% endif %}
+          aria-label="{{ n }} star{{ 's' if n != 1 else '' }}">
+        {{ n }}★
+      </label>
+      {% endfor %}
+    </fieldset>
+    <fieldset class="reasons">
+      <legend>Reasons (optional)</legend>
+      {% for rc in reason_codes %}
+      <label>
+        <input type="checkbox" name="reasons" value="{{ rc.code }}"
+          {% if e.rating and rc.code in e.rating.reason_codes %}checked{% endif %}
+          data-polarity="{{ rc.polarity }}">
+        {{ rc.label }}
+      </label>
+      {% endfor %}
+    </fieldset>
+    <button type="submit">Save rating</button>
+  </form>
+</section>

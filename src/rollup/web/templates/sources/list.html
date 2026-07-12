@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Source quality{% endblock %}
+{% block content %}
+<h1>Newsletter quality</h1>
+<p class="note">Ranked by confidence-adjusted score (Bayesian mean of per-source means prior). Read/save/dismiss rates are informational only.</p>
+{% if not sources %}
+<p class="empty">No sources with indexed messages or ratings yet.</p>
+{% else %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Adjusted</th>
+      <th>Lifetime</th>
+      <th>Recent</th>
+      <th>n</th>
+      <th>Trend</th>
+      <th>Read</th>
+      <th>Save</th>
+      <th>Dismiss</th>
+      <th>Last rated</th>
+      <th>Last received</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in sources %}
+    <tr>
+      <td>
+        <a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.canonical_source_key)) }}">
+          {{ s.display_name or s.canonical_source_key }}
+        </a>
+      </td>
+      <td>{{ "%.2f"|format(s.adjusted_score) if s.adjusted_score is not none else "—" }}</td>
+      <td>{{ "%.2f"|format(s.lifetime_average) if s.lifetime_average is not none else "—" }}</td>
+      <td>{{ "%.2f"|format(s.recent_weighted) if s.recent_weighted is not none else "—" }}</td>
+      <td>{{ s.rating_count }}</td>
+      <td>{{ s.trend }}</td>
+      <td>{{ "%.0f%%"|format(s.read_rate * 100) if s.read_rate is not none else "—" }}</td>
+      <td>{{ "%.0f%%"|format(s.save_rate * 100) if s.save_rate is not none else "—" }}</td>
+      <td>{{ "%.0f%%"|format(s.dismiss_rate * 100) if s.dismiss_rate is not none else "—" }}</td>
+      <td>{{ s.last_rated_at or "—" }}</td>
+      <td>{{ s.last_received_at or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<nav class="pager">
+  {% if has_prev %}<a href="?page={{ page - 1 }}">Previous</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?page={{ page + 1 }}">Next</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

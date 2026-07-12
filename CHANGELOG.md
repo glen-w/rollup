@@ -2,6 +2,23 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.5.0 — 2026-07-13
+
+### Added
+
+- Local **web UI** (`rollup web`) for browsing indexed rollups, rating messages, interaction state, and newsletter quality ranking
+- Optional dependency extra `[web]` (`flask>=3.1.3,<4`); loopback-only bind (`127.0.0.1` / `::1`)
+- SQLite schema **v8**: `rollup_runs`, `rollup_entries`, `message_ratings`, reason codes, `message_interaction`, `message_source_links`
+- Digest pipeline indexes runs after dated MD/HTML (and manifest when enabled); `--no-manifest` still indexes; dry-run never indexes
+- Explicit `rollup web reindex` for manifest metadata backfill (no startup mutation)
+- Docs: [docs/WEB.md](docs/WEB.md)
+
+### Compatibility
+
+- Opening a v7 `rollup.db` migrates additively to v8
+- Existing CLI digest Markdown/HTML outputs unchanged
+- Core CLI (`digest`, `doctor`, `sources`, …) works without installing `[web]`
+
 ## 0.4.3 — 2026-07-12
 
 ### Added

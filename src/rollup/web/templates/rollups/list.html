@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Rollup archive{% endblock %}
+{% block content %}
+<h1>Rollup archive</h1>
+{% if not runs %}
+<p class="empty">No indexed rollups yet. Run a digest, then optionally <code>rollup web reindex</code>.</p>
+{% else %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>Generated</th>
+      <th>Window</th>
+      <th>Emails</th>
+      <th>Sources</th>
+      <th>Groups</th>
+      <th>Skipped</th>
+      <th>AI / cache</th>
+      <th>Status</th>
+      <th>Links</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td><a href="{{ url_for('rollups.rollup_detail', run_id=r.run_id) }}">{{ r.started_at or "—" }}</a></td>
+      <td>{% if r.window_start %}{{ r.window_start }} → {{ r.window_end }}{% else %}—{% endif %}</td>
+      <td>{{ r.messages_included if r.messages_included is not none else "—" }}</td>
+      <td>{{ r.sources_included if r.sources_included is not none else "—" }}</td>
+      <td>{{ r.groups_created if r.groups_created is not none else "—" }}</td>
+      <td>{{ r.skipped if r.skipped is not none else "—" }}</td>
+      <td>{{ r.summaries_ollama if r.summaries_ollama is not none else "—" }} / {{ r.summaries_cache if r.summaries_cache is not none else "—" }}</td>
+      <td>
+        {{ r.status }}{% if r.degraded %} · degraded{% endif %}
+        {% if r.entry_index_version == 0 %} · metadata only{% endif %}
+      </td>
+      <td class="links">
+        <a href="{{ url_for('rollups.rollup_detail', run_id=r.run_id) }}">web</a>
+        {% if r.has_md %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='md') }}">md</a>{% endif %}
+        {% if r.has_html %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='html') }}">html</a>{% endif %}
+        {% if r.has_manifest %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='manifest') }}">manifest</a>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<nav class="pager">
+  {% if has_prev %}<a href="?page={{ page - 1 }}">Previous</a>{% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}<a href="?page={{ page + 1 }}">Next</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

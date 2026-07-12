@@ -105,7 +105,7 @@ def test_summary_cache_preserves_newsletter_types(tmp_path: Path) -> None:
 def test_init_db_with_summaries_schema_version(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db_with_summaries(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 7
+    assert get_schema_version(conn) == SCHEMA_VERSION == 8
     rows = conn.execute("SELECT id, version FROM schema_version").fetchall()
     assert rows == [(1, SCHEMA_VERSION)]
     conn.close()

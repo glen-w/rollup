@@ -49,7 +49,7 @@ def _msg(
 
 def test_schema_migrates_to_v7(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == 7 == SCHEMA_VERSION
+    assert get_schema_version(conn) == 8 == SCHEMA_VERSION
     tables = {
         r[0]
         for r in conn.execute(

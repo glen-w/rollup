@@ -8,9 +8,141 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 BUSY_TIMEOUT_MS = 5000
+
+WEB_SCHEMA_V8 = """
+CREATE TABLE IF NOT EXISTS rollup_runs (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('success', 'partial')),
+    mode TEXT CHECK (mode IN ('manual', 'cron') OR mode IS NULL),
+    rollup_version TEXT,
+    manifest_schema_version INTEGER,
+    report_schema_version INTEGER,
+    entry_index_version INTEGER NOT NULL DEFAULT 0,
+    stats_completeness TEXT NOT NULL
+        CHECK (stats_completeness IN ('full', 'manifest_partial')),
+    window_start TEXT,
+    window_end TEXT,
+    lookback_days INTEGER,
+    digest_fingerprint TEXT,
+    messages_included INTEGER,
+    messages_skipped_outside_window INTEGER,
+    messages_skipped_seen_undated INTEGER,
+    messages_deduped INTEGER,
+    messages_skipped_disabled_source INTEGER,
+    groups_created INTEGER,
+    sources_included INTEGER,
+    summaries_ollama INTEGER,
+    summaries_cache INTEGER,
+    summaries_fallback INTEGER,
+    summaries_errors INTEGER,
+    summaries_final_review_applied INTEGER,
+    group_summaries_succeeded INTEGER,
+    warning_count INTEGER,
+    index_warning_count INTEGER NOT NULL DEFAULT 0,
+    degraded INTEGER NOT NULL DEFAULT 0 CHECK (degraded IN (0, 1)),
+    manifest_relpath TEXT,
+    markdown_relpath TEXT,
+    html_relpath TEXT,
+    index_source TEXT NOT NULL
+        CHECK (index_source IN ('pipeline', 'manifest_backfill')),
+    indexed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rollup_runs_started
+    ON rollup_runs(started_at DESC, run_id DESC);
+CREATE TABLE IF NOT EXISTS rollup_entries (
+    run_id TEXT NOT NULL,
+    message_key TEXT NOT NULL,
+    source_key_observed TEXT,
+    group_id TEXT,
+    group_type TEXT,
+    group_display_name TEXT,
+    section_key TEXT,
+    section_position INTEGER NOT NULL CHECK (section_position >= 0),
+    group_position INTEGER,
+    entry_position INTEGER NOT NULL CHECK (entry_position >= 0),
+    display_position INTEGER NOT NULL CHECK (display_position >= 0),
+    folder_name TEXT,
+    subject TEXT,
+    sender TEXT,
+    date_parsed TEXT,
+    date_raw TEXT,
+    newsletter_type TEXT,
+    summary TEXT,
+    summary_source TEXT,
+    primary_link TEXT,
+    links_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (run_id, message_key),
+    UNIQUE (run_id, display_position),
+    FOREIGN KEY (run_id) REFERENCES rollup_runs(run_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_rollup_entries_source_run
+    ON rollup_entries(source_key_observed, run_id);
+CREATE INDEX IF NOT EXISTS idx_rollup_entries_message
+    ON rollup_entries(message_key);
+CREATE TABLE IF NOT EXISTS message_source_links (
+    message_key TEXT PRIMARY KEY,
+    source_key_observed TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_source_links_source
+    ON message_source_links(source_key_observed);
+CREATE TABLE IF NOT EXISTS message_interaction (
+    message_key TEXT PRIMARY KEY,
+    read_at TEXT,
+    saved_at TEXT,
+    dismissed_at TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_interaction_dismissed
+    ON message_interaction(dismissed_at);
+CREATE INDEX IF NOT EXISTS idx_message_interaction_saved
+    ON message_interaction(saved_at);
+CREATE TABLE IF NOT EXISTS message_ratings (
+    message_key TEXT PRIMARY KEY,
+    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_ratings_updated
+    ON message_ratings(updated_at);
+CREATE TABLE IF NOT EXISTS rating_reason_codes (
+    code TEXT PRIMARY KEY,
+    polarity TEXT NOT NULL CHECK (polarity IN ('positive', 'negative')),
+    label TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+);
+CREATE TABLE IF NOT EXISTS message_rating_reasons (
+    message_key TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (message_key, reason_code),
+    FOREIGN KEY (message_key) REFERENCES message_ratings(message_key)
+        ON DELETE CASCADE,
+    FOREIGN KEY (reason_code) REFERENCES rating_reason_codes(code)
+        ON DELETE RESTRICT
+);
+"""
+
+RATING_REASON_SEED = (
+    ("not_relevant", "negative", "Not relevant", 10),
+    ("too_repetitive", "negative", "Too repetitive", 20),
+    ("too_long", "negative", "Too long", 30),
+    ("too_promotional", "negative", "Too promotional", 40),
+    ("weak_summary", "negative", "Weak summary", 50),
+    ("poor_links", "negative", "Poor links", 60),
+    ("great_analysis", "positive", "Great analysis", 110),
+    ("useful_professionally", "positive", "Useful professionally", 120),
+    ("great_links", "positive", "Great links", 130),
+    ("concise", "positive", "Concise", 140),
+    ("original_perspective", "positive", "Original perspective", 150),
+    ("worth_saving", "positive", "Worth saving", 160),
+)
 
 MVP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -426,6 +558,102 @@ def ensure_source_registry_schema(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _source_overrides_allows_web(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='source_overrides'"
+    ).fetchone()
+    if not row or not row[0]:
+        return True
+    return "'web'" in row[0] or '"web"' in row[0]
+
+
+def _migrate_source_overrides_updated_by_web(conn: sqlite3.Connection) -> None:
+    """Rebuild source_overrides so updated_by may be cli|import|web."""
+    if _source_overrides_allows_web(conn):
+        return
+    before = conn.execute("SELECT COUNT(*) FROM source_overrides").fetchone()[0]
+    conn.execute(
+        """CREATE TABLE source_overrides_v8 (
+            source_key TEXT PRIMARY KEY,
+            enabled INTEGER CHECK (enabled IS NULL OR enabled IN (0, 1)),
+            always_surface INTEGER CHECK (always_surface IS NULL OR always_surface IN (0, 1)),
+            priority INTEGER CHECK (priority IS NULL OR (priority >= 0 AND priority <= 100)),
+            newsletter_type TEXT,
+            grouping_policy TEXT,
+            summary_profile TEXT,
+            expected_cadence TEXT,
+            display_name TEXT,
+            notes TEXT,
+            updated_at TEXT NOT NULL,
+            updated_by TEXT NOT NULL CHECK (updated_by IN ('cli', 'import', 'web')),
+            FOREIGN KEY (source_key) REFERENCES sources(source_key) ON DELETE RESTRICT
+        )"""
+    )
+    conn.execute(
+        """INSERT INTO source_overrides_v8 (
+            source_key, enabled, always_surface, priority, newsletter_type,
+            grouping_policy, summary_profile, expected_cadence, display_name, notes,
+            updated_at, updated_by
+           )
+           SELECT source_key, enabled, always_surface, priority, newsletter_type,
+                  grouping_policy, summary_profile, expected_cadence, display_name, notes,
+                  updated_at, updated_by
+           FROM source_overrides"""
+    )
+    after = conn.execute("SELECT COUNT(*) FROM source_overrides_v8").fetchone()[0]
+    if after != before:
+        raise sqlite3.DatabaseError(
+            f"source_overrides migration count mismatch: before={before} after={after}"
+        )
+    fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if fk_errors:
+        raise sqlite3.DatabaseError(
+            f"foreign_key_check failed during source_overrides migrate: {fk_errors}"
+        )
+    conn.execute("DROP TABLE source_overrides")
+    conn.execute("ALTER TABLE source_overrides_v8 RENAME TO source_overrides")
+
+
+def _seed_rating_reason_codes(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        """INSERT OR IGNORE INTO rating_reason_codes
+           (code, polarity, label, sort_order, active)
+           VALUES (?, ?, ?, ?, 1)""",
+        RATING_REASON_SEED,
+    )
+
+
+def ensure_web_schema(conn: sqlite3.Connection) -> None:
+    """Atomic schema v8: web archive, ratings, interaction. Part of canonical init."""
+    apply_connection_pragmas(conn)
+    if get_schema_version(conn) >= 8 and _source_overrides_allows_web(conn):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='rollup_runs'"
+        ).fetchone()
+        if row is not None:
+            return
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        # Ensure v7 tables exist before depending on sources FK for overrides rebuild.
+        _exec_ddl_statements(conn, SOURCE_REGISTRY_SCHEMA_V7)
+        _migrate_source_overrides_updated_by_web(conn)
+        _exec_ddl_statements(conn, WEB_SCHEMA_V8)
+        _seed_rating_reason_codes(conn)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after web schema migrate: {fk_errors}"
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 8)"
+        )
+        conn.execute("UPDATE schema_version SET version = 8 WHERE id = 1")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def apply_connection_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
@@ -444,6 +672,7 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     _migrate_schema_version_singleton(conn)
     _bump_schema_version_at_least(conn, 1)
     ensure_source_registry_schema(conn)
+    ensure_web_schema(conn)
     return conn
 
 
@@ -459,6 +688,7 @@ def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     ensure_final_review_schema(conn)
     ensure_group_summary_schema(conn)
     ensure_source_registry_schema(conn)
+    ensure_web_schema(conn)
     return conn
 
 

@@ -3,7 +3,7 @@ output/
 state/
 logs/
 .venv/
-.release-test-env/
+.release-test-env*/
 __pycache__/
 *.py[cod]
 *.egg-info/

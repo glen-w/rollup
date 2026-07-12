@@ -217,6 +217,79 @@ def _check_source_registry(config: Config) -> list[DoctorCheck]:
     return out
 
 
+def _check_web_index(config: Config) -> list[DoctorCheck]:
+    """Compare latest successful outputs vs rollup_runs entry index."""
+    try:
+        from rollup.state import init_db
+
+        conn = init_db(config.db_path)
+        try:
+            row = conn.execute(
+                """SELECT run_id, entry_index_version, markdown_relpath, status
+                   FROM rollup_runs
+                   ORDER BY started_at DESC LIMIT 1"""
+            ).fetchone()
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='rollup_runs'"
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        return [
+            DoctorCheck(
+                id="web_index",
+                status="warn",
+                message=f"Could not inspect web index: {exc}",
+            )
+        ]
+    if tables is None:
+        return [
+            DoctorCheck(
+                id="web_index",
+                status="info",
+                message="Web index tables not present (unexpected on schema v8+)",
+            )
+        ]
+    if row is None:
+        return [
+            DoctorCheck(
+                id="web_index",
+                status="info",
+                message="No indexed rollup runs yet",
+            )
+        ]
+    run_id, entry_ver, md_rel, status = row
+    if int(entry_ver or 0) <= 0:
+        return [
+            DoctorCheck(
+                id="web_index",
+                status="warn",
+                message=(
+                    f"Latest indexed run {run_id} has no entry index "
+                    f"(status={status}); run a digest or rollup web reindex"
+                ),
+                fix="rollup digest … then browse with rollup web",
+            )
+        ]
+    if md_rel:
+        path = (config.output_dir / md_rel).resolve()
+        if not path.is_file():
+            return [
+                DoctorCheck(
+                    id="web_index",
+                    status="warn",
+                    message=f"Indexed markdown missing on disk for run {run_id}: {md_rel}",
+                )
+            ]
+    return [
+        DoctorCheck(
+            id="web_index",
+            status="pass",
+            message=f"Latest run {run_id} has entry index v{entry_ver}",
+        )
+    ]
+
+
 def _check_last_manifest(config: Config) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     manifest_dir = config.state_dir / "manifests"
@@ -456,6 +529,7 @@ def run_doctor(
 
     checks.append(_check_sqlite(config))
     checks.extend(_check_source_registry(config))
+    checks.extend(_check_web_index(config))
     checks.extend(_check_last_manifest(config))
 
     loopback = _check_ollama_loopback(config, run_options)
