@@ -1,4 +1,4 @@
-"""Whole-digest editorial QA review (report-only in Phase 1)."""
+"""Whole-digest editorial QA review (report and apply modes)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import re
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts" / "final_review"
 FINAL_REVIEW_PROMPT_VERSION = "final_review_v1"
+FINAL_REVIEW_PROMPT_VERSION_APPLY = "final_review_v2_apply"
 MAX_LINK_LABELS = 5
 MAX_SUMMARY_CHARS = 1200
 FINAL_REVIEW_SUMMARY_CHAR_STEPS = (1200, 600, 300, 150)
@@ -199,19 +200,37 @@ def _load_prompt_file(name: str) -> str:
 
 
 def build_final_review_prompt(
-    corpus: DigestReviewCorpus, profile: FinalReviewProfile
+    corpus: DigestReviewCorpus,
+    profile: FinalReviewProfile,
+    *,
+    mode: str = "report",
+    digest_fingerprint: str | None = None,
 ) -> str:
     base = _load_prompt_file("_base.txt")
     style = _load_prompt_file(f"{profile.prompt_style}.txt")
     schema = _load_prompt_file("_schema.json")
     outline = render_review_outline(corpus)
     corpus_json = json.dumps(corpus_to_dict(corpus), indent=2, sort_keys=True)
-    return (
+    prompt = (
         f"{base}\n\n{style}\n\n"
         f"JSON schema:\n{schema}\n\n"
         f"Digest outline:\n{outline}\n\n"
         f"Digest corpus (JSON):\n{corpus_json}"
     )
+    if mode == "apply":
+        fp = digest_fingerprint or ""
+        prompt += (
+            "\n\nApply mode instructions:\n"
+            "- You MAY propose summary-only patches for safe_auto_fix issues.\n"
+            "- Each patch MUST include issue_id, entry_id, field=\"summary\", "
+            "replacement, and rationale.\n"
+            "- Do NOT invent facts, URLs, or named entities absent from the original.\n"
+            "- Keep edits small; preserve links and quoted spans.\n"
+            "- Echo digest_fingerprint exactly in your JSON response.\n"
+            f"- digest_fingerprint: {fp}\n"
+            "- Never patch group: entries, titles, dates, or metadata.\n"
+        )
+    return prompt
 
 
 def estimate_prompt_tokens(prompt: str) -> int:
@@ -226,15 +245,23 @@ def prompt_exceeds_context(prompt: str, profile: FinalReviewProfile) -> bool:
 
 
 def build_fitted_final_review_prompt(
-    report: DigestReport, profile: FinalReviewProfile
+    report: DigestReport,
+    profile: FinalReviewProfile,
+    *,
+    mode: str = "report",
+    digest_fingerprint: str | None = None,
 ) -> tuple[DigestReviewCorpus, str, int]:
     """Shrink review summaries until the prompt fits the model context window."""
     last_corpus = build_review_corpus(report)
-    last_prompt = build_final_review_prompt(last_corpus, profile)
+    last_prompt = build_final_review_prompt(
+        last_corpus, profile, mode=mode, digest_fingerprint=digest_fingerprint
+    )
     last_limit = MAX_SUMMARY_CHARS
     for summary_limit in FINAL_REVIEW_SUMMARY_CHAR_STEPS:
         corpus = build_review_corpus(report, max_summary_chars=summary_limit)
-        prompt = build_final_review_prompt(corpus, profile)
+        prompt = build_final_review_prompt(
+            corpus, profile, mode=mode, digest_fingerprint=digest_fingerprint
+        )
         last_corpus, last_prompt, last_limit = corpus, prompt, summary_limit
         if not prompt_exceeds_context(prompt, profile):
             if summary_limit < MAX_SUMMARY_CHARS:
@@ -250,6 +277,8 @@ def compute_review_input_hash(
     corpus: DigestReviewCorpus,
     profile: FinalReviewProfile,
     prompt: str,
+    *,
+    prompt_version: str = FINAL_REVIEW_PROMPT_VERSION,
 ) -> str:
     payload = json.dumps(
         {
@@ -257,7 +286,7 @@ def compute_review_input_hash(
             "profile": profile.name,
             "prompt_style": profile.prompt_style,
             "prompt": prompt,
-            "prompt_version": FINAL_REVIEW_PROMPT_VERSION,
+            "prompt_version": prompt_version,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -314,6 +343,9 @@ def _parse_issue(raw: dict) -> FinalReviewIssue | None:
     if suggested_fix is not None and not isinstance(suggested_fix, str):
         suggested_fix = None
     safe_auto_fix = bool(raw.get("safe_auto_fix", False))
+    issue_id = raw.get("issue_id")
+    if issue_id is not None and not isinstance(issue_id, str):
+        issue_id = None
     return FinalReviewIssue(
         severity=severity,
         type=_coerce_issue_type(raw.get("type")),
@@ -322,6 +354,37 @@ def _parse_issue(raw: dict) -> FinalReviewIssue | None:
         description=description.strip(),
         suggested_fix=suggested_fix.strip() if suggested_fix else None,
         safe_auto_fix=safe_auto_fix,
+        issue_id=issue_id.strip() if issue_id else None,
+    )
+
+
+def _parse_patch(raw: dict) -> FinalReviewPatch | None:
+    if not isinstance(raw, dict):
+        return None
+    entry_id = raw.get("entry_id")
+    if not isinstance(entry_id, str) or not entry_id.strip():
+        return None
+    field = raw.get("field", "summary")
+    if field != "summary":
+        return None
+    replacement = raw.get("replacement")
+    if not isinstance(replacement, str) or not replacement.strip():
+        return None
+    rationale = raw.get("rationale") or raw.get("reason") or ""
+    if not isinstance(rationale, str):
+        rationale = ""
+    issue_id = raw.get("issue_id")
+    if issue_id is not None and not isinstance(issue_id, str):
+        issue_id = None
+    # Reject patches targeting synthetic group cards.
+    if entry_id.startswith("group:"):
+        return None
+    return FinalReviewPatch(
+        entry_id=entry_id.strip(),
+        field="summary",
+        replacement=replacement.strip(),
+        rationale=rationale.strip(),
+        issue_id=issue_id.strip() if issue_id else None,
     )
 
 
@@ -432,11 +495,23 @@ def parse_final_review_response(
     if not isinstance(safe_to_publish, bool):
         safe_to_publish = overall_status == "pass"
 
+    patches: list[FinalReviewPatch] = []
+    raw_patches = payload.get("patches", [])
+    if isinstance(raw_patches, list):
+        for item in raw_patches:
+            patch = _parse_patch(item)
+            if patch is not None:
+                patches.append(patch)
+
+    echoed = payload.get("digest_fingerprint") or payload.get("echoed_digest_fingerprint")
+    if echoed is not None and not isinstance(echoed, str):
+        echoed = None
+
     return FinalReviewResult(
         overall_status=overall_status,
         safe_to_publish=safe_to_publish,
         issues=tuple(issues),
-        patches=(),
+        patches=tuple(patches),
         review_source=review_source,
         profile_name=profile_name,
         model=model,
@@ -444,6 +519,7 @@ def parse_final_review_response(
         generated_at=generated_at,
         digest_fingerprint=digest_fingerprint,
         review_input_hash=review_input_hash,
+        echoed_digest_fingerprint=echoed,
     )
 
 
@@ -500,20 +576,30 @@ def _result_from_dict(data: dict) -> FinalReviewResult:
             description=str(issue.get("description", "")),
             suggested_fix=issue.get("suggested_fix"),
             safe_auto_fix=bool(issue.get("safe_auto_fix", False)),
+            issue_id=issue.get("issue_id") if isinstance(issue.get("issue_id"), str) else None,
         )
         for issue in data.get("issues", [])
         if isinstance(issue, dict)
     )
+    patches: list[FinalReviewPatch] = []
+    for item in data.get("patches", []) or []:
+        if isinstance(item, dict):
+            patch = _parse_patch(item)
+            if patch is not None:
+                patches.append(patch)
     generated_raw = data.get("generated_at")
     if isinstance(generated_raw, str):
         generated_at = datetime.fromisoformat(generated_raw)
     else:
         generated_at = datetime.now().astimezone()
+    echoed = data.get("echoed_digest_fingerprint") or data.get("digest_fingerprint")
+    if echoed is not None and not isinstance(echoed, str):
+        echoed = None
     return FinalReviewResult(
         overall_status=_coerce_status(data.get("overall_status")),
         safe_to_publish=bool(data.get("safe_to_publish", False)),
         issues=issues,
-        patches=(),
+        patches=tuple(patches),
         review_source="cache",
         profile_name=str(data.get("profile_name", "")),
         model=str(data.get("model", "")),
@@ -523,6 +609,8 @@ def _result_from_dict(data: dict) -> FinalReviewResult:
         generated_at=generated_at,
         digest_fingerprint=str(data.get("digest_fingerprint", "")),
         review_input_hash=str(data.get("review_input_hash", "")),
+        echoed_digest_fingerprint=echoed,
+        review_mode=str(data.get("review_mode", "report")),
     )
 
 
@@ -550,7 +638,7 @@ def _result_from_cached_json(
         overall_status=result.overall_status,
         safe_to_publish=result.safe_to_publish,
         issues=result.issues,
-        patches=(),
+        patches=result.patches,
         review_source="cache",
         profile_name=result.profile_name or profile_name,
         model=result.model or model,
@@ -558,6 +646,8 @@ def _result_from_cached_json(
         generated_at=result.generated_at,
         digest_fingerprint=result.digest_fingerprint or digest_fingerprint,
         review_input_hash=result.review_input_hash or review_input_hash,
+        echoed_digest_fingerprint=result.echoed_digest_fingerprint,
+        review_mode=result.review_mode,
     )
 
 
@@ -572,9 +662,20 @@ def execute_final_review(
         config.final_review_profile,
         model_override=config.final_review_model,
     )
-    corpus, prompt, summary_limit = build_fitted_final_review_prompt(report, profile)
+    mode = config.final_review_mode if config.final_review_mode in ("report", "apply") else "report"
+    prompt_version = (
+        FINAL_REVIEW_PROMPT_VERSION_APPLY if mode == "apply" else FINAL_REVIEW_PROMPT_VERSION
+    )
     digest_fingerprint = compute_digest_fingerprint(report)
-    review_input_hash = compute_review_input_hash(corpus, profile, prompt)
+    corpus, prompt, summary_limit = build_fitted_final_review_prompt(
+        report,
+        profile,
+        mode=mode,
+        digest_fingerprint=digest_fingerprint,
+    )
+    review_input_hash = compute_review_input_hash(
+        corpus, profile, prompt, prompt_version=prompt_version
+    )
 
     if prompt_exceeds_context(prompt, profile):
         est_tokens = estimate_prompt_tokens(prompt)
@@ -603,14 +704,14 @@ def execute_final_review(
             provider=profile.provider,
             profile_name=profile.name,
             model=profile.model,
-            prompt_version=FINAL_REVIEW_PROMPT_VERSION,
+            prompt_version=prompt_version,
             temperature=profile.temperature,
             num_ctx=profile.num_ctx,
             options=profile.options,
         )
         if cached is not None:
             logger.info("Final review: cache hit")
-            return _result_from_cached_json(
+            cached_result = _result_from_cached_json(
                 cached,
                 profile_name=profile.name,
                 model=profile.model,
@@ -618,6 +719,7 @@ def execute_final_review(
                 digest_fingerprint=digest_fingerprint,
                 review_input_hash=review_input_hash,
             )
+            return replace(cached_result, review_mode=mode)
 
     validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
     availability = OllamaAvailabilityCache(config.ollama_url)
@@ -661,6 +763,13 @@ def execute_final_review(
         prompt_chars=len(prompt),
         num_ctx=profile.num_ctx,
     )
+    result = replace(
+        result,
+        prompt_version=prompt_version,
+        review_mode=mode,
+        echoed_digest_fingerprint=result.echoed_digest_fingerprint
+        or result.digest_fingerprint,
+    )
 
     if conn is not None and result.review_source == "ollama":
         from rollup.state import store_final_review_generation
@@ -672,7 +781,7 @@ def execute_final_review(
             provider=profile.provider,
             profile_name=profile.name,
             model=profile.model,
-            prompt_version=FINAL_REVIEW_PROMPT_VERSION,
+            prompt_version=prompt_version,
             temperature=profile.temperature,
             num_ctx=profile.num_ctx,
             options=profile.options,

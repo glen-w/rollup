@@ -479,9 +479,23 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
         lines = [
             f"### {group.display_name} — {n} updates this week",
             "",
-            f"Grouped notification stream ({n} messages). Newest first.",
-            "",
         ]
+        if group.group_summary:
+            lines.extend(
+                [
+                    "**This week:**",
+                    "",
+                    group.group_summary.strip(),
+                    "",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"Grouped notification stream ({n} messages). Newest first.",
+                    "",
+                ]
+            )
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
             subject = _truncate(p.subject, 100)
@@ -499,9 +513,23 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
     lines = [
         f"### {group.display_name} — {n} editions this week",
         "",
-        f"Grouped daily editions ({n} messages).",
-        "",
     ]
+    if group.group_summary:
+        lines.extend(
+            [
+                "**Edition roundup:**",
+                "",
+                group.group_summary.strip(),
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Grouped daily editions ({n} messages).",
+                "",
+            ]
+        )
     for entry in group.entries:
         p = entry.classified.parsed
         subject = _truncate(p.subject, 100)
@@ -527,6 +555,17 @@ def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
         f"<h3 id='group-{gid}'>{title}</h3>",
         f"<p class='group-chip'>Grouped · {len(group.entries)} messages</p>",
     ]
+    if group.group_summary:
+        label = (
+            "This week"
+            if group.group_type == "notification_stream"
+            else "Edition roundup"
+        )
+        parts.append(
+            f"<div class='group-summary' aria-label='{html_module.escape(label)}'>"
+            f"<p><strong>{html_module.escape(label)}:</strong> "
+            f"{html_module.escape(group.group_summary.strip())}</p></div>"
+        )
     if group.group_type == "notification_stream":
         parts.append("<ul role='list' class='group-updates'>")
         for entry in group.entries:

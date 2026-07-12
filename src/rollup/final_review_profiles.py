@@ -105,17 +105,18 @@ def resolve_final_review_profile(
     return profile
 
 
+_VALID_MODES = frozenset({"report", "apply"})
+
+
 def validate_final_review_config(
     *,
     mode: str,
     provider: str,
     profile_name: str,
 ) -> None:
-    if mode == "apply":
-        raise FinalReviewConfigError("apply mode is not implemented yet")
-    if mode != "report":
+    if mode not in _VALID_MODES:
         raise FinalReviewConfigError(
-            f"Invalid final review mode {mode!r}; expected 'report'."
+            f"Invalid final review mode {mode!r}; expected one of {sorted(_VALID_MODES)}."
         )
     if provider not in FINAL_REVIEW_PROVIDERS:
         raise FinalReviewConfigError(
@@ -126,4 +127,16 @@ def validate_final_review_config(
         raise UnknownFinalReviewProfileError(
             f"Unknown final review profile {profile_name!r}. "
             f"Available: {', '.join(sorted(_BUILTIN_PROFILES))}"
+        )
+
+
+def validate_phase3_final_review_config(
+    *,
+    max_changed_chars_ratio: float,
+) -> None:
+    """Validate Phase 3 apply-mode configuration values."""
+    if not (0 < max_changed_chars_ratio <= 0.5):
+        raise FinalReviewConfigError(
+            f"final_review_max_changed_chars_ratio must be in (0, 0.5]; "
+            f"got {max_changed_chars_ratio!r}."
         )

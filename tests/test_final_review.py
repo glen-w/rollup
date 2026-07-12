@@ -352,11 +352,8 @@ def test_write_final_review_report(tmp_path: Path) -> None:
     assert data["prompt_version"] == FINAL_REVIEW_PROMPT_VERSION
 
 
-def test_validate_apply_mode_blocked() -> None:
-    with pytest.raises(FinalReviewConfigError, match="apply mode is not implemented"):
-        validate_final_review_config(
-            mode="apply", provider="ollama", profile_name="strict"
-        )
+def test_validate_apply_mode_allowed_in_phase3() -> None:
+    validate_final_review_config(mode="apply", provider="ollama", profile_name="strict")
 
 
 @patch("rollup.final_review.call_final_review_model")

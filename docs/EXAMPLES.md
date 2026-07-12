@@ -242,7 +242,18 @@ python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --final
 python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --no-final-review-cache
 ```
 
-Final review does not require `--ollama` (it uses Ollama independently when enabled). Apply mode (`--final-review-mode apply`) is not available yet. When enabled, a short QA summary also appears in the digest’s collapsed “Digest generation details” section at the end.
+Final review does not require `--ollama` (it uses Ollama independently when enabled). Apply mode (`--final-review-mode apply`) applies validated summary-only patches; under `--cron` it also requires `--final-review-allow-cron-apply`. When enabled, a short QA summary also appears in the digest’s collapsed “Digest generation details” section at the end.
+
+```bash
+# Apply mode (interactive / manual)
+rollup digest --root tests/fixtures/Newsletters.sbd --final-review \
+  --final-review-mode apply --mail-root /tmp/rollup-mail \
+  --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
+
+# Group-level LLM summaries (opt-in; requires Ollama)
+rollup digest --root tests/fixtures/Newsletters.sbd --ollama --group-summaries \
+  --mail-root /tmp/rollup-mail --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
+```
 
 ## Benchmark local models
 

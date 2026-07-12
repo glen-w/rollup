@@ -14,7 +14,7 @@ NewsletterType = Literal[
     "link_roundup",
     "unclassified",
 ]
-SummarySource = Literal["ollama", "cache", "preview_fallback", "none"]
+SummarySource = Literal["ollama", "cache", "preview_fallback", "none", "final_review_applied"]
 GroupType = Literal[
     "standalone",
     "notification_stream",
@@ -138,6 +138,7 @@ class DigestEntry:
     classified: ClassifiedMessage
     summary: str | None
     summary_source: SummarySource
+    summary_original: str | None = None
 
 
 @dataclass(frozen=True)
@@ -219,6 +220,34 @@ class DigestStats:
 
 
 @dataclass(frozen=True)
+class PatchApplicationResult:
+    attempted: int
+    applied: int
+    rejected: int
+    duplicate: int
+    unknown_entry: int
+    unsafe: int
+    invalid_field: int
+    invalid_content: int
+    ratio_exceeded: int
+    preservation_failed: int
+    global_skip: int
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GroupSummaryMetadata:
+    groups_attempted: int
+    groups_succeeded: int
+    groups_failed: int
+    groups_skipped_budget: int
+    ollama_calls: int
+    cache_hits: int
+    fallback_count: int
+    errors: int
+
+
+@dataclass(frozen=True)
 class DigestReport:
     generated_at: datetime
     lookback_days: int
@@ -230,6 +259,7 @@ class DigestReport:
     summary_metadata: DigestSummaryMetadata | None = None
     final_review: FinalReviewResult | None = None
     grouping_metadata: GroupingMetadata | None = None
+    group_summary_metadata: GroupSummaryMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -241,6 +271,7 @@ class FinalReviewIssue:
     description: str
     suggested_fix: str | None
     safe_auto_fix: bool
+    issue_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -249,6 +280,7 @@ class FinalReviewPatch:
     field: Literal["summary"]
     replacement: str
     rationale: str
+    issue_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +296,8 @@ class FinalReviewResult:
     generated_at: datetime
     digest_fingerprint: str
     review_input_hash: str
+    echoed_digest_fingerprint: str | None = None
+    review_mode: str = "report"
 
 
 @dataclass(frozen=True)

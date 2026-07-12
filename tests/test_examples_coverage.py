@@ -43,6 +43,9 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("final review profile", "--final-review-profile"),
     ("final review report", "--final-review-report"),
     ("no final review cache", "--no-final-review-cache"),
+    ("final review mode apply", "--final-review-mode apply"),
+    ("final review allow cron apply", "--final-review-allow-cron-apply"),
+    ("group summaries", "--group-summaries"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),
 )

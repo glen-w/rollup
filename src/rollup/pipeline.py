@@ -170,6 +170,10 @@ class AggregatedResults:
     hard_failure_reason: str | None = None
     final_review_failed: bool = False
     ollama_enabled: bool = False
+    publication_failed: bool = False
+    group_summaries_degraded: bool = False
+    apply_patches_applied: int = 0
+    contains_auto_edited_prose: bool = False
 
 
 @dataclass(frozen=True)
@@ -230,6 +234,12 @@ def derive_run_status(
                 return "partial"
 
     if aggregated.final_review_failed:
+        return "partial"
+
+    if aggregated.publication_failed:
+        return "partial"
+
+    if aggregated.group_summaries_degraded:
         return "partial"
 
     return "success"
@@ -513,29 +523,24 @@ def run_digest(
     error_message: str | None = None
     status: RunStatus = "failure"
 
-    # Manifest builder is optional until module exists.
+    from rollup.manifest import ManifestBuilder
+    from rollup.run_lock import RunLockError, acquire_run_lock
+
     manifest_builder = None
     if run_options.write_manifest and not run_options.dry_run:
-        try:
-            from rollup.manifest import ManifestBuilder
-
-            manifest_builder = ManifestBuilder(
-                ctx,
-                config=config,
-                run_options=run_options,
-                grouping=grouping,
-                manifest_config=manifest_config,
-                window_start=window_start,
-                window_end=window_end,
-            )
-        except ImportError:
-            manifest_builder = None
+        manifest_builder = ManifestBuilder(
+            ctx,
+            config=config,
+            run_options=run_options,
+            grouping=grouping,
+            manifest_config=manifest_config,
+            window_start=window_start,
+            window_end=window_end,
+        )
 
     try:
         if acquire_lock and not run_options.dry_run:
             try:
-                from rollup.run_lock import RunLockError, acquire_run_lock
-
                 lock = acquire_run_lock(
                     config.state_dir, ctx.run_id, started_at=generated_at
                 )
@@ -545,30 +550,23 @@ def run_digest(
                         "Recovered stale run lock",
                         level="warning",
                     )
-            except ImportError:
-                lock = None
-            except Exception as exc:
-                # RunLockError or other lock failures.
-                from rollup.run_lock import RunLockError
-
-                if isinstance(exc, RunLockError):
-                    aggregated.hard_failure = True
-                    aggregated.hard_failure_reason = str(exc)
-                    error_message = str(exc)
-                    status = "failure"
-                    if manifest_builder is not None:
-                        manifest_builder.record_failure(exc)
-                        manifest_builder.finalize(status="failure", aggregated=aggregated)
-                    return DigestRunResult(
-                        status=status,
-                        exit_code=EXIT_FAILURE,
-                        context=ctx,
-                        report=None,
-                        stats=None,
-                        aggregated=aggregated,
-                        error_message=error_message,
-                    )
-                raise
+            except RunLockError as exc:
+                aggregated.hard_failure = True
+                aggregated.hard_failure_reason = str(exc)
+                error_message = str(exc)
+                status = "failure"
+                if manifest_builder is not None:
+                    manifest_builder.record_failure(exc)
+                    manifest_builder.finalize(status="failure", aggregated=aggregated)
+                return DigestRunResult(
+                    status=status,
+                    exit_code=EXIT_FAILURE,
+                    context=ctx,
+                    report=None,
+                    stats=None,
+                    aggregated=aggregated,
+                    error_message=error_message,
+                )
 
         profile_set = require_valid_summary_profile_set(
             load_summary_profile_set(config.summary_profile_set_path),
@@ -621,6 +619,10 @@ def run_digest(
                 conn = init_db(config.db_path)
                 if config.final_review_enabled:
                     ensure_final_review_schema(conn)
+                if config.group_summaries_enabled:
+                    from rollup.state import ensure_group_summary_schema
+
+                    ensure_group_summary_schema(conn)
             seen_keys = load_seen_keys(conn)
 
         filter_result = stage_filter(
@@ -701,6 +703,30 @@ def run_digest(
             if grouping.enabled
             else None,
         )
+
+        if (
+            config.group_summaries_enabled
+            and not config.no_ollama
+            and grouping.enabled
+            and not run_options.dry_run
+        ):
+            from rollup.group_summarize import apply_group_summaries
+
+            new_dated, new_undated, gsm = apply_group_summaries(
+                report.dated_by_folder,
+                report.undated,
+                config,
+                conn,
+                max_calls=config.max_group_summary_calls,
+            )
+            report = replace(
+                report,
+                dated_by_folder=new_dated,
+                undated=new_undated,
+                group_summary_metadata=gsm,
+            )
+            if gsm.groups_attempted > 0 and gsm.groups_succeeded == 0:
+                aggregated.group_summaries_degraded = True
 
         if run_options.dry_run:
             aggregated.usable_digest = True
@@ -829,9 +855,9 @@ def run_digest(
         # Publish latest outputs transactionally when requested.
         status = derive_run_status(aggregated, dry_run=False)
         if run_options.publish_latest and md_path and html_path:
-            try:
-                from rollup.publication import publish_latest_outputs
+            from rollup.publication import publish_latest_outputs
 
+            try:
                 pub = publish_latest_outputs(
                     output_dir=config.output_dir,
                     md_path=md_path,
@@ -841,8 +867,14 @@ def run_digest(
                     allow_partial_latest=run_options.allow_partial_latest,
                 )
                 aggregated.latest_outputs_updated = pub.latest_outputs_updated
-            except ImportError:
-                pass
+            except Exception as pub_exc:
+                aggregated.publication_failed = True
+                logger.error("Latest publication failed: %s", pub_exc)
+                ctx.add_event(
+                    "publication_failed",
+                    str(pub_exc),
+                    level="error",
+                )
 
         if conn is not None:
             from rollup.state import upsert_seen_keys
@@ -982,7 +1014,28 @@ def _maybe_final_review(
     print_final_review_summary(result, report_path)
     if result.overall_status == "fail":
         aggregated.final_review_failed = True
-    return replace(report, final_review=result)
+
+    report = replace(report, final_review=result)
+
+    if config.final_review_mode == "apply":
+        from rollup.final_review_apply import apply_final_review_patches
+
+        report, apply_result = apply_final_review_patches(report, result, config)
+        aggregated.apply_patches_applied = apply_result.applied
+        if apply_result.applied > 0:
+            aggregated.contains_auto_edited_prose = True
+            logger.info(
+                "Final review apply: applied=%d rejected=%d",
+                apply_result.applied,
+                apply_result.rejected,
+            )
+        elif apply_result.global_skip:
+            logger.info(
+                "Final review apply skipped: %s",
+                "; ".join(apply_result.reasons[:3]) or "global skip",
+            )
+
+    return report
 
 
 def _group_items_by_folder(items: tuple[Any, ...]) -> dict:

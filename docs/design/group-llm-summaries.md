@@ -1,10 +1,11 @@
-# Design note: group-level LLM summaries (follow-on)
+# Design note: group-level LLM summaries
 
-**Status:** deferred from Phase 2 acceptance.
+**Status:** shipped in 0.4.0 (`--group-summaries`).
 
-Phase 2 ships deterministic grouping and grouped Markdown/HTML rendering using
-existing per-entry preview / Ollama summaries. Group-level synthesis is optional
-future work.
+Phase 2 shipped deterministic grouping and grouped Markdown/HTML rendering using
+existing per-entry preview / Ollama summaries. Phase 3 adds opt-in group-level
+synthesis via `group_summarize.py` with schema v6 cache tables.
+
 
 ## Proposed approach (not implemented)
 

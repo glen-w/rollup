@@ -783,7 +783,7 @@ def test_digest_final_review_dry_run_skips(tmp_path: Path, monkeypatch) -> None:
     assert not (tmp_path / "output").exists()
 
 
-def test_digest_final_review_apply_mode_rejected(
+def test_digest_final_review_cron_apply_requires_allow(
     tmp_path: Path, capsys
 ) -> None:
     from rollup import cli
@@ -792,6 +792,7 @@ def test_digest_final_review_apply_mode_rejected(
     args = parser.parse_args(
         _digest_args(
             tmp_path,
+            "--cron",
             "--final-review",
             "--final-review-mode",
             "apply",
@@ -802,7 +803,7 @@ def test_digest_final_review_apply_mode_rejected(
     rc = cli.cmd_digest(args)
     assert rc == 1
     captured = capsys.readouterr()
-    assert "apply mode is not implemented" in captured.err
+    assert "final-review-allow-cron-apply" in captured.err
 
 
 def test_digest_final_review_without_ollama(tmp_path: Path, monkeypatch) -> None:

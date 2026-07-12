@@ -65,6 +65,15 @@ class Config:
     final_review_max_changed_chars_ratio: float = (
         DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
     )
+    final_review_allow_cron_apply: bool = False
+    final_review_apply_policy: str = "conservative"  # conservative|standard
+    final_review_max_patches_unattended: int = 5
+    final_review_max_changed_chars_unattended: int = 800
+    group_summaries_enabled: bool = False
+    group_summary_profile: str | None = None
+    max_group_summary_calls: int = 8
+    group_summary_variant_policy: str = "primary"  # primary|each|shared-identical
+    min_usable_member_summaries: int = 2
 
     @property
     def db_path(self) -> Path:

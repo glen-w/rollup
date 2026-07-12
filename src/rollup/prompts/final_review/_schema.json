@@ -1,8 +1,10 @@
 {
   "overall_status": "pass | pass_with_warnings | fail",
   "safe_to_publish": true,
+  "digest_fingerprint": "echo the provided fingerprint string",
   "issues": [
     {
+      "issue_id": "stable-id-string",
       "severity": "minor | major | critical",
       "type": "style_drift | duplication | date_inconsistency | heading_inconsistency | link_issue | metadata_mismatch | possible_contradiction | length_mismatch | other",
       "location": "section / subject",
@@ -12,5 +14,13 @@
       "safe_auto_fix": false
     }
   ],
-  "patches": []
+  "patches": [
+    {
+      "issue_id": "matching-issue-id",
+      "entry_id": "message_key",
+      "field": "summary",
+      "replacement": "revised summary text",
+      "rationale": "why this edit is safe"
+    }
+  ]
 }

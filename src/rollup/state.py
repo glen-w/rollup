@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MVP_SCHEMA = """
 CREATE TABLE IF NOT EXISTS seen_messages (
@@ -94,6 +94,48 @@ CREATE TABLE IF NOT EXISTS summary_generations (
         options_json,
         summary_input_hash
     )
+);
+"""
+
+GROUP_SUMMARY_SCHEMA_V6 = """
+CREATE TABLE IF NOT EXISTS group_summary_generations (
+    generation_id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL,
+    member_fingerprint TEXT NOT NULL,
+    grouping_version TEXT NOT NULL,
+    group_type TEXT NOT NULL,
+    variant_key TEXT NOT NULL DEFAULT 'default',
+    provider TEXT NOT NULL,
+    profile_name TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_style TEXT NOT NULL,
+    prompt_version INTEGER NOT NULL,
+    temperature REAL NOT NULL,
+    num_ctx INTEGER,
+    options_json TEXT NOT NULL,
+    summary_input_hash TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    output_fingerprint TEXT NOT NULL,
+    usability_status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL,
+    UNIQUE (
+        group_id, member_fingerprint, grouping_version, group_type, variant_key,
+        provider, profile_name, model, prompt_style, prompt_version,
+        temperature, num_ctx, options_json, summary_input_hash
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_group_summary_lookup
+    ON group_summary_generations (group_id, member_fingerprint, summary_input_hash);
+"""
+
+# Simple cache-key lookup table used by group_summarize.py (cache_key = sha256).
+GROUP_SUMMARY_BY_KEY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS group_summary_by_key (
+    cache_key TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL
 );
 """
 
@@ -248,6 +290,13 @@ def ensure_final_review_schema(conn: sqlite3.Connection) -> None:
     _set_schema_version(conn)
 
 
+def ensure_group_summary_schema(conn: sqlite3.Connection) -> None:
+    """Additive schema v6: group summary caches. Preserves all prior tables."""
+    conn.executescript(GROUP_SUMMARY_SCHEMA_V6)
+    conn.executescript(GROUP_SUMMARY_BY_KEY_SCHEMA)
+    _set_schema_version(conn)
+
+
 def init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
@@ -264,7 +313,44 @@ def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
     _migrate_summary_generations_v4(conn)
     conn.executescript(SUMMARIES_SCHEMA_V4)
     ensure_final_review_schema(conn)
+    ensure_group_summary_schema(conn)
     return conn
+
+
+def get_group_summary_generation(
+    conn: sqlite3.Connection,
+    *,
+    cache_key: str,
+) -> str | None:
+    row = conn.execute(
+        "SELECT summary FROM group_summary_by_key WHERE cache_key = ?",
+        (cache_key,),
+    ).fetchone()
+    if row:
+        conn.execute(
+            "UPDATE group_summary_by_key SET last_used_at = ? WHERE cache_key = ?",
+            (datetime.now().astimezone().isoformat(), cache_key),
+        )
+        conn.commit()
+        return row[0]
+    return None
+
+
+def store_group_summary_generation(
+    conn: sqlite3.Connection,
+    *,
+    cache_key: str,
+    summary: str,
+    created_at: datetime,
+) -> None:
+    iso = created_at.isoformat()
+    conn.execute(
+        """INSERT OR REPLACE INTO group_summary_by_key
+           (cache_key, summary, created_at, last_used_at)
+           VALUES (?, ?, ?, ?)""",
+        (cache_key, summary, iso, iso),
+    )
+    conn.commit()
 
 
 def load_seen_keys(conn: sqlite3.Connection) -> set[str]:

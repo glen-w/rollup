@@ -11,6 +11,7 @@ from pathlib import Path
 
 from rollup import __version__
 from rollup.config import (
+    DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
     DEFAULT_FINAL_REVIEW_MODE,
     DEFAULT_FINAL_REVIEW_PROFILE,
     DEFAULT_FINAL_REVIEW_PROVIDER,
@@ -176,7 +177,30 @@ def _build_config(args: argparse.Namespace) -> Config:
         rebuild_final_review=getattr(args, "no_final_review_cache", False),
         final_review_preserve_links=True,
         final_review_preserve_quotes=True,
-        final_review_max_changed_chars_ratio=0.08,
+        final_review_max_changed_chars_ratio=getattr(
+            args,
+            "final_review_max_changed_chars_ratio",
+            DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
+        ),
+        final_review_allow_cron_apply=getattr(
+            args, "final_review_allow_cron_apply", False
+        ),
+        final_review_apply_policy=getattr(
+            args, "final_review_apply_policy", "conservative"
+        ),
+        final_review_max_patches_unattended=getattr(
+            args, "final_review_max_patches_unattended", 5
+        ),
+        final_review_max_changed_chars_unattended=getattr(
+            args, "final_review_max_changed_chars_unattended", 800
+        ),
+        group_summaries_enabled=getattr(args, "group_summaries", False),
+        group_summary_profile=getattr(args, "group_summary_profile", None),
+        max_group_summary_calls=getattr(args, "max_group_summary_calls", 8),
+        group_summary_variant_policy=getattr(
+            args, "group_summary_variant_policy", "primary"
+        ),
+        min_usable_member_summaries=getattr(args, "min_usable_member_summaries", 2),
     )
 
 
@@ -320,16 +344,50 @@ def _print_routing_report(report) -> None:
         )
 
 
-def _validate_final_review_config(config: Config) -> None:
-    from rollup.final_review_profiles import validate_final_review_config
+def _validate_final_review_config(config: Config, *, cron: bool = False) -> None:
+    from rollup.final_review_profiles import (
+        FinalReviewConfigError,
+        validate_final_review_config,
+        validate_phase3_final_review_config,
+    )
 
     if not config.final_review_enabled:
+        if config.final_review_mode == "apply":
+            raise FinalReviewConfigError(
+                "--final-review-mode apply requires --final-review"
+            )
+        if config.final_review_allow_cron_apply:
+            raise FinalReviewConfigError(
+                "--final-review-allow-cron-apply requires --final-review "
+                "and --final-review-mode apply"
+            )
         return
     validate_final_review_config(
         mode=config.final_review_mode,
         provider=config.final_review_provider,
         profile_name=config.final_review_profile,
     )
+    validate_phase3_final_review_config(
+        max_changed_chars_ratio=config.final_review_max_changed_chars_ratio
+    )
+    if config.final_review_allow_cron_apply and config.final_review_mode != "apply":
+        raise FinalReviewConfigError(
+            "--final-review-allow-cron-apply requires --final-review-mode apply"
+        )
+    if cron and config.final_review_mode == "apply":
+        if not config.final_review_allow_cron_apply:
+            raise FinalReviewConfigError(
+                "Unattended apply requires --final-review-allow-cron-apply "
+                "(fail closed)"
+            )
+        if config.final_review_apply_policy != "conservative":
+            raise FinalReviewConfigError(
+                "Cron apply only supports --final-review-apply-policy conservative"
+            )
+    if config.group_summaries_enabled and config.no_ollama:
+        raise FinalReviewConfigError(
+            "--group-summaries requires --ollama"
+        )
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
@@ -413,7 +471,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
     try:
-        _validate_final_review_config(config)
+        _validate_final_review_config(config, cron=run_options.cron)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -701,7 +759,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--final-review-mode",
         choices=["report", "apply"],
         default=DEFAULT_FINAL_REVIEW_MODE,
-        help="Final review mode (apply not implemented in Phase 1)",
+        help="Final review mode: report (default) or apply safe summary patches",
+    )
+    dig.add_argument(
+        "--final-review-allow-cron-apply",
+        action="store_true",
+        default=False,
+        help="Allow --final-review-mode apply under --cron (fail closed without this)",
+    )
+    dig.add_argument(
+        "--final-review-apply-policy",
+        choices=["conservative", "standard"],
+        default="conservative",
+        help="Apply policy (cron supports conservative only)",
+    )
+    dig.add_argument(
+        "--final-review-max-changed-chars-ratio",
+        type=float,
+        default=DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
+        help="Max per-entry summary change ratio for apply mode",
+    )
+    dig.add_argument(
+        "--group-summaries",
+        action="store_true",
+        default=False,
+        help="Opt-in group-level LLM summaries (requires --ollama and grouping)",
+    )
+    dig.add_argument(
+        "--max-group-summary-calls",
+        type=int,
+        default=8,
+        help="Max Ollama group-summary calls per run",
     )
     dig.add_argument(
         "--final-review-profile",

@@ -2,6 +2,25 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.4.0 — 2026-07-12
+
+### Added
+
+- Final-review **apply** mode (`--final-review-mode apply`) with pure patch transforms, hard validators, and cron fail-closed (`--final-review-allow-cron-apply`)
+- Opt-in group-level LLM summaries (`--group-summaries`) with dedicated SQLite cache (schema v6)
+- Group summary rendering in Markdown/HTML when present; deterministic headers unchanged when absent
+- Publication failure surfaces as partial exit (2); lock/manifest/publication ImportError soft-disables removed
+
+### Changed
+
+- Schema version 5 → 6 (additive `group_summary_generations` / `group_summary_by_key`; entry caches preserved)
+- Final-review prompts/schema support `issue_id` patches; report mode remains default
+
+### Compatibility
+
+- Default digests (no apply, no `--group-summaries`) match 0.3.0 behaviour
+- Opening a v0.3 `rollup.db` migrates additively to v6
+
 ## 0.3.0 — 2026-07-11
 
 ### Added

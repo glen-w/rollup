@@ -214,9 +214,11 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--summary-routing-report` | off | **Ollama only:** print routing stats |
 | `--rebuild-summaries` | off | **Ollama only:** bypass summary cache |
 | `--final-review` | off | Whole-digest editorial QA; writes JSON sidecar |
-| `--final-review-mode` | `report` | `report` only (`apply` not implemented yet) |
+| `--final-review-mode` | `report` | `report` or `apply` (cron apply needs `--final-review-allow-cron-apply`) |
+| `--final-review-allow-cron-apply` | off | Explicit opt-in for unattended apply |
 | `--final-review-profile` | `strict` | `strict`, `concise`, or `editorial` |
 | `--final-review-model` | profile default | Override Ollama model for review |
+| `--group-summaries` | off | Opt-in group LLM blurbs (requires `--ollama`) |
 | `--final-review-report` | `<digest-stem>.final-review.json` | Explicit sidecar path |
 | `--no-final-review-cache` | off | Bypass final review cache |
 | `--dry-run` | off | Parse only; no writes or network |
@@ -362,7 +364,7 @@ Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Ea
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. New databases record **schema version 5** during non-dry-run initialization.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries use `group_summary_by_key` / `group_summary_generations`. New databases record **schema version 6** during non-dry-run initialization.
 
 Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, generation options (including `num_predict`), and the profile's `think` setting. Legacy cache rows remain readable when applicable.
 
