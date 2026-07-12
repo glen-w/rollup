@@ -1,4 +1,7 @@
-"""Run manifests: schema v1, allowlist serialization, failure-safe writes."""
+"""Run manifests: schema v2, allowlist serialization, failure-safe writes.
+
+Schema v1 manifests remain readable (doctor / cron status). Writers emit v2.
+"""
 
 from __future__ import annotations
 
@@ -22,8 +25,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_SCHEMA_VERSION = 1
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1})
+MANIFEST_SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2})
 
 REQUIRED_FIELDS = frozenset(
     {
@@ -69,6 +72,8 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "warnings",
         "errors",
         "parse_error_summary",
+        "final_review",
+        "group_summaries",
     }
 )
 
@@ -405,6 +410,36 @@ class ManifestBuilder:
             "errors": errors,
             "parse_error_summary": parse_error_summary,
         }
+
+        # Schema v2 telemetry blocks (omit when stage disabled).
+        if agg is not None and self.config.final_review_enabled:
+            payload["final_review"] = {
+                "apply_global_skip_reason": agg.apply_global_skip_reason,
+                "patch_reject_counts": dict(agg.apply_reject_counts),
+                "patches_attempted": agg.apply_patches_attempted,
+                "patches_applied": agg.apply_patches_applied,
+                "contains_auto_edited_prose": agg.contains_auto_edited_prose,
+                "unattended_caps": (
+                    {
+                        "max_patches": agg.apply_policy_max_patches,
+                        "max_changed_chars": agg.apply_policy_max_changed_chars,
+                        "unattended": agg.apply_policy_unattended,
+                        "policy": self.config.final_review_apply_policy,
+                    }
+                    if self.config.final_review_mode == "apply"
+                    else None
+                ),
+            }
+        if agg is not None and self.config.group_summaries_enabled:
+            payload["group_summaries"] = {
+                "degraded": agg.group_summaries_degraded,
+                "ollama_calls": agg.group_summary_ollama_calls,
+                "cache_hits": agg.group_summary_cache_hits,
+                "stream_failures": agg.group_summary_stream_failures,
+                "cache_write_errors": agg.group_summary_cache_write_errors,
+                "error_counts": dict(agg.group_summary_error_counts),
+            }
+
         return filter_allowlisted(payload)
 
     def write_if_state_writable(self, *, update_latest: bool = False) -> Path | None:

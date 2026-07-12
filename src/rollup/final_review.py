@@ -180,6 +180,14 @@ def _iter_digest_entries(item) -> list:
 
 
 def compute_digest_fingerprint(report: DigestReport) -> str:
+    """Host-truth digest fingerprint.
+
+    Canonical representation: sorted folder keys; items in report order within
+    each folder; each entry via ``_entry_fingerprint``; undated labeled
+    ``\"undated\"``; ``json.dumps(..., sort_keys=True, separators=(",", ":"))``;
+    SHA-256 hex. Computed once at the start of ``execute_final_review`` before
+    corpus fit / cache lookup / model call. Model echo must not be synthesised.
+    """
     parts: list[dict] = []
     for folder, entries in sorted(report.dated_by_folder.items()):
         for item in entries:
@@ -342,9 +350,13 @@ def _parse_issue(raw: dict) -> FinalReviewIssue | None:
     suggested_fix = raw.get("suggested_fix")
     if suggested_fix is not None and not isinstance(suggested_fix, str):
         suggested_fix = None
-    safe_auto_fix = bool(raw.get("safe_auto_fix", False))
+    # Fail closed: only literal JSON boolean true authorises auto-fix.
+    raw_safe = raw.get("safe_auto_fix", False)
+    safe_auto_fix = raw_safe is True
     issue_id = raw.get("issue_id")
     if issue_id is not None and not isinstance(issue_id, str):
+        issue_id = None
+    if isinstance(issue_id, str) and len(issue_id) > 256:
         issue_id = None
     return FinalReviewIssue(
         severity=severity,
@@ -378,6 +390,10 @@ def _parse_patch(raw: dict) -> FinalReviewPatch | None:
         issue_id = None
     # Reject patches targeting synthetic group cards.
     if entry_id.startswith("group:"):
+        return None
+    if len(entry_id.strip()) > 256:
+        return None
+    if isinstance(issue_id, str) and len(issue_id.strip()) > 256:
         return None
     return FinalReviewPatch(
         entry_id=entry_id.strip(),
@@ -491,20 +507,27 @@ def parse_final_review_response(
                 issues.append(issue)
 
     overall_status = _coerce_status(payload.get("overall_status"))
-    safe_to_publish = payload.get("safe_to_publish")
-    if not isinstance(safe_to_publish, bool):
-        safe_to_publish = overall_status == "pass"
+    raw_safe_publish = payload.get("safe_to_publish")
+    # Fail closed: only literal JSON boolean true is safe to publish.
+    safe_to_publish = raw_safe_publish is True
 
     patches: list[FinalReviewPatch] = []
     raw_patches = payload.get("patches", [])
+    if raw_patches is None:
+        raw_patches = []
     if isinstance(raw_patches, list):
         for item in raw_patches:
             patch = _parse_patch(item)
             if patch is not None:
                 patches.append(patch)
 
-    echoed = payload.get("digest_fingerprint") or payload.get("echoed_digest_fingerprint")
+    # Model schema uses digest_fingerprint as the echo field.
+    echoed = payload.get("echoed_digest_fingerprint")
+    if echoed is None:
+        echoed = payload.get("digest_fingerprint")
     if echoed is not None and not isinstance(echoed, str):
+        echoed = None
+    if isinstance(echoed, str) and not echoed.strip():
         echoed = None
 
     return FinalReviewResult(
@@ -575,14 +598,17 @@ def _result_from_dict(data: dict) -> FinalReviewResult:
             entry_id=issue.get("entry_id"),
             description=str(issue.get("description", "")),
             suggested_fix=issue.get("suggested_fix"),
-            safe_auto_fix=bool(issue.get("safe_auto_fix", False)),
+            safe_auto_fix=issue.get("safe_auto_fix") is True,
             issue_id=issue.get("issue_id") if isinstance(issue.get("issue_id"), str) else None,
         )
         for issue in data.get("issues", [])
         if isinstance(issue, dict)
     )
     patches: list[FinalReviewPatch] = []
-    for item in data.get("patches", []) or []:
+    raw_patches = data.get("patches", [])
+    if raw_patches is None:
+        raw_patches = []
+    for item in raw_patches or []:
         if isinstance(item, dict):
             patch = _parse_patch(item)
             if patch is not None:
@@ -592,12 +618,17 @@ def _result_from_dict(data: dict) -> FinalReviewResult:
         generated_at = datetime.fromisoformat(generated_raw)
     else:
         generated_at = datetime.now().astimezone()
-    echoed = data.get("echoed_digest_fingerprint") or data.get("digest_fingerprint")
+    # Cached payloads store host fingerprint separately from model echo.
+    # Never synthesise echo from digest_fingerprint.
+    echoed = data.get("echoed_digest_fingerprint")
     if echoed is not None and not isinstance(echoed, str):
         echoed = None
+    if isinstance(echoed, str) and not echoed.strip():
+        echoed = None
+    raw_safe = data.get("safe_to_publish")
     return FinalReviewResult(
         overall_status=_coerce_status(data.get("overall_status")),
-        safe_to_publish=bool(data.get("safe_to_publish", False)),
+        safe_to_publish=raw_safe is True,
         issues=issues,
         patches=tuple(patches),
         review_source="cache",
@@ -644,7 +675,8 @@ def _result_from_cached_json(
         model=result.model or model,
         prompt_version=result.prompt_version,
         generated_at=result.generated_at,
-        digest_fingerprint=result.digest_fingerprint or digest_fingerprint,
+        # Host truth is always the current digest fingerprint.
+        digest_fingerprint=digest_fingerprint,
         review_input_hash=result.review_input_hash or review_input_hash,
         echoed_digest_fingerprint=result.echoed_digest_fingerprint,
         review_mode=result.review_mode,
@@ -767,8 +799,8 @@ def execute_final_review(
         result,
         prompt_version=prompt_version,
         review_mode=mode,
-        echoed_digest_fingerprint=result.echoed_digest_fingerprint
-        or result.digest_fingerprint,
+        # Preserve model/cache echo only; never synthesise from host fingerprint.
+        echoed_digest_fingerprint=result.echoed_digest_fingerprint,
     )
 
     if conn is not None and result.review_source == "ollama":

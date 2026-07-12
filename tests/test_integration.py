@@ -820,3 +820,158 @@ def test_digest_final_review_without_ollama(tmp_path: Path, monkeypatch) -> None
     rc = cli.cmd_digest(args)
     assert rc == 0
     assert list((tmp_path / "output").glob("*.final-review.json"))
+
+
+def test_group_summaries_without_ollama_rejected(tmp_path: Path, capsys) -> None:
+    from rollup import cli
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(tmp_path, "--group-summaries", "--no-ollama", "--folder", "tech")
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 1
+    assert "requires Ollama" in capsys.readouterr().err
+
+
+def test_group_summaries_with_no_grouping_rejected(tmp_path: Path, capsys) -> None:
+    from rollup import cli
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(
+            tmp_path,
+            "--ollama",
+            "--group-summaries",
+            "--no-grouping",
+            "--folder",
+            "tech",
+        )
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 1
+    assert "requires grouping" in capsys.readouterr().err
+
+
+def test_cron_apply_allow_with_fingerprint_skip_publishes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Cron apply allowed; missing echo → global skip; digest still published."""
+    import json
+
+    from rollup import cli
+
+    def mock_review(*a, **k):
+        # No digest_fingerprint echo → apply globally skips.
+        return json.dumps(
+            {
+                "overall_status": "pass",
+                "safe_to_publish": True,
+                "issues": [
+                    {
+                        "issue_id": "i1",
+                        "severity": "minor",
+                        "type": "style_drift",
+                        "location": "x",
+                        "entry_id": None,
+                        "description": "tweak",
+                        "suggested_fix": None,
+                        "safe_auto_fix": True,
+                    }
+                ],
+                "patches": [
+                    {
+                        "issue_id": "i1",
+                        "entry_id": "will-unknown",
+                        "field": "summary",
+                        "replacement": "x",
+                        "rationale": "x",
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(
+        "rollup.final_review.call_final_review_model", mock_review
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(
+            tmp_path,
+            "--cron",
+            "--final-review",
+            "--final-review-mode",
+            "apply",
+            "--final-review-allow-cron-apply",
+            "--no-ollama",
+            "--folder",
+            "tech",
+            "--quiet",
+        )
+    )
+    rc = cli.cmd_digest(args)
+    # Usable digest; apply skip alone is not partial.
+    assert rc in (0, 2)
+    assert list((tmp_path / "output").glob("*-newsletter-digest.md"))
+    assert (tmp_path / "output" / "latest.md").exists()
+    manifests = list((tmp_path / "state" / "manifests").glob("*.json"))
+    assert manifests
+    payload = json.loads(
+        next(p for p in manifests if p.name != "latest.json").read_text()
+    )
+    assert payload["schema_version"] == 2
+    fr = payload.get("final_review")
+    assert fr is not None
+    assert fr["apply_global_skip_reason"] == "fingerprint_missing"
+    assert fr["patches_applied"] == 0
+
+
+def test_group_summaries_degraded_partial_exit(tmp_path: Path, monkeypatch) -> None:
+    from rollup import cli
+    from rollup.models import GroupSummaryMetadata
+
+    def fake_group_summaries(dated, undated, config, conn, **kwargs):
+        meta = GroupSummaryMetadata(
+            groups_attempted=2,
+            groups_succeeded=0,
+            groups_failed=2,
+            groups_skipped_budget=0,
+            ollama_calls=2,
+            cache_hits=0,
+            errors=2,
+            degraded=True,
+            error_counts=(("ollama_http_error", 2),),
+            stream_failures=2,
+        )
+        return dated, undated, meta
+
+    monkeypatch.setattr(
+        "rollup.summarize.summarize_message", _mock_summarize_message
+    )
+    monkeypatch.setattr(
+        "rollup.group_summarize.apply_group_summaries", fake_group_summaries
+    )
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        _digest_args(
+            tmp_path,
+            "--ollama",
+            "--group-summaries",
+            "--folder",
+            "tech",
+            "--quiet",
+        )
+    )
+    rc = cli.cmd_digest(args)
+    assert rc == 2
+    import json
+
+    manifests = [
+        p
+        for p in (tmp_path / "state" / "manifests").glob("*.json")
+        if p.name != "latest.json"
+    ]
+    assert manifests
+    payload = json.loads(manifests[0].read_text())
+    assert payload["group_summaries"]["degraded"] is True
+    assert payload["group_summaries"]["ollama_calls"] == 2

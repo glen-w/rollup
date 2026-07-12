@@ -148,7 +148,86 @@ def test_manifest_builder_writes_failure_and_skips_latest(tmp_path: Path) -> Non
     assert not (tmp_path / "state" / "manifests" / "latest.json").exists()
 
 
-def test_config_fingerprint_stable(tmp_path: Path) -> None:
+def test_validate_manifest_v1_still_readable() -> None:
+    data = _valid_payload()
+    assert data["schema_version"] == 1
+    validate_manifest(data)
+
+
+def test_manifest_builder_emits_v2_telemetry(tmp_path: Path) -> None:
+    config = _minimal_config(tmp_path)
+    config = Config(**{**config.__dict__, "final_review_enabled": True, "final_review_mode": "apply"})
+    (tmp_path / "root").mkdir()
+    (tmp_path / "mail").mkdir()
+    clock = FixedClock(datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc))
+    ctx = RunContext.create(mode="manual", clock=clock)
+    builder = ManifestBuilder(
+        ctx,
+        config=config,
+        run_options=RunOptions(mode="manual", write_manifest=True),
+        grouping=GroupingConfig(enabled=False),
+        manifest_config=ManifestConfig(
+            manifest_dir=tmp_path / "state" / "manifests",
+            schema_version=MANIFEST_SCHEMA_VERSION,
+        ),
+        window_start=datetime(2026, 7, 3, tzinfo=timezone.utc),
+        window_end=datetime(2026, 7, 10, tzinfo=timezone.utc),
+    )
+    agg = AggregatedResults(
+        apply_global_skip_reason="fingerprint_missing",
+        apply_patches_attempted=2,
+        apply_patches_applied=0,
+        apply_reject_counts={"missing_issue_id": 1},
+        contains_auto_edited_prose=False,
+        apply_policy_unattended=True,
+        apply_policy_max_patches=5,
+        apply_policy_max_changed_chars=800,
+    )
+    builder.finalize(status="partial", aggregated=agg)
+    path = builder.write_if_state_writable(update_latest=False)
+    assert path is not None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == MANIFEST_SCHEMA_VERSION
+    assert payload["final_review"]["apply_global_skip_reason"] == "fingerprint_missing"
+    assert payload["final_review"]["patches_applied"] == 0
+    assert payload["final_review"]["patch_reject_counts"]["missing_issue_id"] == 1
+
+
+def test_manifest_builder_group_summaries_block(tmp_path: Path) -> None:
+    config = _minimal_config(tmp_path)
+    config = Config(**{**config.__dict__, "group_summaries_enabled": True, "no_ollama": False})
+    (tmp_path / "root").mkdir()
+    (tmp_path / "mail").mkdir()
+    clock = FixedClock(datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc))
+    ctx = RunContext.create(mode="cron", clock=clock)
+    builder = ManifestBuilder(
+        ctx,
+        config=config,
+        run_options=RunOptions(mode="cron", cron=True, write_manifest=True),
+        grouping=GroupingConfig(enabled=True),
+        manifest_config=ManifestConfig(
+            manifest_dir=tmp_path / "state" / "manifests",
+            schema_version=2,
+        ),
+        window_start=datetime(2026, 7, 3, tzinfo=timezone.utc),
+        window_end=datetime(2026, 7, 10, tzinfo=timezone.utc),
+    )
+    agg = AggregatedResults(
+        group_summaries_degraded=True,
+        group_summary_ollama_calls=3,
+        group_summary_cache_hits=1,
+        group_summary_stream_failures=2,
+        group_summary_cache_write_errors=1,
+        group_summary_error_counts={"cache_write_error": 1},
+        usable_digest=True,
+    )
+    builder.finalize(status="partial", aggregated=agg)
+    path = builder.write_if_state_writable(update_latest=False)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["group_summaries"]["degraded"] is True
+    assert payload["group_summaries"]["ollama_calls"] == 3
+    assert payload["group_summaries"]["cache_write_errors"] == 1
+
     config = _minimal_config(tmp_path)
     opts = RunOptions()
     grouping = GroupingConfig()

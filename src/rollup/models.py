@@ -233,6 +233,8 @@ class PatchApplicationResult:
     preservation_failed: int
     global_skip: int
     reasons: tuple[str, ...]
+    global_skip_reason: str | None = None
+    reject_counts: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -243,8 +245,11 @@ class GroupSummaryMetadata:
     groups_skipped_budget: int
     ollama_calls: int
     cache_hits: int
-    fallback_count: int
     errors: int
+    degraded: bool = False
+    error_counts: tuple[tuple[str, int], ...] = ()
+    cache_write_errors: int = 0
+    stream_failures: int = 0
 
 
 @dataclass(frozen=True)

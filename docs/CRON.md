@@ -37,8 +37,14 @@ Stale locks (dead PID or older than 6 hours) are recovered automatically.
 | Code | Meaning |
 |------|---------|
 | 0 | Success (or dry-run success) |
-| 1 | Hard failure (safety, lock, missing root, write failure, no usable digest) |
+| 1 | Hard failure (safety, lock, missing root, invalid config, write failure, no usable digest) |
 | 2 | Partial success — usable digest written, but material issues occurred |
+
+**Partial (exit 2) includes:** high parse/summary error rates, final-review overall fail, publication/`latest.*` failure, and **degraded group summaries** (stream/cache operational errors or all attempted group blurbs failed). A global apply skip (e.g. missing fingerprint echo) alone does **not** force partial when the digest is otherwise successful—check the manifest `final_review` block.
+
+**Invalid Phase-3 flags** (e.g. `--group-summaries` without `--ollama`, non-`primary` variant policy, cron apply without `--final-review-allow-cron-apply`) fail before the run with exit **1**.
+
+Unattended apply uses conservative whole-set caps (`final_review_max_patches_unattended` / `final_review_max_changed_chars_unattended`): exceeding either skips **all** patches.
 
 ## launchd (preferred on macOS)
 

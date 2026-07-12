@@ -364,7 +364,7 @@ Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Ea
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 
-Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries use `group_summary_by_key` / `group_summary_generations`. New databases record **schema version 6** during non-dry-run initialization.
+Existing `rollup.db` files remain compatible: the legacy `summaries` table remains readable, and richer summary generations are stored in `summary_generations`. Final review results are cached in `final_review_generations`. Group summaries are cached in `group_summary_by_key` (schema v6 also creates an unused forward-compatible `group_summary_generations` table). New databases record **schema version 6** during non-dry-run initialization.
 
 Newer summary generations are stored with richer cache identity so cached outputs are isolated by provider, profile, model, prompt style, prompt version, temperature, context, generation options (including `num_predict`), and the profile's `think` setting. Legacy cache rows remain readable when applicable.
 

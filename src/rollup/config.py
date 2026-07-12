@@ -70,9 +70,8 @@ class Config:
     final_review_max_patches_unattended: int = 5
     final_review_max_changed_chars_unattended: int = 800
     group_summaries_enabled: bool = False
-    group_summary_profile: str | None = None
     max_group_summary_calls: int = 8
-    group_summary_variant_policy: str = "primary"  # primary|each|shared-identical
+    group_summary_variant_policy: str = "primary"  # only "primary" accepted
     min_usable_member_summaries: int = 2
 
     @property

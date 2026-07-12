@@ -1,24 +1,25 @@
 # Design note: group-level LLM summaries
 
-**Status:** shipped in 0.4.0 (`--group-summaries`).
+**Status:** shipped in 0.4.0; hardened in 0.4.1.
 
-Phase 2 shipped deterministic grouping and grouped Markdown/HTML rendering using
-existing per-entry preview / Ollama summaries. Phase 3 adds opt-in group-level
-synthesis via `group_summarize.py` with schema v6 cache tables.
+## Behaviour (enforced)
 
+- Opt-in via `--group-summaries` (requires `--ollama` and grouping enabled).
+- Eligible groups: `notification_stream` and `daily_editions` only, subject to
+  min size and min usable member summaries.
+- Group blurbs are an **additional** layer; member entry summaries are never replaced.
+- Runtime cache is the flat table `group_summary_by_key` (schema v6).
+- Calls use shared `consume_ollama_stream` with group-specific output/timeout caps.
+- `max_group_summary_calls` bounds **network attempts** (including retries); cache
+  hits do not consume the budget.
+- Cache write failures still render the summary and mark the run degraded.
+- Unsupported `group_summary_variant_policy` values other than `primary` are rejected
+  at validation time.
 
-## Proposed approach (not implemented)
+## Non-goals (unchanged)
 
-1. Assess extending `summary_generations` with a `scope` column (`entry` | `group`)
-   before adding a separate `group_summaries` table.
-2. Add `prompts/group_summary.txt` constrained to provided entry excerpts.
-3. Cache by group identity + member content hashes + profile.
-4. Treat group summary as an **additional** layer — never replace entry summaries
-   unless explicitly configured.
-5. Share Ollama stream guardrails; document call-budget policy separately.
-
-## Acceptance deferred until
-
-- Deterministic grouping is stable in weekly personal use
-- Cache schema extension is designed and migration-tested
-- Prompt quality is validated on notification_stream fixtures
+- Embedding / LLM clustering for groups
+- Undated grouping expansion / undated group blurbs
+- Writing the unused rich `group_summary_generations` table (created additively for
+  forward compatibility; not used at runtime)
+- `each` / `shared-identical` variant policies

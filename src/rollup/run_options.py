@@ -26,7 +26,7 @@ class ManifestConfig:
     """Where and how run manifests are stored."""
 
     manifest_dir: Path
-    schema_version: int = 1
+    schema_version: int = 2
 
 
 @dataclass(frozen=True)

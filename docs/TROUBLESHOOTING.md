@@ -55,8 +55,9 @@ parse errors.
 
 ### Manifests
 
-Each non-dry-run digest writes `state/manifests/<timestamp>-<run_id>.json`.
-Failure manifests are written whenever `state_dir` is writable. Inspect:
+Each non-dry-run digest writes `state/manifests/<timestamp>-<run_id>.json`
+(schema version **2**). Readers still accept schema **1**. Failure manifests are
+written whenever `state_dir` is writable. Inspect:
 
 ```bash
 cat state/manifests/latest.json
@@ -65,6 +66,23 @@ rollup cron status
 
 Manifests are local operational records (paths and folder names may be sensitive
 on shared machines). They never store message bodies, subjects, or Message-IDs.
+
+Schema v2 may include `final_review` (apply skip reason, reject counts by code,
+auto-edited prose flag) and `group_summaries` (ollama_calls, cache hits, stream /
+cache errors, degraded).
+
+### Apply mode skipped every patch
+
+Check the manifest `final_review.apply_global_skip_reason` and logs. Common codes:
+`fingerprint_missing`, `fingerprint_mismatch`, `unsafe_to_publish`,
+`unattended_patch_cap`, `unattended_char_cap`. Cron apply also requires
+`--final-review-allow-cron-apply` and conservative policy.
+
+### Group summaries degraded / exit 2
+
+Partial exit with a usable digest usually means stream failures, cache write
+errors, or all attempted group blurbs failed. Member entry summaries still render;
+deterministic group headers remain when a blurb is omitted.
 
 ### Grouping looks wrong
 

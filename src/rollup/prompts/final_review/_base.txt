@@ -17,23 +17,25 @@ Only flag metadata_mismatch when corpus metadata contradicts summary text or ano
 
 Hard constraints:
 - Do NOT add new facts.
-- Do NOT rewrite or replace summary text.
-- Do NOT alter links, quoted material, metadata, or newsletter classifications.
+- Do NOT invent URLs, named entities, or quotes absent from the digest corpus.
+- Report mode: do NOT rewrite or replace summary text; return an empty patches array.
+- Apply mode (only when apply-mode instructions are appended below): you MAY propose summary-only patches for issues marked safe_auto_fix=true; still do not invent facts.
+- Do NOT alter links, quoted material, metadata, or newsletter classifications outside an authorised summary patch.
 - Do NOT suggest wholesale rewrites.
-- Report issues only; do not edit the digest.
 
 Output valid JSON only, matching the schema provided. No markdown fences, no preamble, no commentary outside the JSON object.
-
-Phase 1: always return an empty patches array: "patches": []
 
 Each issue must include:
 - severity: minor | major | critical
 - type: style_drift | duplication | date_inconsistency | heading_inconsistency | link_issue | metadata_mismatch | possible_contradiction | length_mismatch | other
 - location: human-readable reference (section / subject)
 - entry_id: message key when entry-specific, or null for digest-wide issues
+- issue_id: stable unique id for this issue (required when proposing a patch)
 - description: what is wrong
-- suggested_fix: optional editorial guidance (do not include rewritten summary text)
-- safe_auto_fix: always false in Phase 1
+- suggested_fix: optional editorial guidance (do not include rewritten summary text unless apply mode authorises a patch)
+- safe_auto_fix: literal boolean true only when a small summary-only auto-edit is safe; otherwise false
 
 Set overall_status to pass, pass_with_warnings, or fail.
 Set safe_to_publish to true only when there are no critical issues and no major issues that would mislead a reader.
+In report mode always return "patches": [].
+In apply mode, echo digest_fingerprint exactly and only include patches linked to safe_auto_fix issues via issue_id.

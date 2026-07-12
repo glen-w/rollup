@@ -173,7 +173,18 @@ class AggregatedResults:
     publication_failed: bool = False
     group_summaries_degraded: bool = False
     apply_patches_applied: int = 0
+    apply_patches_attempted: int = 0
+    apply_global_skip_reason: str | None = None
+    apply_reject_counts: dict[str, int] = field(default_factory=dict)
     contains_auto_edited_prose: bool = False
+    group_summary_ollama_calls: int = 0
+    group_summary_cache_hits: int = 0
+    group_summary_stream_failures: int = 0
+    group_summary_cache_write_errors: int = 0
+    group_summary_error_counts: dict[str, int] = field(default_factory=dict)
+    apply_policy_unattended: bool | None = None
+    apply_policy_max_patches: int | None = None
+    apply_policy_max_changed_chars: int | None = None
 
 
 @dataclass(frozen=True)
@@ -512,6 +523,13 @@ def run_digest(
         generated_at, config.lookback_days
     )
 
+    from rollup.phase3_validate import validate_phase3_runtime_config
+
+    _phase3 = validate_phase3_runtime_config(
+        config, run_options=run_options, grouping=grouping
+    )
+    resolved_apply_policy = _phase3.apply_policy
+
     lock = None
     conn = None
     report: DigestReport | None = None
@@ -725,8 +743,24 @@ def run_digest(
                 undated=new_undated,
                 group_summary_metadata=gsm,
             )
-            if gsm.groups_attempted > 0 and gsm.groups_succeeded == 0:
+            aggregated.group_summary_ollama_calls = gsm.ollama_calls
+            aggregated.group_summary_cache_hits = gsm.cache_hits
+            aggregated.group_summary_stream_failures = gsm.stream_failures
+            aggregated.group_summary_cache_write_errors = gsm.cache_write_errors
+            aggregated.group_summary_error_counts = dict(gsm.error_counts)
+            if gsm.degraded or (
+                gsm.groups_attempted > 0 and gsm.groups_succeeded == 0
+            ):
                 aggregated.group_summaries_degraded = True
+                logger.warning(
+                    "Group summaries degraded: attempted=%d succeeded=%d "
+                    "errors=%d stream_failures=%d cache_write_errors=%d",
+                    gsm.groups_attempted,
+                    gsm.groups_succeeded,
+                    gsm.errors,
+                    gsm.stream_failures,
+                    gsm.cache_write_errors,
+                )
 
         if run_options.dry_run:
             aggregated.usable_digest = True
@@ -790,6 +824,7 @@ def run_digest(
                     variant_report, config, conn, generated_at, variant_name,
                     use_explicit_path=False,
                     aggregated=aggregated,
+                    apply_policy=resolved_apply_policy,
                 )
                 stem = digest_output_stem(
                     generated_at, variant_name, run_id_short=ctx.run_id_short
@@ -829,6 +864,7 @@ def run_digest(
                 None,
                 use_explicit_path=bool(config.final_review_report_path),
                 aggregated=aggregated,
+                apply_policy=resolved_apply_policy,
             )
             md = render_markdown(report, config.max_display_links)
             html_content = render_html(report, config.max_display_links)
@@ -989,6 +1025,7 @@ def _maybe_final_review(
     *,
     use_explicit_path: bool,
     aggregated: AggregatedResults,
+    apply_policy=None,
 ) -> DigestReport:
     if not config.final_review_enabled or config.dry_run:
         return report
@@ -1019,9 +1056,31 @@ def _maybe_final_review(
 
     if config.final_review_mode == "apply":
         from rollup.final_review_apply import apply_final_review_patches
+        from rollup.final_review_codes import resolve_apply_policy
 
-        report, apply_result = apply_final_review_patches(report, result, config)
+        policy = apply_policy
+        if policy is None:
+            policy = resolve_apply_policy(
+                cron=False,
+                apply_policy_name=config.final_review_apply_policy,
+                allow_cron_apply=config.final_review_allow_cron_apply,
+                max_patches_unattended=config.final_review_max_patches_unattended,
+                max_changed_chars_unattended=config.final_review_max_changed_chars_unattended,
+                max_changed_chars_ratio=config.final_review_max_changed_chars_ratio,
+                preserve_links=config.final_review_preserve_links,
+                preserve_quotes=config.final_review_preserve_quotes,
+            )
+
+        report, apply_result = apply_final_review_patches(
+            report, result, config, policy=policy
+        )
         aggregated.apply_patches_applied = apply_result.applied
+        aggregated.apply_patches_attempted = apply_result.attempted
+        aggregated.apply_global_skip_reason = apply_result.global_skip_reason
+        aggregated.apply_reject_counts = dict(apply_result.reject_counts)
+        aggregated.apply_policy_unattended = policy.unattended
+        aggregated.apply_policy_max_patches = policy.max_patches_unattended
+        aggregated.apply_policy_max_changed_chars = policy.max_changed_chars_unattended
         if apply_result.applied > 0:
             aggregated.contains_auto_edited_prose = True
             logger.info(
@@ -1029,10 +1088,16 @@ def _maybe_final_review(
                 apply_result.applied,
                 apply_result.rejected,
             )
-        elif apply_result.global_skip:
+        elif apply_result.global_skip_reason:
             logger.info(
                 "Final review apply skipped: %s",
-                "; ".join(apply_result.reasons[:3]) or "global skip",
+                apply_result.global_skip_reason,
+            )
+        elif apply_result.rejected:
+            logger.info(
+                "Final review apply: applied=0 rejected=%d codes=%s",
+                apply_result.rejected,
+                dict(apply_result.reject_counts),
             )
 
     return report

@@ -2,6 +2,31 @@
 
 All notable changes to Rollup are documented in this file.
 
+## 0.4.1 — 2026-07-12
+
+### Changed
+
+- Minimum `requests` dependency raised to `>=2.33.0` (CVE fix floor)
+
+### Fixed / Hardened
+
+- Final-review **apply** no longer synthesises missing fingerprint echoes; missing or mismatched echoes globally skip all patches
+- Apply requires `issue_id`, unique issue ids, and literal boolean `safe_auto_fix: true`; unattended/conservative caps reject the **whole** patch set
+- Central `validate_phase3_runtime_config` rejects invalid flag combinations (group-summaries without Ollama/grouping; non-`primary` variant policy; removed `group_summary_profile`)
+- Group summaries use shared Ollama stream guards; call budget counts network attempts including retries; cache write failures still render blurbs and mark degraded
+- Manifest schema **v2** adds `final_review` and `group_summaries` telemetry blocks (v1 manifests remain readable)
+- Degraded group summaries / cache errors → run status `partial` (exit 2) when the digest remains usable
+
+### Removed
+
+- `group_summary_profile` config knob (presence fails validation)
+- Dead `fallback_count` on group-summary metadata
+
+### Compatibility
+
+- Default digests without apply / group-summaries remain report-mode compatible
+- Writers emit manifest schema 2; readers accept schema 1 and 2
+
 ## 0.4.0 — 2026-07-12
 
 ### Added
@@ -13,7 +38,7 @@ All notable changes to Rollup are documented in this file.
 
 ### Changed
 
-- Schema version 5 → 6 (additive `group_summary_generations` / `group_summary_by_key`; entry caches preserved)
+- Schema version 5 → 6 (additive `group_summary_generations` / `group_summary_by_key`; entry caches preserved). Runtime group-summary cache uses `group_summary_by_key` only.
 - Final-review prompts/schema support `issue_id` patches; report mode remains default
 
 ### Compatibility

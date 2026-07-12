@@ -242,7 +242,7 @@ python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --final
 python -m rollup digest --root ./fixtures/Newsletters.sbd --final-review --no-final-review-cache
 ```
 
-Final review does not require `--ollama` (it uses Ollama independently when enabled). Apply mode (`--final-review-mode apply`) applies validated summary-only patches; under `--cron` it also requires `--final-review-allow-cron-apply`. When enabled, a short QA summary also appears in the digest’s collapsed “Digest generation details” section at the end.
+Final review does not require `--ollama` on the digest summarisation path (it uses Ollama independently when enabled). Apply mode (`--final-review-mode apply`) applies validated summary-only patches linked to `safe_auto_fix: true` issues; missing fingerprint echoes skip the whole set. Under `--cron`, apply also requires `--final-review-allow-cron-apply` and conservative whole-set caps. When enabled, a short QA summary also appears in the digest’s collapsed “Digest generation details” section at the end.
 
 ```bash
 # Apply mode (interactive / manual)

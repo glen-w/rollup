@@ -195,7 +195,6 @@ def _build_config(args: argparse.Namespace) -> Config:
             args, "final_review_max_changed_chars_unattended", 800
         ),
         group_summaries_enabled=getattr(args, "group_summaries", False),
-        group_summary_profile=getattr(args, "group_summary_profile", None),
         max_group_summary_calls=getattr(args, "max_group_summary_calls", 8),
         group_summary_variant_policy=getattr(
             args, "group_summary_variant_policy", "primary"
@@ -344,50 +343,20 @@ def _print_routing_report(report) -> None:
         )
 
 
-def _validate_final_review_config(config: Config, *, cron: bool = False) -> None:
-    from rollup.final_review_profiles import (
-        FinalReviewConfigError,
-        validate_final_review_config,
-        validate_phase3_final_review_config,
-    )
+def _validate_final_review_config(
+    config: Config,
+    *,
+    cron: bool = False,
+    grouping_enabled: bool = True,
+) -> None:
+    from rollup.phase3_validate import validate_phase3_runtime_config
+    from rollup.run_options import GroupingConfig, RunOptions
 
-    if not config.final_review_enabled:
-        if config.final_review_mode == "apply":
-            raise FinalReviewConfigError(
-                "--final-review-mode apply requires --final-review"
-            )
-        if config.final_review_allow_cron_apply:
-            raise FinalReviewConfigError(
-                "--final-review-allow-cron-apply requires --final-review "
-                "and --final-review-mode apply"
-            )
-        return
-    validate_final_review_config(
-        mode=config.final_review_mode,
-        provider=config.final_review_provider,
-        profile_name=config.final_review_profile,
+    validate_phase3_runtime_config(
+        config,
+        run_options=RunOptions(cron=cron, dry_run=config.dry_run),
+        grouping=GroupingConfig(enabled=grouping_enabled),
     )
-    validate_phase3_final_review_config(
-        max_changed_chars_ratio=config.final_review_max_changed_chars_ratio
-    )
-    if config.final_review_allow_cron_apply and config.final_review_mode != "apply":
-        raise FinalReviewConfigError(
-            "--final-review-allow-cron-apply requires --final-review-mode apply"
-        )
-    if cron and config.final_review_mode == "apply":
-        if not config.final_review_allow_cron_apply:
-            raise FinalReviewConfigError(
-                "Unattended apply requires --final-review-allow-cron-apply "
-                "(fail closed)"
-            )
-        if config.final_review_apply_policy != "conservative":
-            raise FinalReviewConfigError(
-                "Cron apply only supports --final-review-apply-policy conservative"
-            )
-    if config.group_summaries_enabled and config.no_ollama:
-        raise FinalReviewConfigError(
-            "--group-summaries requires --ollama"
-        )
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
@@ -471,7 +440,9 @@ def cmd_digest(args: argparse.Namespace) -> int:
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
     try:
-        _validate_final_review_config(config, cron=run_options.cron)
+        _validate_final_review_config(
+            config, cron=run_options.cron, grouping_enabled=grouping.enabled
+        )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -804,7 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
     dig.add_argument(
         "--final-review-provider",
         default=DEFAULT_FINAL_REVIEW_PROVIDER,
-        help="Final review provider (ollama only in Phase 1)",
+        help="Final review provider (ollama only)",
     )
     dig.add_argument(
         "--final-review-report",
