@@ -116,14 +116,24 @@ def source_detail(id_enc: str):
     quality = quality_rows[0] if quality_rows else None
 
     recent = g.db.execute(
-        """SELECT e.message_key, e.subject, e.sender, e.date_parsed, e.date_raw,
-                  e.run_id, e.summary, e.primary_link
-           FROM rollup_entries e
-           JOIN message_source_links l ON l.message_key = e.message_key
-           WHERE l.source_key_observed = ? OR l.source_key_observed IN (
-             SELECT alias_key FROM source_aliases WHERE canonical_source_key = ?
-           ) OR l.source_key_observed = ?
-           ORDER BY COALESCE(e.date_parsed, '') DESC, e.message_key
+        """WITH ranked AS (
+             SELECT e.message_key, e.subject, e.sender, e.date_parsed, e.date_raw,
+                    e.run_id, e.summary, e.primary_link,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY e.message_key
+                      ORDER BY COALESCE(e.date_parsed, '') DESC, e.run_id DESC
+                    ) AS rn
+             FROM rollup_entries e
+             JOIN message_source_links l ON l.message_key = e.message_key
+             WHERE l.source_key_observed = ? OR l.source_key_observed IN (
+               SELECT alias_key FROM source_aliases WHERE canonical_source_key = ?
+             ) OR l.source_key_observed = ?
+           )
+           SELECT message_key, subject, sender, date_parsed, date_raw,
+                  run_id, summary, primary_link
+           FROM ranked
+           WHERE rn = 1
+           ORDER BY COALESCE(date_parsed, '') DESC, message_key
            LIMIT ?""",
         (canonical, canonical, source_key, MAX_RECENT_SOURCE_EMAILS),
     ).fetchall()

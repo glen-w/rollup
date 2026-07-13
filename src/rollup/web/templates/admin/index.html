@@ -10,6 +10,21 @@
   {% endif %}
 
   <details class="panel" open>
+    <summary>Configuration</summary>
+    <div class="card-body">
+      {% for section_title, items in settings %}
+      <h2 class="config-group">{{ section_title }}</h2>
+      <ul class="stats">
+        {% for label, value in items %}
+        <li>{{ label }}: <code>{{ value }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+      <p class="note">Configured at startup via <code>rollup web</code> flags (<code>--state-dir</code>, <code>--output-dir</code>, <code>--mail-root</code>, <code>--log-dir</code>, <code>--host</code>, <code>--port</code>, <code>--debug</code>).</p>
+    </div>
+  </details>
+
+  <details class="panel">
     <summary>Overview</summary>
     <div class="card-body">
       <div class="stats-panel">

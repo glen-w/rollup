@@ -51,6 +51,12 @@ def cmd_web(args: argparse.Namespace) -> int:
         output_dir=output_dir,
         mail_root=mail_root,
     )
+    app.config.update(
+        LOG_DIR=log_dir,
+        WEB_BIND_HOST=host,
+        WEB_BIND_PORT=args.port,
+        WEB_DEBUG=bool(args.debug),
+    )
     url = f"http://{host}:{args.port}/"
     print(f"Rollup web listening on {url} (loopback only)", file=sys.stderr)
     if args.open:

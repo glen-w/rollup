@@ -281,6 +281,81 @@ def test_policy_partial_and_conflict(env):
     conn.close()
 
 
+def test_source_recent_emails_dedupes_across_runs(env):
+    app, _run_id, db = env
+    run_id_2 = "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
+    later = datetime(2024, 6, 2, tzinfo=timezone.utc)
+    iso = format_utc(later)
+    payload = RunIndexPayload(
+        run_id=run_id_2,
+        started_at=iso,
+        completed_at=iso,
+        status="success",
+        mode="manual",
+        rollup_version="0.5.0",
+        manifest_schema_version=2,
+        report_schema_version=1,
+        stats_completeness="full",
+        window_start=iso,
+        window_end=iso,
+        lookback_days=7,
+        digest_fingerprint="def",
+        messages_included=1,
+        messages_skipped_outside_window=0,
+        messages_skipped_seen_undated=0,
+        messages_deduped=0,
+        messages_skipped_disabled_source=0,
+        groups_created=0,
+        sources_included=1,
+        summaries_ollama=0,
+        summaries_cache=0,
+        summaries_fallback=0,
+        summaries_errors=0,
+        summaries_final_review_applied=0,
+        group_summaries_succeeded=0,
+        warning_count=0,
+        degraded=False,
+        manifest_relpath="manifests/m.json",
+        markdown_relpath="x.md",
+        html_relpath="x.html",
+        index_source="pipeline",
+        entries=[
+            IndexEntry(
+                message_key="mid:msg@x",
+                source_key_observed="from:a@example.com",
+                group_id=None,
+                group_type=None,
+                group_display_name=None,
+                section_key="tech",
+                section_position=0,
+                group_position=None,
+                entry_position=0,
+                display_position=0,
+                folder_name="tech",
+                subject="Latest rollup subject",
+                sender="A",
+                date_parsed=iso,
+                date_raw="",
+                newsletter_type="essay",
+                summary="Sum",
+                summary_source="none",
+                primary_link="https://example.com/",
+                links_json='{"v":1,"items":[]}',
+            )
+        ],
+        expected_entry_count=1,
+    )
+    index_rollup_run(db, payload)
+
+    client = app.test_client()
+    enc = encode_opaque("from:a@example.com")
+    page = client.get(f"/sources/{enc}")
+    assert page.status_code == 200
+    assert page.data.count(b"Latest rollup subject") == 1
+    assert b"Hello" not in page.data
+    assert page.data.count(b"Recent emails (1)") == 1
+
+
 def test_message_next_rejects_protocol_relative(env):
     app, run_id, _db = env
     client = app.test_client()

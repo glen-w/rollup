@@ -37,7 +37,7 @@ body {
 
 .brand img {
   display: block;
-  height: 7.5rem;
+  height: 9.375rem;
   width: auto;
   border-radius: 6px;
 }
@@ -218,6 +218,16 @@ ul.stats {
 .stats-panel li,
 ul.stats li {
   margin: 0;
+}
+
+.config-group {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.35rem;
+  color: var(--muted);
+}
+
+.config-group:first-child {
+  margin-top: 0;
 }
 
 .summary {
