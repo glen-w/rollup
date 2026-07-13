@@ -212,3 +212,44 @@ def test_body_partial_escapes_raw_html(tmp_path: Path):
     assert "<b>" not in data
     assert "&lt;script&gt;" in data
     assert "&lt;b&gt;ok&lt;/b&gt;" in data
+
+
+def test_body_partial_upgrades_legacy_layout_chrome(tmp_path: Path):
+    """Legacy v0/v1 rows with pipe-table chrome are cleaned at read time."""
+    state = tmp_path / "state"
+    state.mkdir()
+    output = tmp_path / "output"
+    output.mkdir()
+    from rollup.web.app import create_app
+
+    app = create_app(state_dir=state, output_dir=output, testing=True)
+    db = init_db(state / "rollup.db")
+    key = "mid:legacy-chrome@example.com"
+    dirty = (
+        "Jul 7| | | •| | Paid\n"
+        "---|---|---|---|---|---\n"
+        "* * *\n"
+        "| | [READ IN APP](https://example.com/app)\n"
+        "A thirsty tortoise.\n"
+    )
+    w = make_reader_body_write(key, compute_content_hash(dirty), dirty)
+    upsert_reader_bodies(db, [w], seen_at=format_utc(now_utc()))
+    # Simulate a pre-v2 row that never ran prepare_reader_text.
+    db.execute(
+        "UPDATE message_reader_bodies SET reader_text_version = 1 WHERE message_key = ?",
+        (key,),
+    )
+    db.commit()
+    db.close()
+    id_enc = encode_opaque(key)
+    client = app.test_client()
+    r = client.get(f"/messages/{id_enc}/body?partial=1")
+    assert r.status_code == 200
+    data = r.data.decode("utf-8")
+    assert "Jul 7" in data and "Paid" in data
+    assert "---|---" not in data
+    assert "| |" not in data
+    assert "* * *" not in data
+    assert 'href="https://example.com/app"' in data
+    assert ">READ IN APP</a>" in data
+    assert "thirsty tortoise" in data

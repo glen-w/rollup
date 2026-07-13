@@ -19,6 +19,39 @@ _BARE_URL = re.compile(r"https?://", re.IGNORECASE)
 _STOP_CHARS = set(' \t\r\n<>"\'')
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _TRAILING_PUNCT = ".,;:!?)]}"
+# html2text orphan: "Title ](url)" on a line with no opening "[".
+_ORPHAN_MD_LINK_LINE = re.compile(
+    r"^(?P<label>[^\n\[\]]*?)\]\((?P<href>https?://[^)\s]+)\)(?P<tail>\s*)$"
+)
+_TABLE_JUNK_LABEL = re.compile(r"^[\s\-|:=]*$")
+
+
+def repair_orphaned_markdown_links(text: str) -> str:
+    """Repair html2text leftovers like ``Title ](url)`` into ``[Title](url)``.
+
+    Only touches lines that contain a markdown link close but no ``[``, so valid
+    links and unrelated brackets are left alone.
+    """
+    if "](http" not in text.lower():
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        if "](http" not in line.lower() or "[" in line:
+            out.append(line)
+            continue
+        match = _ORPHAN_MD_LINK_LINE.match(line)
+        if match is None:
+            out.append(line)
+            continue
+        label = match.group("label").strip()
+        href = match.group("href")
+        tail = match.group("tail")
+        if not label or _TABLE_JUNK_LABEL.fullmatch(label):
+            out.append(f"{href}{tail}")
+            continue
+        out.append(f"[{label}]({href}){tail}")
+    return "\n".join(out)
 
 
 def _parse_iso(value: str | datetime | None) -> datetime | None:
@@ -196,6 +229,7 @@ def format_reader_body_html(text: str) -> str:
     """Tokenise plaintext into safe HTML with links."""
     if not text:
         return ""
+    text = repair_orphaned_markdown_links(text)
     parts: list[str] = []
     pos = 0
     while pos < len(text):

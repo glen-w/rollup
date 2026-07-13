@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 from rollup.discovery import iter_mbox_files
 from rollup.parse import iter_parsed_messages
 from rollup.reader_bodies import ReaderBodyError, make_reader_body_write
-from rollup.reader_body_store import upsert_reader_bodies
+from rollup.reader_body_store import upsert_reader_bodies_v2
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ def run_backfill(
             source_missing=len(missing) - matched,
         )
     if writes:
-        stats = upsert_reader_bodies(conn, writes)
+        stats = upsert_reader_bodies_v2(conn, writes)
         conn.commit()
         return BackfillResult(
             candidates=result.candidates,

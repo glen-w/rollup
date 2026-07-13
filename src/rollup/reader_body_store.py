@@ -25,6 +25,7 @@ MAINTENANCE_GENERATION_KEY = "maintenance_generation"
 class ExistingBodyRow:
     content_hash: str
     stored_body_hash: str
+    reader_text_version: int = 0
 
 
 def reader_body_keys_present(
@@ -83,12 +84,16 @@ def _fetch_existing(
         chunk = keys[i : i + SQL_IN_CHUNK_SIZE]
         placeholders = ",".join("?" * len(chunk))
         rows = conn.execute(
-            f"""SELECT message_key, content_hash, stored_body_hash
+            f"""SELECT message_key, content_hash, stored_body_hash, reader_text_version
                 FROM message_reader_bodies WHERE message_key IN ({placeholders})""",
             chunk,
         ).fetchall()
         for r in rows:
-            out[r[0]] = ExistingBodyRow(content_hash=r[1], stored_body_hash=r[2])
+            out[r[0]] = ExistingBodyRow(
+                content_hash=r[1],
+                stored_body_hash=r[2],
+                reader_text_version=int(r[3] if r[3] is not None else 0),
+            )
     return out
 
 
@@ -247,7 +252,25 @@ def upsert_reader_bodies_v2(
             to_touch.append(w.message_key)
             continue
         if ex.content_hash == w.content_hash and ex.stored_body_hash != stored:
-            conflicts += 1
+            # Same source body, different prepared text: allow upgrade when the
+            # reader-text normaliser version advances; otherwise treat as conflict.
+            if ex.reader_text_version < prepared.reader_text_version:
+                to_update.append(
+                    (
+                        w.content_hash,
+                        stored,
+                        body_text,
+                        1 if truncated else 0,
+                        ts,
+                        ts,
+                        prepared.reader_text_version,
+                        prepared.source_body_length,
+                        reader_hash,
+                        w.message_key,
+                    )
+                )
+            else:
+                conflicts += 1
             continue
         to_update.append(
             (

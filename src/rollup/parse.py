@@ -18,6 +18,7 @@ from bs4.element import NavigableString, Tag
 
 from rollup.links import clean_href
 from rollup.models import LinkItem, ParsedMessage
+from rollup.reader_bodies import normalize_plaintext_layout
 from rollup.source_identity import compute_source_key, normalize_list_id
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,41 @@ BOILERPLATE_PREFIXES = (
 )
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+
+# Block-ish tags that, when nested inside <a>, make html2text emit broken multi-line
+# markdown links (opening "[" far from the closing "](url)").
+_BLOCKISH_IN_ANCHOR = frozenset(
+    {
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "div",
+        "section",
+        "article",
+        "header",
+        "footer",
+        "ul",
+        "ol",
+        "li",
+        "blockquote",
+        "pre",
+        "hr",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "p",
+    }
+)
+_LABEL_HOST_TAGS = ("p", "span", "h1", "h2", "h3", "h4", "h5", "h6")
+_LABEL_MIN_LEN = 2
+_LABEL_MAX_LEN = 160
 
 
 def normalize_message_id(value: str) -> str:
@@ -118,16 +154,71 @@ def _get_payload_text(part, max_bytes: int = 5_000_000) -> str:
         return ""
 
 
+def _simplify_complex_anchors(soup: BeautifulSoup) -> None:
+    """Flatten block-level / nested anchors before html2text.
+
+    Email HTML often wraps whole cards (tables, nested links, images) in one
+    ``<a href>``. html2text then emits ``[`` at the start and ``](url)`` after
+    later title text — sometimes on a different line and without a matching
+    opener nearby — so reader markdown looks like ``Title ](url)``.
+    """
+    for a in list(reversed(soup.find_all("a", href=True))):
+        if not isinstance(a, Tag):
+            continue
+        href = str(a.get("href") or "").strip()
+        has_nested = a.find("a", href=True) is not None
+        has_block = a.find(_BLOCKISH_IN_ANCHOR) is not None
+        if not has_nested and not has_block:
+            continue
+        label_host: Tag | None = None
+        for cand in reversed(a.find_all(_LABEL_HOST_TAGS)):
+            if not isinstance(cand, Tag):
+                continue
+            if cand.find("a", href=True) is not None:
+                continue
+            text = " ".join(cand.get_text(" ", strip=True).split())
+            if _LABEL_MIN_LEN <= len(text) <= _LABEL_MAX_LEN:
+                label_host = cand
+                break
+        a.unwrap()
+        if label_host is None or not href.startswith(("http://", "https://")):
+            continue
+        if label_host.find("a", href=True) is not None:
+            continue
+        text = " ".join(label_host.get_text(" ", strip=True).split())
+        if not (_LABEL_MIN_LEN <= len(text) <= _LABEL_MAX_LEN):
+            continue
+        new_a = soup.new_tag("a", href=href)
+        new_a.string = text
+        label_host.clear()
+        label_host.append(new_a)
+
+
+def _pad_table_cells(soup: BeautifulSoup) -> None:
+    """Separate adjacent table cells so ``ignore_tables`` does not glue words."""
+    for cell in soup.find_all(["td", "th"]):
+        if isinstance(cell, Tag):
+            cell.append(NavigableString(" "))
+    for tr in soup.find_all("tr"):
+        if isinstance(tr, Tag):
+            tr.append(soup.new_tag("br"))
+
+
 def _html_to_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript", "iframe", "object", "embed"]):
         tag.decompose()
+    _simplify_complex_anchors(soup)
+    # Newsletter HTML is almost always layout tables; default html2text emits
+    # GFM pipe tables (``|`` / ``---``) that pollute reader plaintext.
+    _pad_table_cells(soup)
     cleaned = str(soup)
     converter = html2text.HTML2Text()
     converter.ignore_links = False
     converter.ignore_images = True
+    converter.ignore_tables = True
     converter.body_width = 0
-    return converter.handle(cleaned).strip()
+    return normalize_plaintext_layout(converter.handle(cleaned))
 
 
 def _extract_html_features(html: str) -> tuple[int, int, int]:
@@ -446,6 +537,8 @@ def parse_message(
     body_text = _choose_body(plain, html_text)
     # Final guard: never keep a document-level HTML dump as body_text.
     body_text = _ensure_plaintext_body(body_text)
+    # Drop residual html2text layout chrome (pipes, separators, HR-only lines).
+    body_text = normalize_plaintext_layout(body_text)
 
     warnings: list[str] = []
     if date_anomaly:

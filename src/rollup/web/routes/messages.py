@@ -10,6 +10,7 @@ from markupsafe import Markup
 
 from rollup.interaction import dismiss, mark_read, mark_unread, save, undismiss, unsave
 from rollup.ratings import RatingError, set_rating_with_reasons
+from rollup.reader_bodies import READER_TEXT_VERSION, prepare_reader_text
 from rollup.reader_body_store import get_reader_body
 from rollup.web.csrf import validate_csrf_token as csrf_ok
 from rollup.web.format import reader_body_fragment_html
@@ -103,7 +104,13 @@ def message_body(id_enc: str):
             message_key=key,
             show_dismissed=show_dismissed,
         )
-    fragment = reader_body_fragment_html(record.body_text, truncated=record.truncated)
+    body_text = record.body_text
+    truncated = record.truncated
+    if record.reader_text_version < READER_TEXT_VERSION:
+        prepared = prepare_reader_text(body_text)
+        body_text = prepared.text
+        truncated = truncated or prepared.truncated
+    fragment = reader_body_fragment_html(body_text, truncated=truncated)
     if partial:
         return _body_cache_headers(Response(Markup(fragment), status=200))
     return _body_cache_headers(

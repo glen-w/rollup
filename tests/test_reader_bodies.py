@@ -6,9 +6,11 @@ import pytest
 
 from rollup.parse import compute_content_hash
 from rollup.reader_bodies import (
+    READER_TEXT_VERSION,
     ReaderBodyError,
     compute_stored_body_hash,
     make_reader_body_write,
+    normalize_plaintext_layout,
     prepare_reader_text,
     validate_reader_body_write,
 )
@@ -74,3 +76,65 @@ def test_prepare_reader_text_preserves_substance():
     p = prepare_reader_text(text)
     assert "Important content" in p.text
     assert "https://example.com/path" in p.text
+
+
+def test_prepare_reader_text_version_is_current():
+    p = prepare_reader_text("hello")
+    assert p.reader_text_version == READER_TEXT_VERSION
+    assert READER_TEXT_VERSION >= 2
+
+
+def test_normalize_plaintext_layout_strips_substack_chrome():
+    raw = (
+        "Jul 7| | | •| | Paid  \n"
+        "---|---|---|---|---|---  \n"
+        "\n"
+        "* * *\n"
+        "\n"
+        "| | [READ IN APP](https://example.com/app)  \n"
+        "---|---|---  \n"
+        "|   \n"
+        "---|---  \n"
+        "[Subscribed](https://example.com/sub)\n"
+        "\n"
+        "Real article about a thirsty tortoise.\n"
+    )
+    clean = normalize_plaintext_layout(raw)
+    assert "|" not in clean
+    assert "---" not in clean
+    assert "* * *" not in clean
+    assert "Jul 7" in clean and "•" in clean and "Paid" in clean
+    assert "[READ IN APP](https://example.com/app)" in clean
+    assert "[Subscribed](https://example.com/sub)" in clean
+    assert "thirsty tortoise" in clean
+    assert clean == normalize_plaintext_layout(clean)
+
+
+@pytest.mark.parametrize(
+    "raw,expected_fragment",
+    [
+        ("Use the command: cat file | grep foo", "cat file | grep foo"),
+        ("Final score was 3|2 after overtime.", "3|2"),
+        ("She wrote a|b once.", "a|b"),
+    ],
+)
+def test_normalize_preserves_single_pipe_prose(raw: str, expected_fragment: str) -> None:
+    assert expected_fragment in normalize_plaintext_layout(raw)
+
+
+def test_normalize_flattens_leading_pipe_rows_only():
+    raw = "| Alpha | Beta |\n| --- | --- |\n| 1 | 2 |"
+    clean = normalize_plaintext_layout(raw)
+    assert clean == "Alpha Beta\n1 2"
+
+
+def test_normalize_collapses_blank_runs_and_multi_space():
+    raw = "Hello    world\n\n\n\nNext"
+    clean = normalize_plaintext_layout(raw)
+    assert clean == "Hello world\n\nNext"
+
+
+def test_prepare_reader_text_drops_empty_image_placeholders():
+    raw = "Before\n![]\n![]( )\n![]()\nAfter"
+    p = prepare_reader_text(raw)
+    assert p.text == "Before\nAfter"

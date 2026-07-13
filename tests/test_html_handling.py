@@ -24,7 +24,11 @@ from rollup.parse import (
 )
 from rollup.payload_limits import MAX_READER_BODY_LEN
 from rollup.render import _inline_summary_markdown, render_html
-from rollup.web.format import format_reader_body_html, reader_body_fragment_html
+from rollup.web.format import (
+    format_reader_body_html,
+    reader_body_fragment_html,
+    repair_orphaned_markdown_links,
+)
 
 
 def _assert_plaintext(text: str) -> None:
@@ -104,6 +108,70 @@ def test_html_to_text_nested_tables_and_outlook_conditionals() -> None:
     _assert_plaintext(out)
     assert "thirsty tortoise" in out.lower()
     assert "Heatwave" in out
+    assert "|" not in out
+    assert "---" not in out
+
+
+def test_html_to_text_collapses_empty_layout_tables() -> None:
+    html = (
+        "<html><body>"
+        "<p>Just $35/year to support the unique mission</p>"
+        "<table><tr><td></td><td></td></tr></table>"
+        "<h1>The Art of Noticing 30%-off Sale!</h1>"
+        "<table><tr><td></td><td></td>"
+        '<td><a href="https://example.com/rob">Rob Walker</a></td></tr></table>'
+        "<hr><table><tr><td>Jul 12</td></tr></table><hr>"
+        "<p>Do you believe in this newsletter's mission</p>"
+        "</body></html>"
+    )
+    out = _html_to_text(html)
+    assert "|" not in out
+    assert "---" not in out
+    assert "* * *" not in out
+    assert "Rob Walker" in out
+    assert "Jul 12" in out
+    assert "Do you believe" in out
+    assert out.count("\n\n\n") == 0
+
+
+def test_html_to_text_substack_header_chrome() -> None:
+    html = (
+        "<html><body>"
+        "<table><tr>"
+        "<td>Jul 7</td><td></td><td></td><td>•</td><td></td><td>Paid</td>"
+        "</tr></table>"
+        "<hr>"
+        "<table><tr><td></td><td></td>"
+        '<td><a href="https://example.com/app">READ IN APP</a></td></tr></table>'
+        '<p><a href="https://example.com/sub">Subscribed</a></p>'
+        "<p>Real article about a thirsty tortoise.</p>"
+        "</body></html>"
+    )
+    out = _html_to_text(html)
+    _assert_plaintext(out)
+    assert "|" not in out
+    assert "---" not in out
+    assert "* * *" not in out
+    assert "Jul 7" in out and "Paid" in out
+    assert "[READ IN APP](https://example.com/app)" in out
+    assert "[Subscribed](https://example.com/sub)" in out
+    assert "thirsty tortoise" in out.lower()
+
+
+def test_html_to_text_block_nested_anchor_keeps_title_link() -> None:
+    """Beehiiv-style card: outer <a> wraps table + nested <a> + title <p>."""
+    html = (
+        '<table><tr><td>'
+        '<a href="https://example.com/video">'
+        '<table><tr><td>'
+        '<a href="https://example.com/thumb"><img src="https://example.com/t.png" alt=""/></a>'
+        "</td></tr>"
+        '<tr><td><p>Why Is the World In So Much Debt</p></td></tr>'
+        "</table></a></td></tr></table>"
+    )
+    out = _html_to_text(html)
+    assert "Why Is the World In So Much Debt ](" not in out
+    assert "[Why Is the World In So Much Debt](https://example.com/video)" in out
 
 
 def test_choose_body_discards_longer_html_plain_dump() -> None:
@@ -159,6 +227,39 @@ def test_parse_html_only_message_strips_markup() -> None:
     assert parsed.body_html is not None
     assert parsed.body_html != parsed.body_text
     assert "<table" in parsed.body_html.lower()
+
+
+def test_parse_layout_table_chrome_cleans_body_preview_and_reader_html() -> None:
+    html = (
+        "<html><body>"
+        "<table><tr>"
+        "<td>Jul 7</td><td></td><td>•</td><td></td><td>Paid</td>"
+        "</tr></table>"
+        '<table><tr><td><a href="https://example.com/app">READ IN APP</a></td></tr></table>'
+        "<p>Devolution and a thirsty tortoise crossed the road.</p>"
+        "</body></html>"
+    )
+    msg = EmailMessage()
+    msg["Subject"] = "Chrome"
+    msg["From"] = "a@example.com"
+    msg["Message-ID"] = "<layout-chrome@example.com>"
+    msg.add_alternative(html, subtype="html")
+    parsed = parse_message(msg, "brainfood", "brainfood", 200_000, 8)
+    _assert_plaintext(parsed.body_text)
+    assert "|" not in parsed.body_text
+    assert "---" not in parsed.body_text
+    assert "thirsty tortoise" in parsed.body_text.lower()
+    assert "|" not in parsed.preview
+    assert "---" not in parsed.preview
+    reader = format_reader_body_html(parsed.body_text)
+    assert "| Jul" not in reader
+    assert "---|" not in reader
+    assert 'href="https://example.com/app"' in reader
+    assert ">READ IN APP</a>" in reader
+    entry = make_digest_entry(classify_message(parsed), no_ollama=True)
+    assert entry.summary is not None
+    assert "|" not in entry.summary
+    assert "---" not in entry.summary
 
 
 def test_parse_uppercase_crlf_html_plain_dump() -> None:
@@ -240,6 +341,30 @@ def test_preview_fallback_does_not_carry_raw_doctype() -> None:
 
 
 # --- web reader formatting --------------------------------------------------
+
+
+def test_repair_orphaned_markdown_links_restores_title() -> None:
+    raw = (
+        "---\n"
+        "Why Is the World In So Much Debt ](https://example.com/video)\n"
+        "Global wealth just hit $600 trillion."
+    )
+    fixed = repair_orphaned_markdown_links(raw)
+    assert "[Why Is the World In So Much Debt](https://example.com/video)" in fixed
+    assert "Debt ](" not in fixed
+
+
+def test_repair_orphaned_markdown_links_drops_table_junk_label() -> None:
+    raw = "---|---|---](https://example.com/x)"
+    assert repair_orphaned_markdown_links(raw) == "https://example.com/x"
+
+
+def test_format_reader_body_html_renders_orphaned_title_link() -> None:
+    text = "Why Is the World In So Much Debt ](https://example.com/video)"
+    html = format_reader_body_html(text)
+    assert 'href="https://example.com/video"' in html
+    assert ">Why Is the World In So Much Debt</a>" in html
+    assert "Debt ](" not in html
 
 
 def test_format_reader_body_html_escapes_tags() -> None:

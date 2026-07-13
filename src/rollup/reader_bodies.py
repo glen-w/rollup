@@ -11,14 +11,20 @@ from rollup.payload_limits import MAX_READER_BODY_LEN
 from rollup.web_ids import validate_message_key
 
 READER_BODY_INDEX_VERSION = 1
-READER_TEXT_VERSION = 1
+READER_TEXT_VERSION = 2
 
 # Exact html2text empty-image placeholders (fixed list; version bump if changed).
 _HTML2TEXT_EMPTY_IMAGE_PLACEHOLDERS = frozenset({"![]", "![]( )"})
 
 _DISALLOWED_CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _UNICODE_LINE_SEP = re.compile(r"[\u2028\u2029]")
-_MAX_BLANK_LINES = 2
+# html2text layout chrome: empty pipe rows, GFM separator rows, HR-only lines.
+_LAYOUT_HR = re.compile(r"^(\*{3,}|-{3,}|_ {3,}|\* \* \*|- - -)$")
+_LAYOUT_TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$")
+_LAYOUT_PIPES_ONLY = re.compile(r"^\|[\s|]*$")
+_LAYOUT_CHROME_CHARS = re.compile(r"^[\s|:\-]+$")
+_MULTI_SPACE = re.compile(r" {2,}")
+_MAX_BLANK_LINES = 1
 
 
 class ReaderBodyError(ValueError):
@@ -175,8 +181,48 @@ def validate_reader_body_write(write: ReaderBodyWrite) -> None:
         raise ReaderBodyError("reader body write invariant mismatch")
 
 
-def prepare_reader_text(body_text: str) -> PreparedReaderText:
-    """Deterministic reader-text normalisation (READER_TEXT_VERSION=1)."""
+def _is_layout_chrome_line(stripped: str) -> bool:
+    """True for empty markdown-table / HR lines from html2text layout tables."""
+    if not stripped:
+        return False
+    if stripped in _HTML2TEXT_EMPTY_IMAGE_PLACEHOLDERS or stripped == "![]()":
+        return True
+    if _LAYOUT_HR.fullmatch(stripped):
+        return True
+    if _LAYOUT_TABLE_SEP.fullmatch(stripped):
+        return True
+    if _LAYOUT_PIPES_ONLY.fullmatch(stripped):
+        return True
+    if "|" in stripped and _LAYOUT_CHROME_CHARS.fullmatch(stripped):
+        return True
+    return False
+
+
+def _looks_like_markdown_table_row(stripped: str) -> bool:
+    """True for GFM/html2text table rows, not prose that happens to contain ``|``."""
+    if "|" not in stripped:
+        return False
+    if stripped.startswith("|") or stripped.endswith("|"):
+        return True
+    # html2text often omits the leading pipe: ``Jul 7| | | •| | Paid``.
+    return stripped.count("|") >= 2
+
+
+def _flatten_markdown_table_row(stripped: str) -> str | None:
+    """Turn a pipe-row into joined cell text; None means drop the line."""
+    if not _looks_like_markdown_table_row(stripped):
+        return stripped
+    if _is_layout_chrome_line(stripped):
+        return None
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    cells = [cell for cell in cells if cell]
+    if not cells:
+        return None
+    return _MULTI_SPACE.sub(" ", " ".join(cells))
+
+
+def normalize_plaintext_layout(body_text: str) -> str:
+    """Collapse html2text layout noise and excess blank lines (no length clip)."""
     text = body_text.replace("\r\n", "\n").replace("\r", "\n")
     text = _UNICODE_LINE_SEP.sub("\n", text)
     text = _DISALLOWED_CONTROLS.sub("", text)
@@ -184,9 +230,18 @@ def prepare_reader_text(body_text: str) -> PreparedReaderText:
     cleaned_lines: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if stripped in _HTML2TEXT_EMPTY_IMAGE_PLACEHOLDERS or stripped == "![]()":
+        if not stripped:
+            cleaned_lines.append("")
             continue
-        cleaned_lines.append(line)
+        if _is_layout_chrome_line(stripped):
+            continue
+        if _looks_like_markdown_table_row(stripped):
+            flattened = _flatten_markdown_table_row(stripped)
+            if flattened is None:
+                continue
+            cleaned_lines.append(flattened)
+            continue
+        cleaned_lines.append(_MULTI_SPACE.sub(" ", line))
     collapsed: list[str] = []
     blank_run = 0
     for line in cleaned_lines:
@@ -201,7 +256,12 @@ def prepare_reader_text(body_text: str) -> PreparedReaderText:
         collapsed.pop(0)
     while collapsed and not collapsed[-1].strip():
         collapsed.pop()
-    result = "\n".join(collapsed)
+    return "\n".join(collapsed)
+
+
+def prepare_reader_text(body_text: str) -> PreparedReaderText:
+    """Deterministic reader-text normalisation (READER_TEXT_VERSION=2)."""
+    result = normalize_plaintext_layout(body_text)
     source_len = len(result)
     clipped, truncated = clip_reader_text(result)
     return PreparedReaderText(
