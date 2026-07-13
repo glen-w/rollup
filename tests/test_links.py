@@ -13,6 +13,7 @@ from rollup.links import (
     label_from_context,
     label_link,
     normalize_link_for_compare,
+    pick_unsubscribe_href,
     prepare_links_for_render,
 )
 from rollup.models import LinkItem
@@ -208,6 +209,43 @@ def test_prepare_links_separates_other_and_hidden_links() -> None:
     assert len(bundle.main_links) == 1
     assert len(bundle.other_links) == 1
     assert bundle.hidden_links[0].category == "unsubscribe_preferences"
+
+
+def test_pick_unsubscribe_href_prefers_unsubscribe_anchor() -> None:
+    href = pick_unsubscribe_href(
+        [
+            LinkItem("https://example.com/article", "Read article", None, 0),
+            LinkItem(
+                "https://example.com/preferences", "Manage preferences", None, 1
+            ),
+            LinkItem("https://example.com/unsub", "Unsubscribe", None, 2),
+            LinkItem(
+                "https://example.com/browser", "View in browser", None, 3
+            ),
+        ]
+    )
+    assert href == "https://example.com/unsub"
+
+
+def test_pick_unsubscribe_href_skips_view_in_browser() -> None:
+    assert (
+        pick_unsubscribe_href(
+            [LinkItem("https://example.com/browser", "View in browser", None, 0)]
+        )
+        is None
+    )
+
+
+def test_pick_unsubscribe_href_falls_back_to_preferences() -> None:
+    href = pick_unsubscribe_href(
+        [
+            LinkItem("https://example.com/article", "Read article", None, 0),
+            LinkItem(
+                "https://example.com/preferences", "Manage preferences", None, 1
+            ),
+        ]
+    )
+    assert href == "https://example.com/preferences"
 
 
 def test_mailchimp_preference_link_is_hidden() -> None:

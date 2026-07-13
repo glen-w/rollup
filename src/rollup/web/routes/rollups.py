@@ -5,7 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, g, render_template, request, url_for
 
 from rollup.interaction import get_interaction
-from rollup.links_sanitize import parse_links_json
+from rollup.links_sanitize import parse_links_json, parse_unsubscribe_link
 from rollup.payload_limits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from rollup.ratings import get_rating, list_reason_codes
 from rollup.reader_body_store import reader_body_keys_present
@@ -126,6 +126,7 @@ def rollup_detail(run_id: str):
         e["interaction"] = inter
         e["rating"] = rating
         e["links"] = parse_links_json(e.get("links_json"))
+        e["unsubscribe_link"] = parse_unsubscribe_link(e.get("links_json"))
         e["id_enc"] = encode_opaque(e["message_key"])
         if e.get("source_key_observed"):
             e["source_enc"] = encode_opaque(e["source_key_observed"])

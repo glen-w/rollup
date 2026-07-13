@@ -114,6 +114,11 @@ PREFERENCE_ANCHOR_TERMS = (
     "view online",
     "view as web page",
 )
+VIEW_IN_BROWSER_TERMS = (
+    "view in browser",
+    "view online",
+    "view as web page",
+)
 
 
 def _normalize_anchor_phrase(text: str) -> str:
@@ -480,6 +485,51 @@ def classify_links(links: list[LinkItem]) -> list[ClassifiedLink]:
             )
         )
     return classified
+
+
+def _unsubscribe_pick_score(link: ClassifiedLink) -> tuple[int, int] | None:
+    """Lower score is better. None means the link is not suitable for Unsubscribe."""
+    text = (clean_anchor_text(link.text) or "").lower()
+    path = urlparse(link.href).path.lower()
+    if any(term in text for term in VIEW_IN_BROWSER_TERMS):
+        return None
+    if "unsubscribe" in text or "unsubscribe" in path:
+        return (0, link.source_index)
+    if any(
+        term in text
+        for term in (
+            "manage subscription",
+            "manage your subscription",
+            "manage preferences",
+            "manage your preferences",
+            "update your preferences",
+            "update preferences",
+            "email preferences",
+            "subscription preferences",
+            "preference center",
+        )
+    ) or "preferences" in path:
+        return (1, link.source_index)
+    host = urlparse(link.href).netloc.lower()
+    if is_email_admin_host(host):
+        return (2, link.source_index)
+    return (3, link.source_index)
+
+
+def pick_unsubscribe_href(links: list[LinkItem]) -> str | None:
+    """Best http(s) unsubscribe/preferences URL from message links, if any."""
+    best: ClassifiedLink | None = None
+    best_score: tuple[int, int] | None = None
+    for link in classify_links(links):
+        if link.category != "unsubscribe_preferences":
+            continue
+        score = _unsubscribe_pick_score(link)
+        if score is None:
+            continue
+        if best is None or best_score is None or score < best_score:
+            best = link
+            best_score = score
+    return best.href if best is not None else None
 
 
 def prepare_links_for_render(

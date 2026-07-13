@@ -120,7 +120,7 @@ def _get_payload_text(part, max_bytes: int = 5_000_000) -> str:
 
 def _html_to_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style"]):
+    for tag in soup(["script", "style", "noscript", "iframe", "object", "embed"]):
         tag.decompose()
     cleaned = str(soup)
     converter = html2text.HTML2Text()
@@ -253,24 +253,106 @@ def _collect_link_items(plain: str, html: str | None) -> list[LinkItem]:
     return urls
 
 
+_HTML_TAG_MARKERS = (
+    "<div",
+    "</div",
+    "<table",
+    "</table",
+    "<td",
+    "</td",
+    "<tr",
+    "<span",
+    "<p ",
+    "<p>",
+    "</p>",
+    "<br",
+    "<style",
+    "<meta",
+    "<img",
+    "<a ",
+    "<a>",
+    "</a>",
+    "<h1",
+    "<h2",
+    "<h3",
+    "<h4",
+    "<h5",
+    "<h6",
+    "<ul",
+    "<ol",
+    "<li",
+    "<font",
+    "<center",
+    "<tbody",
+    "<thead",
+    "<strong",
+    "<em>",
+    "<b>",
+    "<i>",
+    "<!--[if",
+)
+
+
+def _looks_like_html(text: str) -> bool:
+    """True when text is clearly an HTML document, not readable plaintext.
+
+    Some senders (notably HTML-only marketing mail) put a full HTML document in
+    the text/plain part. Prefer converted HTML over that dump.
+    """
+    # Strip BOM and leading whitespace so prologue checks stay reliable.
+    sample = text.lstrip("\ufeff \t\r\n")[:1200].lower()
+    if not sample:
+        return False
+    if sample.startswith(
+        ("<!doctype", "<html", "<head", "<body", "<!--[if")
+    ):
+        return True
+    open_angles = sample.count("<")
+    close_angles = sample.count(">")
+    if open_angles < 3 or close_angles < 3:
+        return False
+    tag_hits = sum(1 for marker in _HTML_TAG_MARKERS if marker in sample)
+    if tag_hits >= 2:
+        return True
+    # Dense markup without recognisable tag names (obfuscated / unusual tags).
+    if open_angles >= 8 and (open_angles / max(len(sample), 1)) > 0.04:
+        return True
+    return False
+
+
+def _ensure_plaintext_body(text: str) -> str:
+    """Convert residual HTML document dumps to plaintext."""
+    if text and _looks_like_html(text):
+        return _html_to_text(text)
+    return text
+
+
 def _choose_body(plain: str, html_text: str) -> str:
     plain = plain.strip()
     html_text = html_text.strip()
+    if plain and _looks_like_html(plain):
+        if not html_text:
+            # text/plain was an HTML dump with no text/html alternative.
+            return _html_to_text(plain)
+        # Bogus text/plain HTML dump — keep converted HTML only.
+        plain = ""
     if not plain and not html_text:
         return ""
     if not plain:
         return html_text
     if not html_text:
-        return plain
+        return _ensure_plaintext_body(plain)
     # Prefer longer substantive text when difference is significant
     if len(html_text) > len(plain) * 1.25:
-        return html_text
-    if len(plain) > len(html_text) * 1.25:
-        return plain
-    # Tie-break: more structure (headings/links proxy via length of lines)
-    plain_lines = sum(1 for line in plain.splitlines() if line.strip())
-    html_lines = sum(1 for line in html_text.splitlines() if line.strip())
-    return html_text if html_lines > plain_lines else plain
+        chosen = html_text
+    elif len(plain) > len(html_text) * 1.25:
+        chosen = plain
+    else:
+        # Tie-break: more structure (headings/links proxy via length of lines)
+        plain_lines = sum(1 for line in plain.splitlines() if line.strip())
+        html_lines = sum(1 for line in html_text.splitlines() if line.strip())
+        chosen = html_text if html_lines > plain_lines else plain
+    return _ensure_plaintext_body(chosen)
 
 
 def _make_preview(body_text: str) -> str:
@@ -355,8 +437,15 @@ def parse_message(
     )
 
     plain, html_raw = _walk_parts(msg)
+    # text/plain that is actually an HTML document: treat as HTML source when
+    # there is no real text/html part (or discard in favour of text/html).
+    if plain and _looks_like_html(plain) and not html_raw:
+        html_raw = plain
+        plain = ""
     html_text = _html_to_text(html_raw) if html_raw else ""
     body_text = _choose_body(plain, html_text)
+    # Final guard: never keep a document-level HTML dump as body_text.
+    body_text = _ensure_plaintext_body(body_text)
 
     warnings: list[str] = []
     if date_anomaly:

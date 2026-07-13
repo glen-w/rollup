@@ -35,10 +35,27 @@
       .then(function (html) {
         var probe = document.createElement("div");
         probe.innerHTML = html;
-        if (!probe.querySelector("[data-reader-body-fragment]")) {
+        // Full-page body responses include site chrome; never inject those into the expander.
+        if (probe.querySelector(".site-header, .reader-page, [data-reader-nav]")) {
+          throw new Error("full page response");
+        }
+        var fragment = probe.querySelector("[data-reader-body-fragment]");
+        if (!fragment) {
           throw new Error("invalid fragment");
         }
-        content.innerHTML = html;
+        content.replaceChildren();
+        var node = fragment.previousElementSibling;
+        var prefix = [];
+        while (node) {
+          if (node.classList && node.classList.contains("reader-notice")) {
+            prefix.unshift(node);
+          }
+          node = node.previousElementSibling;
+        }
+        prefix.forEach(function (n) {
+          content.appendChild(n);
+        });
+        content.appendChild(fragment);
         content.hidden = false;
         details.dataset.readerState = "loaded";
         if (fallback) fallback.hidden = true;

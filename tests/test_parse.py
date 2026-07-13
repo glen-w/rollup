@@ -68,6 +68,54 @@ def test_parse_html_message() -> None:
     assert parsed.body_text
 
 
+def test_parse_rejects_html_dump_in_text_plain() -> None:
+    """Marketing mail often puts a full HTML document in text/plain."""
+    from rollup.parse import _choose_body, _html_to_text, _looks_like_html
+
+    html_doc = (
+        "<!doctype html><html><body><h1>Heatwave</h1>"
+        "<p>A thirsty tortoise drank the pond dry.</p>"
+        "<table><tr><td>More padding content here.</td></tr></table>"
+        "</body></html>"
+    )
+    # Inflate the bogus plain part so length heuristics would prefer it.
+    plain_dump = ("\n" * 12) + html_doc + ("<!-- pad -->" * 200)
+    real_html = (
+        "<!DOCTYPE html><html><body><h1>Heatwave</h1>"
+        "<p>A thirsty tortoise drank the pond dry.</p></body></html>"
+    )
+    assert _looks_like_html(plain_dump)
+    converted = _html_to_text(real_html)
+    chosen = _choose_body(plain_dump, converted)
+    assert chosen == converted
+    assert not chosen.lstrip().lower().startswith("<!doctype")
+    assert "thirsty tortoise" in chosen.lower()
+
+    msg = EmailMessage()
+    msg["Subject"] = "Heatwave hacks"
+    msg["From"] = "news@example.com"
+    msg["Message-ID"] = "<html-plain-dump@example.com>"
+    msg.set_content(plain_dump)
+    msg.add_alternative(real_html, subtype="html")
+    parsed = parse_message(msg, "brainfood", "brainfood", 200_000, 8)
+    assert not parsed.body_text.lstrip().lower().startswith("<!doctype")
+    assert "thirsty tortoise" in parsed.body_text.lower()
+
+
+def test_parse_converts_html_only_text_plain() -> None:
+    html_doc = (
+        "<!doctype html><html><body><p>Only plain was HTML.</p></body></html>"
+    )
+    msg = EmailMessage()
+    msg["Subject"] = "HTML as plain"
+    msg["From"] = "news@example.com"
+    msg["Message-ID"] = "<html-as-plain@example.com>"
+    msg.set_content(html_doc)
+    parsed = parse_message(msg, "misc", "misc", 200_000, 8)
+    assert not parsed.body_text.lstrip().lower().startswith("<!doctype")
+    assert "Only plain was HTML" in parsed.body_text
+
+
 def test_parse_missing_date() -> None:
     folders = list(iter_mbox_files(FIXTURE_ROOT))
     misc = next(f for f in folders if f.folder_name == "misc")

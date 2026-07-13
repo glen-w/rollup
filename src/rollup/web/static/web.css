@@ -151,10 +151,7 @@ details.other-links > summary,
 details.hidden-links > summary {
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.95rem;
-}
-
-details.hidden-links > summary {
+  font-size: 0.9rem;
   color: var(--muted);
 }
 
@@ -268,11 +265,28 @@ ul.stats li {
   display: inline-flex;
   gap: 0.35rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-button, .stars label {
+button, .action-button, .stars label {
   font: inherit;
   cursor: pointer;
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f3f3f3;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.action-button:hover {
+  background: #e8e8e8;
+  text-decoration: none;
 }
 
 .stars {
@@ -353,6 +367,8 @@ table.data th {
 .reader-body summary {
   cursor: pointer;
   font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .reader-body-content,

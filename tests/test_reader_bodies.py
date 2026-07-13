@@ -10,6 +10,7 @@ from rollup.reader_bodies import (
     compute_stored_body_hash,
     make_reader_body_write,
     prepare_reader_text,
+    validate_reader_body_write,
 )
 from rollup.payload_limits import MAX_READER_BODY_LEN
 
@@ -19,6 +20,26 @@ def test_make_reader_body_write_clips():
     w = make_reader_body_write("mid:a@b.c", compute_content_hash(source), source)
     assert len(w.body_text) == MAX_READER_BODY_LEN
     assert w.truncated is True
+
+
+def test_validate_reader_body_write_accepts_truncated():
+    source = "x" * (MAX_READER_BODY_LEN + 10)
+    w = make_reader_body_write("mid:a@b.c", compute_content_hash(source), source)
+    validate_reader_body_write(w)
+
+
+def test_validate_reader_body_write_rejects_bad_hash():
+    source = "hello"
+    w = make_reader_body_write("mid:a@b.c", compute_content_hash(source), source)
+    bad = type(w)(
+        message_key=w.message_key,
+        content_hash=w.content_hash,
+        body_text=w.body_text,
+        truncated=w.truncated,
+        stored_body_hash="0" * 64,
+    )
+    with pytest.raises(ReaderBodyError, match="invariant mismatch"):
+        validate_reader_body_write(bad)
 
 
 def test_empty_body_allowed():

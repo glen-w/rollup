@@ -125,6 +125,89 @@ def test_archive_and_detail(app_env):
     assert b"Saturday 1 June, 2024" in d.data
 
 
+def test_unsubscribe_action_button(tmp_path: Path):
+    state = tmp_path / "state"
+    out = tmp_path / "out"
+    state.mkdir()
+    out.mkdir()
+    db = state / "rollup.db"
+    init_db(db).close()
+    run_id = str(uuid.uuid4())
+    now = format_utc(datetime(2024, 6, 1, tzinfo=timezone.utc))
+    (out / "x.md").write_text("# digest", encoding="utf-8")
+    (out / "x.html").write_text("<html></html>", encoding="utf-8")
+    payload = RunIndexPayload(
+        run_id=run_id,
+        started_at=now,
+        completed_at=now,
+        status="success",
+        mode="manual",
+        rollup_version="0.5.0",
+        manifest_schema_version=2,
+        report_schema_version=1,
+        stats_completeness="full",
+        window_start=now,
+        window_end=now,
+        lookback_days=7,
+        digest_fingerprint="abc",
+        messages_included=1,
+        messages_skipped_outside_window=0,
+        messages_skipped_seen_undated=0,
+        messages_deduped=0,
+        messages_skipped_disabled_source=0,
+        groups_created=0,
+        sources_included=1,
+        summaries_ollama=0,
+        summaries_cache=0,
+        summaries_fallback=0,
+        summaries_errors=0,
+        summaries_final_review_applied=0,
+        group_summaries_succeeded=0,
+        warning_count=0,
+        degraded=False,
+        manifest_relpath=None,
+        markdown_relpath="x.md",
+        html_relpath="x.html",
+        index_source="pipeline",
+        entries=[
+            IndexEntry(
+                message_key="mid:unsub@x",
+                source_key_observed=None,
+                group_id=None,
+                group_type=None,
+                group_display_name=None,
+                section_key="tech",
+                section_position=0,
+                group_position=None,
+                entry_position=0,
+                display_position=0,
+                folder_name="tech",
+                subject="News",
+                sender="A",
+                date_parsed=now,
+                date_raw="",
+                newsletter_type="essay",
+                summary="Summary",
+                summary_source="none",
+                primary_link="https://example.com/",
+                links_json=(
+                    '{"v":1,"items":[{"href":"https://example.com/","label":"Ex"}],'
+                    '"unsubscribe":"https://example.com/unsubscribe"}'
+                ),
+            )
+        ],
+        expected_entry_count=1,
+    )
+    index_rollup_run(db, payload)
+    app = create_app(state_dir=state, output_dir=out, testing=True)
+    client = app.test_client()
+    d = client.get(f"/rollups/{run_id}")
+    assert d.status_code == 200
+    assert b'class="action-button"' in d.data
+    assert b">Unsubscribe</a>" in d.data
+    assert b'href="https://example.com/unsubscribe"' in d.data
+
+
 def test_branding_assets(app_env):
     app, _run_id = app_env
     client = app.test_client()

@@ -4,6 +4,10 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- **Read newsletter** expander no longer embeds the full site chrome (logo/nav) or large blank gaps: `partial=1` is built as its own query URL instead of appending `?partial=1` onto a `body_url` that already has `?run=…`
+
 ## 0.5.1 — 2026-07-13
 
 ### Added

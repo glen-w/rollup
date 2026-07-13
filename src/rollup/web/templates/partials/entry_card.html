@@ -37,7 +37,9 @@
     {% endif %}
 
     {% if e.has_reader_body %}
-    <details class="reader-body" data-body-url="{{ e.body_url }}?partial=1" data-body-path="{{ url_for('messages.message_body', id_enc=e.id_enc) }}">
+    <details class="reader-body"
+      data-body-url="{{ url_for('messages.message_body', id_enc=e.id_enc, partial=1) }}"
+      data-body-path="{{ url_for('messages.message_body', id_enc=e.id_enc) }}">
       <summary>Read newsletter</summary>
       <p class="reader-fallback">
         <a href="{{ e.body_url }}">Open newsletter text</a>
@@ -86,6 +88,9 @@
             <button type="submit">Dismiss</button>
           {% endif %}
         </form>
+        {% if e.unsubscribe_link %}
+        <a class="action-button" href="{{ e.unsubscribe_link }}" {{ external_link_attrs() }}>Unsubscribe</a>
+        {% endif %}
       </div>
     </details>
 

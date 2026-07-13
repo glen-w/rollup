@@ -46,7 +46,11 @@ def sanitize_http_url(url: str | None, *, max_len: int = MAX_LINK_HREF_LEN) -> s
     return text
 
 
-def build_links_json(items: list[tuple[str, str | None]]) -> str:
+def build_links_json(
+    items: list[tuple[str, str | None]],
+    *,
+    unsubscribe: str | None = None,
+) -> str:
     """Build versioned links_json from (href, label) pairs; skips invalid hrefs."""
     out: list[dict[str, str]] = []
     for href, label in items[:MAX_LINK_ITEMS]:
@@ -55,7 +59,11 @@ def build_links_json(items: list[tuple[str, str | None]]) -> str:
             continue
         lab = (label or "").strip()[:MAX_LINK_LABEL_LEN]
         out.append({"href": safe, "label": lab})
-    return json.dumps({"v": LINKS_JSON_VERSION, "items": out}, separators=(",", ":"))
+    payload: dict[str, Any] = {"v": LINKS_JSON_VERSION, "items": out}
+    unsub = sanitize_http_url(unsubscribe)
+    if unsub is not None:
+        payload["unsubscribe"] = unsub
+    return json.dumps(payload, separators=(",", ":"))
 
 
 def parse_links_json(raw: str | None) -> list[dict[str, str]]:
@@ -81,6 +89,19 @@ def parse_links_json(raw: str | None) -> list[dict[str, str]]:
         label = str(item.get("label") or "")[:MAX_LINK_LABEL_LEN]
         result.append({"href": href, "label": label})
     return result
+
+
+def parse_unsubscribe_link(raw: str | None) -> str | None:
+    """Return the optional sanitized unsubscribe URL from links_json."""
+    if not raw:
+        return None
+    try:
+        data: Any = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("v") != LINKS_JSON_VERSION:
+        return None
+    return sanitize_http_url(data.get("unsubscribe"))
 
 
 def validate_links_json_for_index(raw: str) -> str:
@@ -109,4 +130,10 @@ def validate_links_json_for_index(raw: str) -> str:
         if len(label) > MAX_LINK_LABEL_LEN:
             raise LinkSanitizeError("link label too long")
         cleaned.append({"href": href, "label": label})
-    return json.dumps({"v": LINKS_JSON_VERSION, "items": cleaned}, separators=(",", ":"))
+    payload: dict[str, Any] = {"v": LINKS_JSON_VERSION, "items": cleaned}
+    if "unsubscribe" in data:
+        unsub = sanitize_http_url(data.get("unsubscribe"))
+        if unsub is None:
+            raise LinkSanitizeError("unsubscribe href rejected")
+        payload["unsubscribe"] = unsub
+    return json.dumps(payload, separators=(",", ":"))

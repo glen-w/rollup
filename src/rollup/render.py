@@ -15,6 +15,7 @@ from rollup.links import (
     render_link_html,
     render_link_markdown,
 )
+from rollup.links_sanitize import sanitize_http_url
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport, DigestStats
 from rollup.models import LinkItem
 from rollup.final_review import format_final_review_digest_summary
@@ -221,8 +222,15 @@ _ANCHOR_ATTRS = 'target="_blank" rel="noopener noreferrer"'
 
 def _replace_inline_link(match: re.Match[str]) -> str:
     label = match.group(1)
-    href = match.group(2)
-    return f'<a href="{href}" {_ANCHOR_ATTRS}>{label}</a>'
+    # Summary text is html-escaped before markdown rewrite; unescape for checks.
+    href_raw = html_module.unescape(match.group(2)).strip()
+    safe = sanitize_http_url(href_raw)
+    if safe is None:
+        return label
+    return (
+        f'<a href="{html_module.escape(safe, quote=True)}" {_ANCHOR_ATTRS}>'
+        f"{label}</a>"
+    )
 
 
 def _inline_summary_markdown(text: str) -> str:
@@ -805,9 +813,9 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         "details.run-details{margin:1rem 0;border:none;padding:0;border-top:1px solid #eee;}",
         "details.run-details>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}",
         "details.other-links{border:none;padding:0;margin-top:0.5rem;}",
-        "details.other-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;}",
+        "details.other-links>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}",
         "details.hidden-links{border:none;padding:0;margin-top:0.5rem;}",
-        "details.hidden-links>summary{cursor:pointer;font-weight:600;font-size:0.95rem;color:#666;}",
+        "details.hidden-links>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}",
         "#undated{border:1px solid #c90;border-radius:6px;padding:0.5rem 1rem;background:#fffbe6;}",
         ".folder-byline{margin:-0.25rem 0 0.75rem;font-size:0.95rem;color:#555;}",
         ".run-details-section{margin-top:1rem;}",

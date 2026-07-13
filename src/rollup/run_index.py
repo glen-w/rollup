@@ -148,16 +148,18 @@ def _entry_from_digest_entry(
     display_position: int,
     max_display_links: int = 8,
 ) -> IndexEntry:
-    from rollup.links import prepare_links_for_render
+    from rollup.links import pick_unsubscribe_href, prepare_links_for_render
 
     parsed = entry.classified.parsed
+    link_items = list(parsed.link_items)
     bundle = prepare_links_for_render(
-        list(parsed.link_items),
+        link_items,
         max_main=max_display_links,
         max_other=0,
     )
     link_pairs = [(link.href, link.label or link.text) for link in bundle.main_links]
-    links_json = build_links_json(link_pairs)
+    unsubscribe = pick_unsubscribe_href(link_items)
+    links_json = build_links_json(link_pairs, unsubscribe=unsubscribe)
     validate_links_json_for_index(links_json)
     primary = sanitize_http_url(bundle.main_links[0].href) if bundle.main_links else None
     date_parsed = None

@@ -154,16 +154,25 @@ def make_reader_body_write(
 
 
 def validate_reader_body_write(write: ReaderBodyWrite) -> None:
-    """Revalidate at transaction boundary."""
-    expected = make_reader_body_write(
-        write.message_key, write.content_hash, write.body_text
-    )
-    if expected.truncated != write.truncated or expected.stored_body_hash != write.stored_body_hash:
-        raise ReaderBodyError("reader body write invariant mismatch")
+    """Revalidate at transaction boundary.
+
+    ``write.body_text`` is already clipped; do not re-run ``make_reader_body_write``
+    on it (that would clear ``truncated`` for max-length bodies).
+    """
+    validate_message_key(write.message_key)
+    _validate_hash_hex(write.content_hash, field="content_hash")
+    _validate_hash_hex(write.stored_body_hash, field="stored_body_hash")
+    _reject_nul(write.body_text)
+    _reject_surrogates(write.body_text)
     if len(write.body_text) > MAX_READER_BODY_LEN:
         raise ReaderBodyError("body exceeds cap")
     if write.truncated and len(write.body_text) != MAX_READER_BODY_LEN:
         raise ReaderBodyError("truncated flag inconsistent with length")
+    expected_hash = compute_stored_body_hash(
+        truncated=write.truncated, body_text=write.body_text
+    )
+    if expected_hash != write.stored_body_hash:
+        raise ReaderBodyError("reader body write invariant mismatch")
 
 
 def prepare_reader_text(body_text: str) -> PreparedReaderText:
