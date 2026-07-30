@@ -4,6 +4,14 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.5.2 — 2026-07-30
+
+### Improved
+
+- **Grouping**: `auto` falls back to same-source `sender_batch` when daily/notification heuristics fail (e.g. mixed promo + news from one sender)
+- Digest groups render **before** standalone cards within each folder
+- Group cards use the same **folder accent border** as newsletter cards
+
 ### Fixed
 
 - **Read newsletter** expander no longer embeds the full site chrome (logo/nav) or large blank gaps: `partial=1` is built as its own query URL instead of appending `?partial=1` onto a `body_url` that already has `?run=…`

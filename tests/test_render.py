@@ -14,6 +14,7 @@ from rollup.filter import make_digest_entry
 from rollup.final_review import format_final_review_digest_summary
 from rollup.models import (
     DigestEntry,
+    DigestGroup,
     DigestReport,
     DigestStats,
     DigestSummaryMetadata,
@@ -579,6 +580,68 @@ def test_render_html_folder_accent_classes() -> None:
     assert "class='folder-section folder-accent-tech'" in html
     assert ".folder-accent-tech>h2{border-left:4px solid #4a7fd4" in html
     assert ".folder-accent-tech .newsletter-card{border-color:#4a7fd4" in html
+    assert ".folder-accent-tech .digest-group{border-color:#4a7fd4" in html
+
+
+def test_sort_entries_puts_groups_first() -> None:
+    now = datetime.now().astimezone()
+
+    def make_entry(subject: str, minutes: int, message_key: str) -> DigestEntry:
+        body = f"{subject} body"
+        parsed = ParsedMessage(
+            message_key=message_key,
+            content_hash=compute_content_hash(body),
+            folder_name="hoops",
+            relative_folder_path="hoops",
+            subject=subject,
+            sender="news@parisbasketball.com",
+            date_raw="",
+            date_parsed=now,
+            body_text=body,
+            body_html=None,
+            html_heading_count=0,
+            html_link_count=0,
+            html_section_break_count=0,
+            links=(),
+            link_items=(),
+            read_time_minutes=minutes,
+            preview=body,
+            parse_warnings=(),
+        )
+        return make_digest_entry(classify_message(parsed), no_ollama=True)
+
+    standalone = make_entry("Quick standalone", 1, "k-solo")
+    group = DigestGroup(
+        group_id="g1",
+        group_type="sender_batch",
+        display_name="Paris Basketball",
+        sender_normalized="news@parisbasketball.com",
+        folder_name="hoops",
+        entries=(
+            make_entry("Promo A", 1, "k-a"),
+            make_entry("Promo B", 1, "k-b"),
+            make_entry("Coach news", 3, "k-c"),
+        ),
+        render_mode="expandable",
+    )
+    # Standalone is shorter than the group total, so without groups-first it would win.
+    ordered = _sort_entries_by_read_time((standalone, group))
+    assert isinstance(ordered[0], DigestGroup)
+    assert isinstance(ordered[1], DigestEntry)
+
+    start, end = compute_date_window(now, 7)
+    report = DigestReport(
+        generated_at=now,
+        lookback_days=7,
+        window_start=start,
+        window_end=end,
+        dated_by_folder={"hoops": (standalone, group)},
+        undated=(),
+        stats=_report().stats,
+    )
+    html = render_html(report, 8)
+    assert html.index("class='digest-group'") < html.index("Quick standalone")
+    assert "folder-accent-hoops .digest-group{border-color:#e8923a" in html
 
 
 def test_render_html_sorts_entries_by_read_time() -> None:

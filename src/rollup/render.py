@@ -126,6 +126,7 @@ def _sort_entries_by_read_time(
             )
             return (
                 *priority_sort_prefix(pri),
+                0,  # groups before standalone entries
                 minutes,
                 item.display_name.lower(),
             )
@@ -134,6 +135,7 @@ def _sort_entries_by_read_time(
             pri = int(priority_for(item) or 0)
         return (
             *priority_sort_prefix(pri),
+            1,
             item.classified.parsed.read_time_minutes,
             item.classified.parsed.subject.lower(),
         )
@@ -149,11 +151,17 @@ def _folder_accent_css() -> str:
         rules.append(
             f"{selector} .newsletter-card{{border-color:{color};border-left-width:3px;}}"
         )
+        rules.append(
+            f"{selector} .digest-group{{border-color:{color};border-left-width:3px;}}"
+        )
     rules.append(
         f".folder-accent-default>h2{{border-left:4px solid {DEFAULT_FOLDER_ACCENT};padding-left:0.5rem;}}"
     )
     rules.append(
         f".folder-accent-default .newsletter-card{{border-color:{DEFAULT_FOLDER_ACCENT};border-left-width:3px;}}"
+    )
+    rules.append(
+        f".folder-accent-default .digest-group{{border-color:{DEFAULT_FOLDER_ACCENT};border-left-width:3px;}}"
     )
     return "".join(rules)
 
@@ -704,12 +712,12 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
     for folder, entries in sorted(report.dated_by_folder.items()):
         lines.append(f"## {_folder_display_name(folder)}")
         lines.append("")
-        for item in entries:
+        for item in _sort_entries_by_read_time(entries):
             lines.append(_render_item_md(item, max_display_links))
     if report.undated:
         lines.append("## Undated / needs review")
         lines.append("")
-        for item in report.undated:
+        for item in _sort_entries_by_read_time(report.undated):
             lines.append(_render_item_md(item, max_display_links))
     lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"

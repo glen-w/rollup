@@ -136,6 +136,73 @@ def test_below_min_size_stays_standalone() -> None:
     assert any(d.reason_code == "BELOW_MIN_SIZE" for d in result.reason_codes)
 
 
+def test_auto_falls_back_to_sender_batch_on_mixed_types() -> None:
+    """Same sender with mixed newsletter types should still group under auto."""
+    entries = (
+        _entry(
+            subject="Le maillot away à -50%",
+            sender="Paris Basketball <news@parisbasketball.com>",
+            body="promo short",
+            newsletter_type="short_update",
+            days_ago=1,
+        ),
+        _entry(
+            subject="Soldes dernières heures",
+            sender="Paris Basketball <news@parisbasketball.com>",
+            body="sale short",
+            newsletter_type="short_update",
+            days_ago=2,
+        ),
+        _entry(
+            subject="Maxime Lefèvre devient l'entraineur principal",
+            sender="Paris Basketball <news@parisbasketball.com>",
+            body="coach announcement with more context " * 20,
+            newsletter_type="multi_section_digest",
+            days_ago=3,
+        ),
+        _entry(
+            subject="Pierric Poupet nommé assistant coach",
+            sender="Paris Basketball <news@parisbasketball.com>",
+            body="assistant coach note " * 15,
+            newsletter_type="link_roundup",
+            days_ago=4,
+        ),
+    )
+    result = apply_grouping(entries, (), GroupingConfig(enabled=True, min_group_size=3))
+    groups = [i for i in result.dated_items if isinstance(i, DigestGroup)]
+    assert len(groups) == 1
+    assert groups[0].group_type == "sender_batch"
+    assert len(groups[0].entries) == 4
+    assert any(d.reason_code == "FORMED_SENDER_BATCH" for d in result.reason_codes)
+
+
+def test_groups_sort_before_standalone_entries() -> None:
+    group_entries = tuple(
+        _entry(
+            subject=f"update {i}",
+            sender="alerts@github.com",
+            body="tiny",
+            newsletter_type="short_update",
+            days_ago=i + 10,
+        )
+        for i in range(3)
+    )
+    standalone = _entry(
+        subject="Fresh standalone",
+        sender="other@example.com",
+        body="hello",
+        newsletter_type="essay",
+        days_ago=0,
+    )
+    result = apply_grouping(
+        (*group_entries, standalone),
+        (),
+        GroupingConfig(enabled=True, min_group_size=3),
+    )
+    assert isinstance(result.dated_items[0], DigestGroup)
+    assert isinstance(result.dated_items[1], DigestEntry)
+
+
 def test_publish_latest_skips_partial_by_default(tmp_path: Path) -> None:
     md = tmp_path / "digest.md"
     html = tmp_path / "digest.html"

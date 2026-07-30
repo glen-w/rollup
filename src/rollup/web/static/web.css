@@ -176,24 +176,31 @@ details.hidden-links > summary {
 
 .folder-accent-brainfood > h2 { border-left-color: #e8a0bf; }
 .folder-accent-brainfood .newsletter-card { border-color: #e8a0bf; border-left-width: 3px; }
+.folder-accent-brainfood .digest-group { border-color: #e8a0bf; border-left-width: 3px; }
 
 .folder-accent-enviro > h2 { border-left-color: #4a9e6b; }
 .folder-accent-enviro .newsletter-card { border-color: #4a9e6b; border-left-width: 3px; }
+.folder-accent-enviro .digest-group { border-color: #4a9e6b; border-left-width: 3px; }
 
 .folder-accent-hoops > h2 { border-left-color: #e8923a; }
 .folder-accent-hoops .newsletter-card { border-color: #e8923a; border-left-width: 3px; }
+.folder-accent-hoops .digest-group { border-color: #e8923a; border-left-width: 3px; }
 
 .folder-accent-tech > h2 { border-left-color: #4a7fd4; }
 .folder-accent-tech .newsletter-card { border-color: #4a7fd4; border-left-width: 3px; }
+.folder-accent-tech .digest-group { border-color: #4a7fd4; border-left-width: 3px; }
 
 .folder-accent-misc > h2 { border-left-color: #8b7fa8; }
 .folder-accent-misc .newsletter-card { border-color: #8b7fa8; border-left-width: 3px; }
+.folder-accent-misc .digest-group { border-color: #8b7fa8; border-left-width: 3px; }
 
 .folder-accent-trackerwall > h2 { border-left-color: #9a8b7a; }
 .folder-accent-trackerwall .newsletter-card { border-color: #9a8b7a; border-left-width: 3px; }
+.folder-accent-trackerwall .digest-group { border-color: #9a8b7a; border-left-width: 3px; }
 
 .folder-accent-default > h2 { border-left-color: #ccc; }
 .folder-accent-default .newsletter-card { border-color: #ccc; border-left-width: 3px; }
+.folder-accent-default .digest-group { border-color: #ccc; border-left-width: 3px; }
 
 .stats-panel {
   background: var(--stats-bg);

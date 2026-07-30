@@ -110,5 +110,6 @@ rollup digest --grouping-report
 rollup digest --no-grouping
 ```
 
-v1 groups only `notification_stream` and `daily_editions`. Essays and long-form
+v1 groups `notification_stream`, `daily_editions`, and `sender_batch`
+(including an auto fallback to same-source batches). Essays and long-form
 messages always stay standalone.

@@ -202,52 +202,16 @@ def _group_entry_list(
         sender = normalize_email(bucket[0].classified.parsed.sender)
 
         if grouping_policy == "sender_batch":
-            eligible = [e for e in bucket if not is_long_form_standalone(e)]
-            if len(eligible) < config.min_group_size:
-                for entry in bucket:
-                    decisions.append(
-                        GroupingDecision(
-                            reason_code="SOURCE_BATCH_TOO_SMALL",
-                            message_key=entry.classified.parsed.message_key,
-                            detail=f"size={len(eligible)}",
-                        )
-                    )
-                    items.append(entry)
-                continue
-            eligible_sorted = sorted(
-                eligible,
-                key=lambda e: (
-                    -(
-                        e.classified.parsed.date_parsed.timestamp()
-                        if e.classified.parsed.date_parsed
-                        else 0
-                    ),
-                    e.classified.parsed.message_key,
-                ),
+            _append_sender_batches(
+                bucket_id,
+                folder,
+                bucket,
+                config,
+                snapshot,
+                items,
+                groups,
+                decisions,
             )
-            for chunk_index, chunk in enumerate(_chunk(eligible_sorted, MAX_GROUP_SIZE)):
-                if len(chunk) < config.min_group_size:
-                    for entry in chunk:
-                        decisions.append(
-                            GroupingDecision(
-                                reason_code="SOURCE_BATCH_TOO_SMALL",
-                                message_key=entry.classified.parsed.message_key,
-                            )
-                        )
-                        items.append(entry)
-                    continue
-                group = _make_sender_batch_group(
-                    bucket_id, folder, chunk, chunk_index, snapshot
-                )
-                groups.append(group)
-                items.append(group)
-                decisions.append(
-                    GroupingDecision(
-                        reason_code="FORMED_SENDER_BATCH",
-                        group_id=group.group_id,
-                        detail=f"n={len(chunk)}",
-                    )
-                )
             continue
 
         if len(bucket) < config.min_group_size:
@@ -307,6 +271,21 @@ def _group_entry_list(
                 items.append(entry)
             continue
 
+        # auto: fall back to same-source batch when structured groupers fail
+        # (mixed types / subjects still belong together, e.g. promo + news).
+        if grouping_policy == "auto":
+            _append_sender_batches(
+                bucket_id,
+                folder,
+                bucket,
+                config,
+                snapshot,
+                items,
+                groups,
+                decisions,
+            )
+            continue
+
         for entry in bucket:
             items.append(entry)
 
@@ -324,6 +303,7 @@ def _group_entry_list(
             ]
             return (
                 *priority_sort_prefix(pri),
+                0,  # groups before standalone entries
                 -max(dates) if dates else 0,
                 item.display_name.lower(),
             )
@@ -331,10 +311,69 @@ def _group_entry_list(
         policy = snapshot.policy_for(parsed.source_key) if snapshot else None
         pri = policy.priority if policy else 0
         ts = parsed.date_parsed.timestamp() if parsed.date_parsed else 0
-        return (*priority_sort_prefix(pri), -ts, parsed.subject.lower())
+        return (*priority_sort_prefix(pri), 1, -ts, parsed.subject.lower())
 
     items.sort(key=sort_key)
     return items, groups, decisions
+
+
+def _append_sender_batches(
+    bucket_id: str,
+    folder: str,
+    bucket: list[DigestEntry],
+    config: GroupingConfig,
+    snapshot,
+    items: list[DigestItem],
+    groups: list[DigestGroup],
+    decisions: list[GroupingDecision],
+) -> None:
+    """Form sender_batch groups from a same-source bucket (or leave standalone)."""
+    eligible = [e for e in bucket if not is_long_form_standalone(e)]
+    if len(eligible) < config.min_group_size:
+        for entry in bucket:
+            decisions.append(
+                GroupingDecision(
+                    reason_code="SOURCE_BATCH_TOO_SMALL",
+                    message_key=entry.classified.parsed.message_key,
+                    detail=f"size={len(eligible)}",
+                )
+            )
+            items.append(entry)
+        return
+    eligible_sorted = sorted(
+        eligible,
+        key=lambda e: (
+            -(
+                e.classified.parsed.date_parsed.timestamp()
+                if e.classified.parsed.date_parsed
+                else 0
+            ),
+            e.classified.parsed.message_key,
+        ),
+    )
+    for chunk_index, chunk in enumerate(_chunk(eligible_sorted, MAX_GROUP_SIZE)):
+        if len(chunk) < config.min_group_size:
+            for entry in chunk:
+                decisions.append(
+                    GroupingDecision(
+                        reason_code="SOURCE_BATCH_TOO_SMALL",
+                        message_key=entry.classified.parsed.message_key,
+                    )
+                )
+                items.append(entry)
+            continue
+        group = _make_sender_batch_group(
+            bucket_id, folder, chunk, chunk_index, snapshot
+        )
+        groups.append(group)
+        items.append(group)
+        decisions.append(
+            GroupingDecision(
+                reason_code="FORMED_SENDER_BATCH",
+                group_id=group.group_id,
+                detail=f"n={len(chunk)}",
+            )
+        )
 
 
 def _make_sender_batch_group(
