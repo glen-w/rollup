@@ -321,13 +321,14 @@ Final review does not require `--ollama` on the digest summarisation path (it us
 
 ```bash
 # Apply mode (interactive / manual)
+# mail_root must contain the newsletter root (omit --mail-root to infer the .sbd parent)
 rollup digest --root tests/fixtures/Newsletters.sbd --final-review \
-  --final-review-mode apply --mail-root /tmp/rollup-mail \
+  --final-review-mode apply \
   --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
 
 # Group-level LLM summaries (opt-in; requires Ollama)
 rollup digest --root tests/fixtures/Newsletters.sbd --ollama --group-summaries \
-  --mail-root /tmp/rollup-mail --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
+  --output-dir /tmp/rollup-out --state-dir /tmp/rollup-state
 ```
 
 ## Source registry

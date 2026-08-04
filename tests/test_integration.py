@@ -58,7 +58,7 @@ def test_digest_default_fixture(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert "no_ollama=True" in result.stderr
@@ -90,7 +90,7 @@ def test_digest_archives_previous_batch(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     ]
     first = _run(*common)
     assert first.returncode == 0, first.stderr
@@ -124,7 +124,7 @@ def test_digest_default_writers_write_artifacts(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     md_files = list(output.glob("*-newsletter-digest.md"))
@@ -171,7 +171,7 @@ def test_digest_output_none_skips_addon_writers(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert list(output.glob("*-newsletter-digest.md"))
@@ -195,7 +195,7 @@ def test_digest_no_ollama_fixture(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     md_files = list(output.glob("*-newsletter-digest.md"))
@@ -227,7 +227,7 @@ def test_digest_dry_run_no_writes(tmp_path: Path) -> None:
         "--log-dir",
         str(logs),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
         "--verbose",
     )
     assert result.returncode == 0, result.stderr
@@ -273,7 +273,7 @@ def test_inventory_json_out(tmp_path: Path) -> None:
         "--json-out",
         str(json_path),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
         "--output-dir",
         str(tmp_path / "output"),
         "--state-dir",
@@ -299,7 +299,7 @@ def test_digest_exclude_folder(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0
     md = (
@@ -322,7 +322,7 @@ def test_digest_stats_in_stdout(tmp_path: Path) -> None:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0
     for field in (
@@ -371,7 +371,7 @@ def test_seen_undated_skipped_on_second_run(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     ]
     first = _run(*common)
     assert first.returncode == 0, first.stderr
@@ -441,7 +441,7 @@ def test_partial_write_does_not_update_seen_state(tmp_path: Path, monkeypatch) -
             "--state-dir",
             str(state),
             "--mail-root",
-            str(tmp_path / "mail"),
+            str(FIXTURE_ROOT.parent),
         ]
     )
     assert cli.cmd_digest(args) == 1
@@ -470,7 +470,7 @@ def test_digest_folder_filter(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0
     md = list(output.glob("*-newsletter-digest.md"))[0].read_text(encoding="utf-8")
@@ -493,7 +493,7 @@ def test_digest_trackerwall_renders_readable_links(tmp_path: Path) -> None:
         "--state-dir",
         str(state),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     md = list(output.glob("*-newsletter-digest.md"))[0].read_text(encoding="utf-8")
@@ -547,7 +547,7 @@ def _digest_args(tmp_path: Path, *extra: str) -> list[str]:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     ]
 
 
@@ -725,12 +725,12 @@ def test_list_newsletter_types(tmp_path: Path) -> None:
         "digest",
         "--list-newsletter-types",
         "--dry-run",
+        "--root",
+        str(FIXTURE_ROOT),
         "--output-dir",
         str(tmp_path / "output"),
         "--state-dir",
         str(tmp_path / "state"),
-        "--mail-root",
-        str(tmp_path / "mail"),
     )
     assert result.returncode == 0
     assert "unclassified" in result.stdout
@@ -741,12 +741,12 @@ def test_list_summary_profiles(tmp_path: Path) -> None:
         "digest",
         "--list-summary-profiles",
         "--dry-run",
+        "--root",
+        str(FIXTURE_ROOT),
         "--output-dir",
         str(tmp_path / "output"),
         "--state-dir",
         str(tmp_path / "state"),
-        "--mail-root",
-        str(tmp_path / "mail"),
     )
     assert result.returncode == 0
     assert "rough:" in result.stdout

@@ -4,6 +4,22 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.6.1 — 2026-08-04
+
+### Changed
+
+- **Branding assets**: digest/EPUB output uses a compact grayscale e-ink logo (~5 KB, 200px) instead of the prior ~1.3 MB RGBA PNG; color logo kept (compressed) for the web UI and docs.
+- **Runtime integrity foundation**: authoritative SQLite migrations (no premature/downgrade version writes; refuse future versions before mutate; canonical full schema shape; transactional summary rebuilds). See [docs/CONTRACT.md](docs/CONTRACT.md) and [docs/CRON.md](docs/CRON.md).
+- **Core path safety**: `validate_writable_run_paths` fences newsletter root and mail root; called from `run_digest` before opening writable state (CLI validation remains UX-only). Newsletter root must be inside `--mail-root` (inferred from the `.sbd` parent when only `--root` is set).
+- **Discovery**: dotted mbox names (e.g. `AI.News`) supported; directory/file symlinks rejected; sidecar exclusions explicit.
+- **No-input gate** before Ollama/DB/summarize; empty-window success may write dated digests but refuses `latest.*`; mbox mutation excludes folder results and refuses `latest.*`.
+- **Output writers** run inside the digest pipeline before latest/seen/index; profile export respects `--dry-run`.
+
+### Fixed
+
+- Schema singleton repair no longer lowers a future `schema_version` (reproduced 11→10) before refuse.
+- Incomplete v7 registries are repaired or refused instead of accepted on `sources`-only checks.
+
 ## 0.6.0 — 2026-08-04
 
 ### Added

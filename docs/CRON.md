@@ -38,27 +38,37 @@ Stale locks (dead PID or older than 6 hours) are recovered automatically.
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success (or dry-run success) |
-| 1 | Hard failure (safety, lock, missing root, invalid config, write failure, no usable digest) |
-| 2 | Partial success — usable digest written, but material issues occurred |
+| 0 | Success (or dry-run success), including empty-window success and web-index-only degradation |
+| 1 | Hard failure (safety, lock, missing root, invalid config, no-input, required publication failure, no usable digest) |
+| 2 | Partial success — required dated digest usable, but material issues occurred |
 
-Degradation details:
+Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `rollup.run_contracts`):
 
 | Condition | Exit | Durable-write behavior |
 |-----------|------|------------------------|
-| Final-review sidecar write fails | 2 | Dated digest remains usable; sidecar is outside the dated-output transaction |
+| No-input (include miss / no readable folders / all parse candidates failed) | 1 | Nothing published; gate runs before Ollama, review, render, writers, state, publication |
+| Empty date window (`messages_included == 0`, healthy discovery/parse) | 0 | Dated empty digest + required writers may write; **`latest.*` refused** |
+| Mbox mutation during parse | 2 | Mutated folders excluded from published content; `latest.*` refused; escalate to 1 if exclusion yields no-input |
+| Required dated artifact or required writer failure | 1 | Irreversible boundary not crossed (or partial rename recovery on next run → 2 if half-published) |
+| Optional writer failure | 2 | Required pubs already succeeded |
+| Final-review sidecar write fails | 2 | Dated digest remains usable; sidecar is outside the required dated set |
 | Final-review overall status is `fail` | 2 | Dated digest remains usable; inspect the final-review sidecar or manifest block |
-| `latest.*` publication fails | 2 | Dated digest remains the source of truth; seen-state update still runs to avoid repeating undated items solely because latest aliases failed |
-| Manifest write fails after a usable digest | 2 | Dated digest may exist, but the run is degraded because cron status cannot be trusted |
-| Seen-state update fails after a usable digest | 2 | Dated digest may exist, but undated items may repeat on future runs |
+| `latest.*` publication fails | 2 | Dated digest remains source of truth; seen-state runs only after required pubs succeeded |
+| Manifest write fails after a usable digest | 2 | Original failure diagnosis preserved; minimal fallback diagnostic on stderr / run events |
+| Seen-state update fails after required pubs | 2 | Dated digest may exist; undated items may repeat on future runs |
+| Web-index failure | 0 if otherwise success | Typed secondary degradation; manifest event + diagnostic; does **not** alone force partial |
 | Group summaries degrade | 2 | Member summaries still render; cache/read/write or stream errors are recorded |
 | High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
+
+**Irreversible boundary:** `latest.*`, seen-state, web index, and `success` status wait until every required dated artifact and required output writer has final paths. Manifest / web-index failures must not mark unpublished messages seen.
 
 A global apply skip (e.g. missing fingerprint echo) alone does **not** force partial when the digest is otherwise successful—check the manifest `final_review` block.
 
 **Invalid Phase-3 flags** (e.g. `--group-summaries` without `--ollama`, non-`primary` variant policy, cron apply without `--final-review-allow-cron-apply`) fail before the run with exit **1**.
 
 Unattended apply uses conservative whole-set caps (`final_review_max_patches_unattended` / `final_review_max_changed_chars_unattended`): exceeding either skips **all** patches.
+
+**Dry-run** must not create databases, migrate schema, WAL/SHM files, locks, profile exports, staged publication temps, or writer artifacts.
 
 ## launchd (preferred on macOS)
 

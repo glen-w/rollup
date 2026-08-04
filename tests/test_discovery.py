@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 
 from rollup.discovery import build_inventory, filter_folders, iter_mbox_files
 
@@ -58,3 +59,40 @@ def test_build_inventory_counts() -> None:
     mbox = mailbox.mbox(str(tech.folder.mbox_path), create=False)
     assert tech.message_count == len(list(mbox.keys()))
     mbox.close()
+
+
+def test_dotted_mbox_name_discovered(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    (root / "AI.News").write_bytes(b"From \n")
+    (root / "AI.News.msf").write_text("index")
+    folders = list(iter_mbox_files(root))
+    names = {f.folder_name for f in folders}
+    assert "AI.News" in names
+    assert all(not str(f.mbox_path).endswith(".msf") for f in folders)
+
+
+def test_directory_symlink_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    outside = tmp_path / "outside.sbd"
+    outside.mkdir()
+    (outside / "leak").write_bytes(b"From \n")
+    link = root / "evil.sbd"
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks not supported")
+    folders = list(iter_mbox_files(root))
+    assert all(f.folder_name != "evil/leak" for f in folders)
+    assert all("outside" not in str(f.mbox_path.resolve()) for f in folders)
+
+
+def test_hidden_and_backup_excluded(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    (root / "keep").write_bytes(b"From \n")
+    (root / ".hidden").write_bytes(b"From \n")
+    (root / "keep.bak").write_bytes(b"From \n")
+    names = {f.folder_name for f in iter_mbox_files(root)}
+    assert names == {"keep"}

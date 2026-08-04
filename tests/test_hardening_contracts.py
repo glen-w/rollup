@@ -61,7 +61,8 @@ def _mail_tree(
     subject_sentinel: str = "Dated hardening newsletter",
     body_sentinel: str = "Dated hardening body.",
 ) -> Path:
-    root = tmp_path / "Newsletters.sbd"
+    mail_root = tmp_path / "mail"
+    root = mail_root / "Newsletters.sbd"
     messages = [
         _message(
             subject=subject_sentinel,
@@ -85,8 +86,7 @@ def _mail_tree(
 
 def _config(tmp_path: Path, *, root: Path | None = None, **overrides) -> Config:
     root = root or _mail_tree(tmp_path)
-    mail_root = tmp_path / "mail"
-    mail_root.mkdir(exist_ok=True)
+    mail_root = root.parent if root.name.lower().endswith(".sbd") else tmp_path / "mail"
     base = dict(
         root=root,
         mail_root=mail_root,
@@ -424,7 +424,7 @@ def test_privacy_no_corpus_in_logs_or_manifests(tmp_path: Path) -> None:
             "--root",
             str(root),
             "--mail-root",
-            str(tmp_path / "mail"),
+            str(root.parent),
             "--output-dir",
             str(tmp_path / "output"),
             "--state-dir",

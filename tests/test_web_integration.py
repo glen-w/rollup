@@ -17,8 +17,9 @@ NOW = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
 
 
 def _config(tmp_path: Path) -> Config:
-    root = tmp_path / "Newsletters.sbd"
-    root.mkdir()
+    mail_root = tmp_path / "mail"
+    root = mail_root / "Newsletters.sbd"
+    root.mkdir(parents=True)
     msg = EmailMessage()
     msg["Subject"] = "Web index newsletter"
     msg["From"] = "Sender <sender@example.com>"
@@ -31,8 +32,6 @@ def _config(tmp_path: Path) -> Config:
         "From - Sun Jul 12 12:00:00 2026\n" + msg.as_string() + "\n",
         encoding="utf-8",
     )
-    mail_root = tmp_path / "mail"
-    mail_root.mkdir()
     return Config(
         root=root,
         mail_root=mail_root,

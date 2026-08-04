@@ -884,11 +884,16 @@ def render_html(
 
 
 def write_branding_assets(output_dir: Path) -> None:
-    """Copy logo and favicon beside rollup output files."""
-    from rollup.assets import asset_bytes
+    """Copy logo and favicon beside rollup output files.
+
+    Digests write the compact grayscale e-ink logo as ``rollup_logo.png`` so
+    Markdown/HTML on devices like Xteink X3 load quickly; the web UI still
+    serves the color asset from the package.
+    """
+    from rollup.assets import asset_bytes, digest_logo_bytes
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / LOGO_FILENAME).write_bytes(asset_bytes(LOGO_FILENAME))
+    (output_dir / LOGO_FILENAME).write_bytes(digest_logo_bytes())
     (output_dir / FAVICON_FILENAME).write_bytes(asset_bytes(FAVICON_FILENAME))
 
 

@@ -24,8 +24,7 @@ def test_cron_digest_writes_manifest_and_latest(tmp_path: Path) -> None:
     output = tmp_path / "output"
     state = tmp_path / "state"
     logs = tmp_path / "logs"
-    mail = tmp_path / "mail"
-    mail.mkdir()
+    mail = FIXTURE_ROOT.parent
     result = _run(
         "digest",
         "--cron",

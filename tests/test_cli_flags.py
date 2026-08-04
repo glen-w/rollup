@@ -65,7 +65,7 @@ def test_digest_default_no_ollama(tmp_path: Path) -> None:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert "no_ollama=True" in result.stderr
@@ -83,7 +83,7 @@ def test_digest_no_ollama_flag(tmp_path: Path) -> None:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert "no_ollama=True" in result.stderr
@@ -101,7 +101,7 @@ def test_digest_ollama_flag(tmp_path: Path) -> None:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert "no_ollama=False" in result.stderr
@@ -121,7 +121,7 @@ def test_digest_warns_when_ollama_flags_ignored(tmp_path: Path) -> None:
         "--state-dir",
         str(tmp_path / "state"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     assert "Ignoring --summary-profile" in result.stderr

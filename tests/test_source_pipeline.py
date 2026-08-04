@@ -17,11 +17,9 @@ NOW = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
 
 
 def _config(tmp_path: Path) -> Config:
-    mail_root = tmp_path / "mail"
-    mail_root.mkdir(exist_ok=True)
     return Config(
         root=FIXTURE_ROOT,
-        mail_root=mail_root,
+        mail_root=FIXTURE_ROOT.parent,
         output_dir=tmp_path / "out",
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",

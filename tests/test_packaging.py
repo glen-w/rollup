@@ -17,7 +17,9 @@ import rollup.cli
 from rollup.cli import build_parser, cmd_digest
 parser = build_parser()
 args = parser.parse_args([
-    "digest", "--root", "tests/fixtures/Newsletters.sbd",
+    "digest",
+    "--root", "tests/fixtures/Newsletters.sbd",
+    "--mail-root", "tests/fixtures",
     *{extra_args!r},
 ])
 rc = cmd_digest(args)
@@ -43,8 +45,6 @@ def test_no_requests_import_on_no_ollama_digest_path() -> None:
             "/tmp/rollup-test-out",
             "--state-dir",
             "/tmp/rollup-test-state",
-            "--mail-root",
-            "/tmp/rollup-test-mail",
         ]
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -54,15 +54,12 @@ def test_no_requests_import_on_no_ollama_digest_path() -> None:
 def test_no_requests_import_on_default_digest_write_path(tmp_path: Path) -> None:
     out = tmp_path / "output"
     state = tmp_path / "state"
-    mail = tmp_path / "mail"
     result = _run_digest_subprocess(
         [
             "--output-dir",
             str(out),
             "--state-dir",
             str(state),
-            "--mail-root",
-            str(mail),
         ]
     )
     assert result.returncode == 0, result.stderr + result.stdout
@@ -78,7 +75,9 @@ import rollup.cli
 from rollup.cli import build_parser, cmd_inventory
 parser = build_parser()
 args = parser.parse_args([
-    "inventory", "--root", "tests/fixtures/Newsletters.sbd",
+    "inventory",
+    "--root", "tests/fixtures/Newsletters.sbd",
+    "--mail-root", "tests/fixtures",
 ])
 rc = cmd_inventory(args)
 new = set(sys.modules) - mods

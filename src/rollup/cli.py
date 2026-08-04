@@ -49,7 +49,7 @@ from rollup.run_profiles import (
     list_run_profiles,
     resolve_run_profile,
 )
-from rollup.safety import SafetyError, assert_safe_write_paths, validate_read_root
+from rollup.safety import SafetyError, validate_read_root, validate_writable_run_paths
 from rollup.summary_profiles import (
     get_canonical_newsletter_types,
     list_summary_profiles as list_summary_profile_infos,
@@ -462,7 +462,15 @@ def _validate_config(
         writable.append(config.final_review_report_path)
     if config.export_summary_profile_set_path:
         writable.append(Path(config.export_summary_profile_set_path))
-    assert_safe_write_paths(config.mail_root, *writable)
+    validate_writable_run_paths(
+        newsletter_root=config.root,
+        mail_root=config.mail_root,
+        output_dir=config.output_dir,
+        state_dir=config.state_dir,
+        log_dir=config.log_dir,
+        db_path=config.db_path,
+        extra=tuple(writable),
+    )
     return warnings
 
 
@@ -638,6 +646,12 @@ def cmd_digest(args: argparse.Namespace) -> int:
         _print_summary_profile_listing(profile_set)
         return 0
     if config.export_summary_profile_set_path:
+        if run_options.dry_run:
+            logger.info(
+                "Dry run — skipping summary profile set export to %s",
+                config.export_summary_profile_set_path,
+            )
+            return 0
         from rollup.summary_profiles import export_summary_profile_set
 
         export_summary_profile_set(profile_set, config.export_summary_profile_set_path)
@@ -673,6 +687,8 @@ def cmd_digest(args: argparse.Namespace) -> int:
             run_options,
             grouping=grouping,
             manifest_config=default_manifest_config(config.state_dir),
+            output_writers=writers,
+            writer_cli_args=args,
         )
     except Exception as exc:
         # Effective-run validation (Phase-3) and unexpected hard errors.
@@ -711,33 +727,6 @@ def cmd_digest(args: argparse.Namespace) -> int:
                 )
             )
         )
-
-    from rollup.output_writers import (
-        OutputWriterError,
-        WriteContext,
-        run_enabled_writers,
-    )
-
-    if result.report is not None:
-        try:
-            run_enabled_writers(
-                writers,
-                result.report,
-                WriteContext(
-                    output_dir=config.output_dir,
-                    generated_at=result.report.generated_at,
-                    max_display_links=config.max_display_links,
-                    dry_run=run_options.dry_run,
-                    run_id_short=result.context.run_id_short,
-                    logger=logger,
-                    folder_themes=config.folder_themes or None,
-                ),
-                args=args,
-                config=config,
-            )
-        except OutputWriterError as exc:
-            logger.error("%s", exc)
-            return 1
 
     if result.error_message:
         print(f"ERROR: {result.error_message}", file=sys.stderr)

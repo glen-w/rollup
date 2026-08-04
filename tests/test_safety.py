@@ -11,6 +11,7 @@ from rollup.safety import (
     assert_safe_write_paths,
     is_inside,
     validate_read_root,
+    validate_writable_run_paths,
 )
 
 
@@ -96,7 +97,7 @@ def test_validate_read_root_equals_state_dir(tmp_path: Path) -> None:
     with pytest.raises(SafetyError, match="must not equal state_dir"):
         validate_read_root(
             root,
-            tmp_path / "mail",
+            tmp_path,
             tmp_path / "out",
             root,
             tmp_path / "logs",
@@ -163,3 +164,30 @@ def test_symlink_json_out_into_mail_root(tmp_path: Path) -> None:
         pytest.skip("symlinks not supported")
     with pytest.raises(SafetyError):
         assert_safe_write_paths(mail_root, link)
+
+
+def test_validate_writable_rejects_inside_newsletter_root(tmp_path: Path) -> None:
+    mail = tmp_path / "mail"
+    root = mail / "Newsletters.sbd"
+    root.mkdir(parents=True)
+    with pytest.raises(SafetyError, match="protected root"):
+        validate_writable_run_paths(
+            newsletter_root=root,
+            mail_root=mail,
+            output_dir=root / "out",
+            state_dir=tmp_path / "state",
+            log_dir=tmp_path / "logs",
+        )
+
+
+def test_validate_writable_allows_outside(tmp_path: Path) -> None:
+    mail = tmp_path / "mail"
+    root = mail / "Newsletters.sbd"
+    root.mkdir(parents=True)
+    validate_writable_run_paths(
+        newsletter_root=root,
+        mail_root=mail,
+        output_dir=tmp_path / "out",
+        state_dir=tmp_path / "state",
+        log_dir=tmp_path / "logs",
+    )

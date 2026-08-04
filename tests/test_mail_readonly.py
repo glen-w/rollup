@@ -78,7 +78,7 @@ def test_full_digest_write_does_not_modify_fixture_tree(tmp_path: Path) -> None:
         "--log-dir",
         str(tmp_path / "logs"),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
     )
     assert result.returncode == 0, result.stderr
     after = _snapshot_tree(FIXTURE_ROOT)
@@ -87,7 +87,6 @@ def test_full_digest_write_does_not_modify_fixture_tree(tmp_path: Path) -> None:
 
 
 def test_doctor_full_does_not_modify_fixture_tree(tmp_path: Path) -> None:
-    (tmp_path / "mail").mkdir()
     before = _snapshot_tree(FIXTURE_ROOT)
     result = _run(
         "doctor",
@@ -95,7 +94,7 @@ def test_doctor_full_does_not_modify_fixture_tree(tmp_path: Path) -> None:
         "--root",
         str(FIXTURE_ROOT),
         "--mail-root",
-        str(tmp_path / "mail"),
+        str(FIXTURE_ROOT.parent),
         "--output-dir",
         str(tmp_path / "output"),
         "--state-dir",

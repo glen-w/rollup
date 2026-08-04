@@ -99,6 +99,8 @@ class ParseResult:
     counts: ParseCounts
     warnings: tuple[StageWarning, ...] = ()
     errors: tuple[StageError, ...] = ()
+    mutated_folders: tuple[str, ...] = ()
+    mutation_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,14 @@ class AggregatedResults:
     apply_policy_unattended: bool | None = None
     apply_policy_max_patches: int | None = None
     apply_policy_max_changed_chars: int | None = None
+    web_index_failed: bool = False
+    web_index_error: str | None = None
+    required_writer_failed: bool = False
+    optional_writer_failed: bool = False
+    writer_artifacts: list[Path] = field(default_factory=list)
+    mbox_mutation_detected: bool = False
+    no_input_reason: str | None = None
+    messages_included: int = 0
 
     # Compatibility alias used during rename migration in tests/helpers.
     @property
@@ -278,6 +288,16 @@ def derive_run_status(
     if aggregated.manifest_write_failed:
         return "partial"
 
+    if aggregated.optional_writer_failed:
+        return "partial"
+
+    if aggregated.mbox_mutation_detected:
+        return "partial"
+
+    if aggregated.required_writer_failed:
+        return "failure"
+
+    # web_index_failed is secondary: does not alone force partial
     return "success"
 
 
@@ -289,6 +309,35 @@ def status_to_exit_code(status: RunStatus) -> int:
     return EXIT_FAILURE
 
 
+def evaluate_no_input(
+    *,
+    folders_include: tuple[str, ...],
+    discovery: DiscoveryResult,
+    parse: ParseResult,
+) -> str | None:
+    """Return a hard-failure reason when the run has no usable input, else None."""
+    if folders_include and not discovery.folders:
+        return (
+            "No folders matched explicit include "
+            f"({', '.join(folders_include)}); refusing to publish"
+        )
+    if not discovery.folders:
+        return "No readable mbox folders under newsletter root; refusing to publish"
+    if (
+        parse.counts.messages_parsed == 0
+        and parse.counts.messages_seen > 0
+        and parse.counts.parse_fatal_errors > 0
+    ):
+        return "All candidate messages failed parsing; refusing to publish"
+    if (
+        parse.counts.messages_parsed == 0
+        and parse.counts.folders_failed >= len(discovery.folders)
+        and len(discovery.folders) > 0
+    ):
+        return "No folders were readable; refusing to publish"
+    return None
+
+
 def stage_discover(config: Config) -> DiscoveryResult:
     folders = list(iter_mbox_files(config.root))
     folders = filter_folders(folders, config.folders_include, config.folders_exclude)
@@ -296,6 +345,7 @@ def stage_discover(config: Config) -> DiscoveryResult:
 
 
 def stage_parse(config: Config, folders: tuple[MboxFolder, ...]) -> ParseResult:
+    from rollup.mbox_identity import classify_mbox_mutation, snapshot_mbox
     from rollup.parse import parse_mbox_folder
 
     messages: list[ParsedMessage] = []
@@ -305,12 +355,34 @@ def stage_parse(config: Config, folders: tuple[MboxFolder, ...]) -> ParseResult:
     fatal = 0
     anomalies = 0
     folders_failed = 0
+    mutated_folders: list[str] = []
+    mutation_codes: list[str] = []
 
     for folder in folders:
         logger.info("Parsing %s (%s)", folder.folder_name, folder.mbox_path)
+        before = snapshot_mbox(folder.mbox_path)
         msgs, err_count, folder_errors = parse_mbox_folder(
             folder, config.max_body_chars, config.max_display_links
         )
+        after = snapshot_mbox(folder.mbox_path)
+        mutation = classify_mbox_mutation(before, after)
+        if mutation:
+            mutated_folders.append(folder.folder_name)
+            mutation_codes.append(mutation)
+            warnings.append(
+                StageWarning(
+                    code=mutation,
+                    message=f"mbox changed during parse ({mutation})",
+                    folder=folder.folder_name,
+                )
+            )
+            logger.warning(
+                "Mbox mutation %s on %s; excluding folder results from publication",
+                mutation,
+                folder.folder_name,
+            )
+            # Exclude changed-folder results from the published digest.
+            continue
         # Approximate seen: parsed + errors for this folder.
         folder_seen = len(msgs) + err_count
         if folder_errors:
@@ -343,6 +415,8 @@ def stage_parse(config: Config, folders: tuple[MboxFolder, ...]) -> ParseResult:
         counts=counts,
         warnings=tuple(warnings),
         errors=tuple(errors),
+        mutated_folders=tuple(mutated_folders),
+        mutation_codes=tuple(mutation_codes),
     )
 
 
@@ -579,6 +653,8 @@ def run_digest(
     manifest_config: ManifestConfig | None = None,
     clock: Clock | None = None,
     acquire_lock: bool = True,
+    output_writers: list | None = None,
+    writer_cli_args: object | None = None,
 ) -> DigestRunResult:
     """Run the full digest pipeline with typed stage results."""
     clock = clock or DEFAULT_CLOCK
@@ -595,6 +671,30 @@ def run_digest(
 
     effective_run = resolve_effective_run(config, run_options, grouping=grouping)
     resolved_apply_policy = effective_run.apply_policy
+
+    from rollup.safety import SafetyError, validate_writable_run_paths
+
+    try:
+        validate_writable_run_paths(
+            newsletter_root=config.root,
+            mail_root=config.mail_root,
+            output_dir=config.output_dir,
+            state_dir=config.state_dir,
+            log_dir=config.log_dir,
+            db_path=config.db_path,
+        )
+    except SafetyError as exc:
+        aggregated.hard_failure = True
+        aggregated.hard_failure_reason = str(exc)
+        return DigestRunResult(
+            status="failure",
+            exit_code=EXIT_FAILURE,
+            context=ctx,
+            report=None,
+            stats=None,
+            aggregated=aggregated,
+            error_message=str(exc),
+        )
 
     lock = None
     conn = None
@@ -660,6 +760,46 @@ def run_digest(
             get_canonical_newsletter_types(),
         )
 
+        discovery = stage_discover(config)
+        aggregated.discovery = discovery
+        logger.info(
+            "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
+            config.root,
+            len(discovery.folders),
+            config.lookback_days,
+            run_options.dry_run,
+            config.no_ollama,
+        )
+
+        parse_result = stage_parse(config, discovery.folders)
+        aggregated.parse = parse_result
+        if parse_result.mutated_folders:
+            aggregated.mbox_mutation_detected = True
+
+        no_input = evaluate_no_input(
+            folders_include=config.folders_include,
+            discovery=discovery,
+            parse=parse_result,
+        )
+        if no_input:
+            aggregated.hard_failure = True
+            aggregated.hard_failure_reason = no_input
+            aggregated.no_input_reason = no_input
+            error_message = no_input
+            status = "failure"
+            if manifest_builder is not None:
+                manifest_builder.record_failure(RuntimeError(no_input))
+                manifest_builder.finalize(status="failure", aggregated=aggregated)
+            return DigestRunResult(
+                status=status,
+                exit_code=EXIT_FAILURE,
+                context=ctx,
+                report=None,
+                stats=None,
+                aggregated=aggregated,
+                error_message=error_message,
+            )
+
         if effective_run.allow_summary_network:
             from rollup.summarize import OllamaError, validate_ollama_url
 
@@ -680,20 +820,6 @@ def run_digest(
                 error_message = str(exc)
                 raise
 
-        discovery = stage_discover(config)
-        aggregated.discovery = discovery
-        logger.info(
-            "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
-            config.root,
-            len(discovery.folders),
-            config.lookback_days,
-            run_options.dry_run,
-            config.no_ollama,
-        )
-
-        parse_result = stage_parse(config, discovery.folders)
-        aggregated.parse = parse_result
-
         seen_keys: set[str] = set()
         snapshot = None
         if not run_options.dry_run:
@@ -704,18 +830,14 @@ def run_digest(
             )
             from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
 
-            if not config.no_ollama:
-                from rollup.state import init_db_with_summaries
+            # Canonical init always materializes full schema (including caches).
+            conn = init_db(config.db_path)
+            if config.final_review_enabled:
+                ensure_final_review_schema(conn)
+            if config.group_summaries_enabled:
+                from rollup.state import ensure_group_summary_schema
 
-                conn = init_db_with_summaries(config.db_path)
-            else:
-                conn = init_db(config.db_path)
-                if config.final_review_enabled:
-                    ensure_final_review_schema(conn)
-                if config.group_summaries_enabled:
-                    from rollup.state import ensure_group_summary_schema
-
-                    ensure_group_summary_schema(conn)
+                ensure_group_summary_schema(conn)
             seen_keys = load_seen_keys(conn)
             observe_result = observe_sources(
                 conn, parse_result.messages, generated_at=generated_at
@@ -1016,12 +1138,89 @@ def run_digest(
 
         aggregated.dated_outputs_written = True
         aggregated.usable_digest = True
+        aggregated.messages_included = (
+            len(summarize_result.dated_entries) + len(summarize_result.undated_entries)
+        )
+
+        # Required output writers run before latest/seen/index (irreversible boundary).
+        if output_writers and report is not None and writer_cli_args is not None:
+            from rollup.output_writers import (
+                OutputWriterError,
+                WriteContext,
+                run_enabled_writers,
+            )
+
+            try:
+                written = run_enabled_writers(
+                    output_writers,
+                    report,
+                    WriteContext(
+                        output_dir=config.output_dir,
+                        generated_at=generated_at,
+                        max_display_links=config.max_display_links,
+                        dry_run=run_options.dry_run,
+                        run_id_short=ctx.run_id_short,
+                        logger=logger,
+                        folder_themes=config.folder_themes or None,
+                    ),
+                    args=writer_cli_args,
+                    config=config,
+                )
+                aggregated.writer_artifacts.extend(written)
+            except OutputWriterError as writer_exc:
+                aggregated.required_writer_failed = True
+                aggregated.hard_failure = True
+                aggregated.hard_failure_reason = str(writer_exc)
+                error_message = str(writer_exc)
+                logger.error("Required output writer failed: %s", writer_exc)
+                ctx.add_event("required_writer_failed", str(writer_exc), level="error")
+                status = "failure"
+                if manifest_builder is not None:
+                    try:
+                        manifest_builder.record_failure(writer_exc)
+                        manifest_builder.finalize(
+                            status="failure", aggregated=aggregated
+                        )
+                    except Exception:
+                        pass
+                return DigestRunResult(
+                    status=status,
+                    exit_code=EXIT_FAILURE,
+                    context=ctx,
+                    report=report,
+                    stats=stats,
+                    aggregated=aggregated,
+                    md_path=md_path,
+                    html_path=html_path,
+                    error_message=error_message,
+                )
 
         # Publish latest outputs transactionally when requested.
         # Dated digests are the durable source of truth; latest failure still
-        # permits seen-state updates below.
+        # permits seen-state updates below (only after required pubs).
         status = derive_run_status(aggregated, dry_run=False)
-        if run_options.publish_latest and md_path and html_path:
+        allow_latest = (
+            run_options.publish_latest
+            and md_path
+            and html_path
+            and aggregated.messages_included > 0
+            and not aggregated.mbox_mutation_detected
+            and not aggregated.required_writer_failed
+        )
+        if run_options.publish_latest and not allow_latest:
+            if aggregated.messages_included == 0:
+                ctx.add_event(
+                    "latest_skipped_empty_window",
+                    "Refusing latest.* update when messages_included == 0",
+                    level="info",
+                )
+            elif aggregated.mbox_mutation_detected:
+                ctx.add_event(
+                    "latest_skipped_mbox_mutation",
+                    "Refusing latest.* update after mbox mutation",
+                    level="warning",
+                )
+        if allow_latest and md_path and html_path:
             from rollup.publication import publish_latest_outputs
 
             try:
@@ -1160,6 +1359,8 @@ def run_digest(
                 )
                 index_rollup_run(config.db_path, payload)
             except Exception as index_exc:
+                aggregated.web_index_failed = True
+                aggregated.web_index_error = str(index_exc)
                 logger.error("Web run index failed: %s", index_exc)
                 ctx.add_event("web_index_failed", str(index_exc), level="error")
         else:
@@ -1191,24 +1392,15 @@ def _write_digest_outputs(
     variant_name: str | None = None,
     run_id_short: str | None = None,
 ) -> tuple[Path, Path]:
-    """Write digest using run_id-aware stem when supported."""
-    try:
-        return atomic_write_digest(
-            output_dir,
-            generated_at,
-            markdown,
-            html_content,
-            variant_name=variant_name,
-            run_id_short=run_id_short,
-        )
-    except TypeError:
-        return atomic_write_digest(
-            output_dir,
-            generated_at,
-            markdown,
-            html_content,
-            variant_name=variant_name,
-        )
+    """Write digest MD/HTML via the supported atomic_write_digest API."""
+    return atomic_write_digest(
+        output_dir,
+        generated_at,
+        markdown,
+        html_content,
+        variant_name=variant_name,
+        run_id_short=run_id_short,
+    )
 
 
 def _maybe_final_review(
@@ -1232,12 +1424,7 @@ def _maybe_final_review(
         write_final_review_report,
     )
 
-    try:
-        stem = digest_output_stem(
-            generated_at, variant_name
-        )
-    except TypeError:
-        stem = digest_output_stem(generated_at, variant_name)
+    stem = digest_output_stem(generated_at, variant_name)
 
     if use_explicit_path and config.final_review_report_path:
         report_path = config.final_review_report_path

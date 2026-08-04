@@ -10,7 +10,7 @@ from pathlib import Path
 
 from rollup.addons.artifact_write import atomic_write_digest_artifact
 from rollup.addons.offline_text import strip_urls_for_offline
-from rollup.assets import LOGO_FILENAME, asset_bytes
+from rollup.assets import LOGO_FILENAME, digest_logo_bytes
 from rollup.final_review import format_final_review_digest_summary
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
 from rollup.render import (
@@ -262,7 +262,7 @@ def render_epub_bytes(
 
     include_logo = True
     try:
-        logo_data = asset_bytes(LOGO_FILENAME)
+        logo_data = digest_logo_bytes()
         logo_item = epub.EpubItem(
             uid="logo",
             file_name=f"images/{LOGO_FILENAME}",

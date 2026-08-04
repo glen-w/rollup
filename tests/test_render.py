@@ -134,9 +134,13 @@ def test_render_html_includes_branding() -> None:
 
 def test_write_branding_assets(tmp_path: Path) -> None:
     write_branding_assets(tmp_path)
-    assert (tmp_path / "rollup_logo.png").is_file()
+    logo = tmp_path / "rollup_logo.png"
+    assert logo.is_file()
     assert (tmp_path / "favicon.ico").is_file()
     assert (tmp_path / "favicon.ico").stat().st_size > 0
+    # E-ink digest logo must stay tiny (source used to be ~1.3 MiB RGBA).
+    assert logo.stat().st_size < 20_000
+    assert logo.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_atomic_write_includes_branding_assets(tmp_path: Path) -> None:

@@ -423,6 +423,106 @@ _SUMMARIES_COMPOSITE_PK = (
 )
 _SUMMARY_GENERATIONS_INPUT_HASH_PK = "summary_input_hash"
 
+# Canonical full shape at SCHEMA_VERSION (core + empty cache/feature tables).
+CANONICAL_TABLES: frozenset[str] = frozenset(
+    {
+        "schema_version",
+        "seen_messages",
+        "summaries",
+        "summary_generations",
+        "final_review_generations",
+        "group_summary_generations",
+        "group_summary_by_key",
+        "sources",
+        "source_observations",
+        "source_overrides",
+        "source_aliases",
+        "source_observation_dedup",
+        "source_cadence_samples",
+        "rollup_runs",
+        "rollup_entries",
+        "message_source_links",
+        "message_interaction",
+        "message_ratings",
+        "rating_reason_codes",
+        "message_rating_reasons",
+        "message_reader_bodies",
+    }
+)
+
+_V7_REQUIRED_TABLES: frozenset[str] = frozenset(
+    {
+        "sources",
+        "source_observations",
+        "source_overrides",
+        "source_aliases",
+        "source_observation_dedup",
+        "source_cadence_samples",
+    }
+)
+
+
+def _existing_tables(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1] for r in rows}
+
+
+def validate_canonical_schema(conn: sqlite3.Connection) -> None:
+    """Validate the final current-shape catalogue after migrations/init."""
+    existing = _existing_tables(conn)
+    missing = sorted(CANONICAL_TABLES - existing)
+    if missing:
+        raise sqlite3.DatabaseError(
+            f"schema corruption or incomplete migration: missing tables {missing}"
+        )
+    _validate_reader_bodies_shape(conn, required=_V10_REQUIRED_COLUMNS)
+    if not _v7_shape_complete(conn):
+        raise sqlite3.DatabaseError(
+            "schema corruption: source registry tables incomplete for canonical shape"
+        )
+    fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if fk_errors:
+        raise sqlite3.DatabaseError(
+            f"foreign_key_check failed for canonical schema: {fk_errors}"
+        )
+
+
+def _v7_shape_complete(conn: sqlite3.Connection) -> bool:
+    existing = _existing_tables(conn)
+    if not _V7_REQUIRED_TABLES.issubset(existing):
+        return False
+    required_source_cols = {
+        "source_key",
+        "identity_version",
+        "lifecycle",
+        "created_at",
+        "updated_at",
+    }
+    return required_source_cols.issubset(_table_columns(conn, "sources"))
+
+
+def refuse_unsupported_schema_version(conn: sqlite3.Connection) -> None:
+    """Refuse DBs newer than this code before any mutate.
+
+    Safe when schema_version is absent (treated as 0).
+    """
+    tables = _existing_tables(conn)
+    if "schema_version" not in tables:
+        return
+    ver = get_schema_version(conn)
+    if ver > SCHEMA_VERSION:
+        raise sqlite3.DatabaseError(
+            f"unsupported schema version {ver} (max {SCHEMA_VERSION}); "
+            "refusing to modify database"
+        )
+
 
 def _summaries_needs_migration(conn: sqlite3.Connection) -> bool:
     row = conn.execute(
@@ -435,25 +535,35 @@ def _summaries_needs_migration(conn: sqlite3.Connection) -> bool:
 
 
 def _migrate_summaries_schema(conn: sqlite3.Connection) -> None:
+    """Rebuild summaries PK inside one IMMEDIATE transaction."""
     if not _summaries_needs_migration(conn):
         return
-    conn.executescript("""
-        CREATE TABLE summaries_migrated (
-            message_key TEXT NOT NULL,
-            content_hash TEXT NOT NULL,
-            newsletter_type TEXT NOT NULL,
-            model TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (message_key, content_hash, newsletter_type, model)
-        );
-        INSERT INTO summaries_migrated
-            SELECT message_key, content_hash, newsletter_type, model, summary, created_at
-            FROM summaries;
-        DROP TABLE summaries;
-        ALTER TABLE summaries_migrated RENAME TO summaries;
-        """)
-    conn.commit()
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(
+            conn,
+            """
+            CREATE TABLE summaries_migrated (
+                message_key TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                newsletter_type TEXT NOT NULL,
+                model TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (message_key, content_hash, newsletter_type, model)
+            );
+            INSERT INTO summaries_migrated
+                SELECT message_key, content_hash, newsletter_type, model, summary, created_at
+                FROM summaries;
+            DROP TABLE summaries;
+            ALTER TABLE summaries_migrated RENAME TO summaries;
+            """,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _summary_generations_needs_v4_migration(conn: sqlite3.Connection) -> bool:
@@ -467,99 +577,144 @@ def _summary_generations_needs_v4_migration(conn: sqlite3.Connection) -> bool:
 
 
 def _migrate_summary_generations_v4(conn: sqlite3.Connection) -> None:
+    """Replace summary_generations with v4 shape inside one IMMEDIATE transaction."""
     if not _summary_generations_needs_v4_migration(conn):
         return
-    conn.executescript("""
-        DROP TABLE IF EXISTS summary_generations;
-        """)
-    conn.executescript(SUMMARIES_SCHEMA_V4)
-    conn.commit()
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP TABLE IF EXISTS summary_generations")
+        _exec_ddl_statements(conn, SUMMARIES_SCHEMA_V4)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _schema_version_table_info(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("PRAGMA table_info(schema_version)").fetchall()
 
 
-def _migrate_schema_version_singleton(conn: sqlite3.Connection) -> None:
+def _ensure_schema_version_singleton(conn: sqlite3.Connection) -> None:
+    """Ensure singleton schema_version row exists without advancing or lowering version.
+
+    Fresh DBs start at version 0; migrations bump version only inside their own
+    committed transactions. Never writes SCHEMA_VERSION here.
+    """
+    refuse_unsupported_schema_version(conn)
     columns = {row[1] for row in _schema_version_table_info(conn)}
     if not columns:
         conn.execute(
-            "CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
+            "CREATE TABLE schema_version "
+            "(id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
         )
-        conn.execute(
-            "INSERT INTO schema_version (id, version) VALUES (1, ?)",
-            (SCHEMA_VERSION,),
-        )
+        conn.execute("INSERT INTO schema_version (id, version) VALUES (1, 0)")
         conn.commit()
         return
     if "id" in columns:
+        # Preserve existing version; only insert a zero row when missing.
         conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)",
-            (SCHEMA_VERSION,),
-        )
-        conn.execute(
-            "UPDATE schema_version SET version = ? WHERE id = 1",
-            (SCHEMA_VERSION,),
+            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)"
         )
         conn.commit()
+        refuse_unsupported_schema_version(conn)
         return
+    # Legacy multi-row table → singleton, preserving max version (never raise to current).
+    refuse_unsupported_schema_version(conn)
     current_row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
     current_version = int(current_row[0] or 0)
-    conn.execute("DROP TABLE schema_version")
-    conn.execute(
-        "CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
-    )
-    conn.execute(
-        "INSERT INTO schema_version (id, version) VALUES (1, ?)",
-        (max(current_version, SCHEMA_VERSION),),
-    )
-    conn.commit()
+    if current_version > SCHEMA_VERSION:
+        raise sqlite3.DatabaseError(
+            f"unsupported schema version {current_version} (max {SCHEMA_VERSION}); "
+            "refusing to modify database"
+        )
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP TABLE schema_version")
+        conn.execute(
+            "CREATE TABLE schema_version "
+            "(id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO schema_version (id, version) VALUES (1, ?)",
+            (current_version,),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
-def _set_schema_version(conn: sqlite3.Connection) -> None:
-    _migrate_schema_version_singleton(conn)
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)",
-        (SCHEMA_VERSION,),
-    )
-    conn.execute(
-        "UPDATE schema_version SET version = ? WHERE id = 1",
-        (SCHEMA_VERSION,),
-    )
-    conn.commit()
+# Back-compat alias used by older tests/callers.
+_migrate_schema_version_singleton = _ensure_schema_version_singleton
 
 
 def get_schema_version(conn: sqlite3.Connection) -> int:
     """Return the current database schema version."""
+    tables = _existing_tables(conn)
+    if "schema_version" not in tables:
+        return 0
+    cols = {row[1] for row in _schema_version_table_info(conn)}
+    if "id" not in cols:
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        return int(row[0] or 0) if row else 0
     row = conn.execute("SELECT version FROM schema_version WHERE id = 1").fetchone()
     if row is None:
         return 0
     return int(row[0])
 
 
-def ensure_final_review_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(FINAL_REVIEW_SCHEMA_V5)
-    _bump_schema_version_at_least(conn, 5)
-
-
-def ensure_group_summary_schema(conn: sqlite3.Connection) -> None:
-    """Additive schema v6: group summary caches. Preserves all prior tables."""
-    conn.executescript(GROUP_SUMMARY_SCHEMA_V6)
-    conn.executescript(GROUP_SUMMARY_BY_KEY_SCHEMA)
-    _bump_schema_version_at_least(conn, 6)
-
-
-def _bump_schema_version_at_least(conn: sqlite3.Connection, version: int) -> None:
-    _migrate_schema_version_singleton(conn)
+def _bump_schema_version_in_txn(conn: sqlite3.Connection, version: int) -> None:
+    """Monotonic version bump; caller owns the surrounding IMMEDIATE transaction."""
     conn.execute(
-        "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)",
-        (version,),
+        "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 0)"
     )
     conn.execute(
         "UPDATE schema_version SET version = ? WHERE id = 1 AND version < ?",
         (version, version),
     )
-    conn.commit()
+
+
+def ensure_final_review_schema(conn: sqlite3.Connection) -> None:
+    refuse_unsupported_schema_version(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, FINAL_REVIEW_SCHEMA_V5)
+        _bump_schema_version_in_txn(conn, 5)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def ensure_group_summary_schema(conn: sqlite3.Connection) -> None:
+    """Additive schema v6: group summary caches. Preserves all prior tables."""
+    refuse_unsupported_schema_version(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, GROUP_SUMMARY_SCHEMA_V6)
+        _exec_ddl_statements(conn, GROUP_SUMMARY_BY_KEY_SCHEMA)
+        _bump_schema_version_in_txn(conn, 6)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _bump_schema_version_at_least(conn: sqlite3.Connection, version: int) -> None:
+    refuse_unsupported_schema_version(conn)
+    _ensure_schema_version_singleton(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _bump_schema_version_in_txn(conn, version)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _exec_ddl_statements(conn: sqlite3.Connection, script: str) -> None:
@@ -570,26 +725,66 @@ def _exec_ddl_statements(conn: sqlite3.Connection, script: str) -> None:
             conn.execute(text)
 
 
+def ensure_canonical_cache_tables(conn: sqlite3.Connection) -> None:
+    """Create empty summary/final-review/group tables when missing (no version lie)."""
+    refuse_unsupported_schema_version(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, SUMMARIES_SCHEMA_V2)
+        if "summary_generations" not in _existing_tables(conn):
+            _exec_ddl_statements(conn, SUMMARIES_SCHEMA_V4)
+        _exec_ddl_statements(conn, FINAL_REVIEW_SCHEMA_V5)
+        _exec_ddl_statements(conn, GROUP_SUMMARY_SCHEMA_V6)
+        _exec_ddl_statements(conn, GROUP_SUMMARY_BY_KEY_SCHEMA)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    _migrate_summaries_schema(conn)
+    _migrate_summary_generations_v4(conn)
+
+
 def ensure_source_registry_schema(conn: sqlite3.Connection) -> None:
     """Atomic schema v7: source registry tables. Rollback leaves valid prior DB."""
     apply_connection_pragmas(conn)
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='sources'"
-    ).fetchone()
-    if row is not None and get_schema_version(conn) >= 7:
+    refuse_unsupported_schema_version(conn)
+    if get_schema_version(conn) >= 7 and _v7_shape_complete(conn):
+        return
+    if get_schema_version(conn) >= 7 and not _v7_shape_complete(conn):
+        # Narrow repair: version ahead of incomplete registry — finish DDL, keep version.
+        _assert_not_in_transaction(conn)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            _exec_ddl_statements(conn, SOURCE_REGISTRY_SCHEMA_V7)
+            if not _v7_shape_complete(conn):
+                raise sqlite3.DatabaseError(
+                    "incomplete source registry schema at version >= 7; "
+                    "refusing ambiguous repair"
+                )
+            fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if fk_errors:
+                raise sqlite3.DatabaseError(
+                    f"foreign_key_check failed after source registry repair: {fk_errors}"
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return
     try:
         conn.execute("BEGIN IMMEDIATE")
         _exec_ddl_statements(conn, SOURCE_REGISTRY_SCHEMA_V7)
+        if not _v7_shape_complete(conn):
+            raise sqlite3.DatabaseError(
+                "source registry migration did not produce required tables/columns"
+            )
         fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
         if fk_errors:
             raise sqlite3.DatabaseError(
                 f"foreign_key_check failed after source registry migrate: {fk_errors}"
             )
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 7)"
-        )
-        conn.execute("UPDATE schema_version SET version = 7 WHERE id = 1")
+        _bump_schema_version_in_txn(conn, 7)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -664,6 +859,7 @@ def _seed_rating_reason_codes(conn: sqlite3.Connection) -> None:
 def ensure_web_schema(conn: sqlite3.Connection) -> None:
     """Atomic schema v8: web archive, ratings, interaction. Part of canonical init."""
     apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
     if get_schema_version(conn) >= 8 and _source_overrides_allows_web(conn):
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='rollup_runs'"
@@ -682,19 +878,11 @@ def ensure_web_schema(conn: sqlite3.Connection) -> None:
             raise sqlite3.DatabaseError(
                 f"foreign_key_check failed after web schema migrate: {fk_errors}"
             )
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 8)"
-        )
-        conn.execute("UPDATE schema_version SET version = 8 WHERE id = 1")
+        _bump_schema_version_in_txn(conn, 8)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
-
-
-def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return {r[1] for r in rows}
 
 
 def _reader_bodies_table_exists(conn: sqlite3.Connection) -> bool:
@@ -725,11 +913,8 @@ def _assert_not_in_transaction(conn: sqlite3.Connection) -> None:
 def ensure_message_reader_bodies_v9(conn: sqlite3.Connection) -> None:
     """Schema v9: reader body store."""
     apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
     ver = get_schema_version(conn)
-    if ver > SCHEMA_VERSION:
-        raise sqlite3.DatabaseError(
-            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
-        )
     if ver >= 9 and _reader_bodies_table_exists(conn):
         _validate_reader_bodies_shape(conn, required=_V9_REQUIRED_COLUMNS)
         return
@@ -745,10 +930,7 @@ def ensure_message_reader_bodies_v9(conn: sqlite3.Connection) -> None:
             raise sqlite3.DatabaseError(
                 f"foreign_key_check failed after reader bodies v9: {fk_errors}"
             )
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 9)"
-        )
-        conn.execute("UPDATE schema_version SET version = 9 WHERE id = 1")
+        _bump_schema_version_in_txn(conn, 9)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -758,20 +940,22 @@ def ensure_message_reader_bodies_v9(conn: sqlite3.Connection) -> None:
 def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
     """Schema v10: reader provenance columns."""
     apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
     ver = get_schema_version(conn)
-    if ver > SCHEMA_VERSION:
-        raise sqlite3.DatabaseError(
-            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
-        )
     if ver >= 10 and _reader_bodies_table_exists(conn):
-        _validate_reader_bodies_shape(conn, required=_V10_REQUIRED_COLUMNS)
-        return
-    if ver < 9 or not _reader_bodies_table_exists(conn):
+        cols = _table_columns(conn, "message_reader_bodies")
+        if _V10_REQUIRED_COLUMNS.issubset(cols):
+            _validate_reader_bodies_shape(conn, required=_V10_REQUIRED_COLUMNS)
+            return
+        # Narrow repair: version ahead of v10 columns — ALTER in place.
+    elif ver < 9 or not _reader_bodies_table_exists(conn):
         ensure_message_reader_bodies_v9(conn)
         ver = get_schema_version(conn)
     _assert_not_in_transaction(conn)
     try:
         conn.execute("BEGIN IMMEDIATE")
+        if not _reader_bodies_table_exists(conn):
+            _exec_ddl_statements(conn, MESSAGE_READER_BODIES_V9)
         cols = _table_columns(conn, "message_reader_bodies")
         if "reader_text_version" not in cols:
             conn.execute(
@@ -818,10 +1002,7 @@ def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
             raise sqlite3.DatabaseError(
                 f"foreign_key_check failed after reader bodies v10: {fk_errors}"
             )
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 10)"
-        )
-        conn.execute("UPDATE schema_version SET version = 10 WHERE id = 1")
+        _bump_schema_version_in_txn(conn, 10)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -830,15 +1011,13 @@ def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
 
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
-    ver = get_schema_version(conn)
-    if ver > SCHEMA_VERSION:
-        raise sqlite3.DatabaseError(
-            f"unsupported schema version {ver} (max {SCHEMA_VERSION})"
-        )
+    refuse_unsupported_schema_version(conn)
+    ensure_canonical_cache_tables(conn)
     ensure_source_registry_schema(conn)
     ensure_web_schema(conn)
     ensure_message_reader_bodies_v9(conn)
     ensure_message_reader_bodies_v10(conn)
+    validate_canonical_schema(conn)
 
 
 def apply_connection_pragmas(conn: sqlite3.Connection) -> None:
@@ -854,27 +1033,19 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
+    """Open or create DB and migrate to the canonical full schema shape."""
     conn = connect_db(db_path)
+    refuse_unsupported_schema_version(conn)
     conn.executescript(MVP_SCHEMA)
-    _migrate_schema_version_singleton(conn)
-    _bump_schema_version_at_least(conn, 1)
+    _ensure_schema_version_singleton(conn)
+    refuse_unsupported_schema_version(conn)
     run_schema_migrations(conn)
     return conn
 
 
 def init_db_with_summaries(db_path: Path) -> sqlite3.Connection:
-    conn = connect_db(db_path)
-    conn.executescript(MVP_SCHEMA)
-    _migrate_schema_version_singleton(conn)
-    conn.executescript(SUMMARIES_SCHEMA_V2)
-    conn.executescript(SUMMARIES_SCHEMA_V3)
-    _migrate_summaries_schema(conn)
-    _migrate_summary_generations_v4(conn)
-    conn.executescript(SUMMARIES_SCHEMA_V4)
-    ensure_final_review_schema(conn)
-    ensure_group_summary_schema(conn)
-    run_schema_migrations(conn)
-    return conn
+    """Alias for init_db: schema_version always implies the full canonical shape."""
+    return init_db(db_path)
 
 
 def get_group_summary_generation(
@@ -887,11 +1058,11 @@ def get_group_summary_generation(
         (cache_key,),
     ).fetchone()
     if row:
+        # Touch last_used_at without committing — caller owns the transaction.
         conn.execute(
             "UPDATE group_summary_by_key SET last_used_at = ? WHERE cache_key = ?",
             (datetime.now().astimezone().isoformat(), cache_key),
         )
-        conn.commit()
         return row[0]
     return None
 

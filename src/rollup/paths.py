@@ -88,10 +88,26 @@ def resolve_mail_paths(
     If both paths were left at defaults and the default newsletter root is
     missing, try Thunderbird profile discovery. Exactly one candidate is used;
     zero or many leave defaults in place with a diagnostic message.
+
+    When only ``root`` is explicit and it looks like a Thunderbird ``*.sbd``
+    tree, infer ``mail_root`` as the parent account directory.
     """
     default_mail_root = default_mail_root or DEFAULT_MAIL_ROOT
     default_newsletter_root = default_newsletter_root or DEFAULT_NEWSLETTER_ROOT
     home = home if home is not None else Path.home()
+
+    if root_explicit and not mail_root_explicit:
+        expanded_root = root.expanduser()
+        if expanded_root.name.lower().endswith(".sbd"):
+            inferred_mail = expanded_root.parent
+            return ResolvedMailPaths(
+                mail_root=inferred_mail,
+                root=expanded_root,
+                source="explicit",
+                message=(
+                    f"Inferred mail_root={inferred_mail} from newsletter root parent"
+                ),
+            )
 
     if root_explicit or mail_root_explicit:
         return ResolvedMailPaths(

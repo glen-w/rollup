@@ -27,7 +27,7 @@ def _config(tmp_path: Path):
 
     return Config(
         root=FIXTURE_ROOT,
-        mail_root=tmp_path / "mail",
+        mail_root=FIXTURE_ROOT.parent,
         output_dir=tmp_path / "output",
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",
@@ -55,7 +55,7 @@ def _config(tmp_path: Path):
 
 
 def test_doctor_fast_ok(tmp_path: Path) -> None:
-    (tmp_path / "mail").mkdir()
+    pass  # mail_root is fixture parent
     report = run_doctor(_config(tmp_path), RunOptions(dry_run=True), full=False, network=False)
     assert report.schema_version == 1
     assert report.ok
@@ -66,7 +66,7 @@ def test_doctor_fast_ok(tmp_path: Path) -> None:
 
 
 def test_doctor_json_stdout_pure(tmp_path: Path) -> None:
-    (tmp_path / "mail").mkdir()
+    pass  # mail_root is fixture parent
     report = run_doctor(_config(tmp_path), RunOptions(dry_run=True))
     text = format_doctor_json(report)
     data = json.loads(text)
@@ -77,7 +77,7 @@ def test_doctor_json_stdout_pure(tmp_path: Path) -> None:
 
 
 def test_doctor_cli_json(tmp_path: Path) -> None:
-    (tmp_path / "mail").mkdir()
+    pass  # mail_root is fixture parent
     result = subprocess.run(
         [
             sys.executable,
@@ -88,7 +88,7 @@ def test_doctor_cli_json(tmp_path: Path) -> None:
             "--root",
             str(FIXTURE_ROOT),
             "--mail-root",
-            str(tmp_path / "mail"),
+            str(FIXTURE_ROOT.parent),
             "--output-dir",
             str(tmp_path / "output"),
             "--state-dir",
@@ -112,7 +112,7 @@ def test_launchd_plist_validates(tmp_path: Path) -> None:
         python=Path(sys.executable),
         workdir=tmp_path,
         root=FIXTURE_ROOT,
-        mail_root=tmp_path / "mail",
+        mail_root=FIXTURE_ROOT.parent,
         output_dir=tmp_path / "output",
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",
@@ -131,7 +131,7 @@ def test_crontab_is_shell_quoted(tmp_path: Path) -> None:
         python=tmp_path / "my python",
         workdir=tmp_path / "work dir",
         root=FIXTURE_ROOT,
-        mail_root=tmp_path / "mail",
+        mail_root=FIXTURE_ROOT.parent,
         output_dir=tmp_path / "out dir",
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",
