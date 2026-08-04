@@ -43,7 +43,7 @@ Saves are previewed as an effective-config diff, confirmed with a one-time maint
 
 ## Run Studio (`/run`)
 
-Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, writers, Ollama contact), dry-run discovery, then run a real digest as a **synchronous subprocess** (browser waits; single in-memory active-run slot — not a scheduler). Progress/logs via `/run/status`; results show status (`success` / `partial` / `failure` / `dry_run`) and artifact links. The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
+Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, writers, Ollama contact), dry-run discovery, then run a real digest as a **synchronous subprocess** (browser waits; single in-memory active-run slot — not a scheduler). Progress/logs via `/run/status`; results show status (`success` / `partial` / `failure` / `dry_run`) and artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`). The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
 
 ## Read-only GET contract
 

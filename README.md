@@ -29,7 +29,7 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 
 See [docs/WEB.md](docs/WEB.md).
 
-More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · [CHANGELOG.md](CHANGELOG.md)
+More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · product shape: [docs/CONTRACT.md](docs/CONTRACT.md) · roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Safety guarantee
 
@@ -513,12 +513,21 @@ Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMP
 
 ```
 src/rollup/                       # package source
+src/rollup/cli.py                 # command handlers; re-exports build_parser
+src/rollup/cli_parser.py          # argparse construction
+src/rollup/pipeline.py            # digest orchestration (run_digest + stages)
+src/rollup/sticky_flags.py        # sticky TOML ↔ CLI flag registry
+src/rollup/config_service.py      # load/validate/save TOML (web Settings / Run)
 src/rollup/addons/                # in-tree output writer addons (e.g. xteink)
 src/rollup/prompts/               # bundled Ollama + final-review prompt templates
+src/rollup/web/                   # optional Flask UI ([web] extra)
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes
+docs/CONFIG.md                    # TOML, profiles, sticky ↔ CLI
 docs/WEB.md                       # local web UI
+docs/CONTRACT.md                  # product contract + publication integrity
+docs/ROADMAP.md                   # near-term follow-ups and non-goals
 docs/SOURCES.md                   # source registry
 CHANGELOG.md                      # release notes
 fixtures/                         # gitignored — local real-mail copies

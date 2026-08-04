@@ -26,6 +26,24 @@ rollup config print
 rollup --config ./rollup.toml config print --profile daily
 ```
 
+## Sticky keys ↔ CLI flags
+
+Sticky TOML keys (top-level or under `[profiles.*]`) map to digest CLI flags
+through a single registry in `rollup.sticky_flags`. That module drives both:
+
+- applying sticky values onto argparse when the flag was **not** passed on the CLI
+  (`apply_sticky_to_namespace`)
+- building Run Studio / display argv from an effective sticky view
+  (`config_service.build_digest_argv` → `sticky_to_argv`)
+
+When you add a new sticky key that should appear on the CLI, extend
+`STICKY_FLAG_SPECS` (and `STICKY_KEYS` in `user_config`) together — coverage is
+asserted in tests. The sticky key `profile` is resolved via `--profile` /
+`EffectiveConfigView.profile_name`, not the sticky→argv body.
+
+Scheduler helpers use a **separate** `cron_helpers.build_digest_argv` (paths +
+`--cron`); do not confuse it with the sticky registry.
+
 ## Minimal config
 
 ```toml
@@ -136,6 +154,7 @@ If `root` / `mail_root` are not set in config or CLI:
 ## Related
 
 - Product contract: [CONTRACT.md](CONTRACT.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)
 - Web UI (Settings + Run Studio): [WEB.md](WEB.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)

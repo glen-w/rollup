@@ -198,3 +198,82 @@ def test_derive_run_status_thresholds() -> None:
 
     agg = AggregatedResults(usable_digest=True)
     assert derive_run_status(agg, dry_run=True) == "dry_run"
+
+
+def test_validate_run_paths_helper_rejects_output_inside_mail(tmp_path: Path) -> None:
+    """Phase helper used by run_digest must fail closed on mail-root writes."""
+    from datetime import datetime, timezone
+
+    from rollup.config import Config
+    from rollup.pipeline import (
+        AggregatedResults,
+        _DigestSession,
+        _validate_run_paths,
+    )
+    from rollup.run_context import RunContext
+    from rollup.run_options import GroupingConfig, ManifestConfig, RunOptions
+
+    mail = tmp_path / "mail"
+    root = mail / "Newsletters.sbd"
+    root.mkdir(parents=True)
+    out_inside = mail / "out"
+    out_inside.mkdir()
+    state = tmp_path / "state"
+    logs = tmp_path / "logs"
+    state.mkdir()
+    logs.mkdir()
+
+    config = Config(
+        root=root,
+        mail_root=mail,
+        output_dir=out_inside,
+        state_dir=state,
+        log_dir=logs,
+        lookback_days=7,
+        folders_include=(),
+        folders_exclude=(),
+        no_ollama=True,
+        include_seen_undated=False,
+        rebuild_summaries=False,
+        max_body_chars=200_000,
+        max_chars_for_llm=30_000,
+        max_display_links=8,
+        ollama_url="http://localhost:11434/api/generate",
+        ollama_model="llama3.2:3b",
+        allow_remote_ollama=False,
+        summary_profile=None,
+        summary_variants=(),
+        summary_type_routing=None,
+        summary_profile_set_path=None,
+        export_summary_profile_set_path=None,
+        list_summary_profiles=False,
+        list_newsletter_types=False,
+        summary_routing_report=False,
+    )
+    opts = RunOptions(mode="cli", dry_run=True, quiet=True)
+    grouping = GroupingConfig(enabled=False)
+    ctx = RunContext.create(
+        mode="cli",
+        clock=FixedClock(datetime(2026, 8, 1, tzinfo=timezone.utc)),
+    )
+    session = _DigestSession(
+        config=config,
+        run_options=opts,
+        grouping=grouping,
+        manifest_config=ManifestConfig(manifest_dir=state / "manifests"),
+        acquire_lock=False,
+        output_writers=None,
+        writer_cli_args=None,
+        ctx=ctx,
+        generated_at=ctx.run_start_time,
+        aggregated=AggregatedResults(ollama_enabled=False),
+        window_start=ctx.run_start_time,
+        window_end=ctx.run_start_time,
+        effective_run=object(),
+        resolved_apply_policy=None,
+    )
+    early = _validate_run_paths(session)
+    assert early is not None
+    assert early.status == "failure"
+    assert early.exit_code == 1
+    assert session.aggregated.hard_failure is True

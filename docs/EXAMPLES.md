@@ -19,7 +19,7 @@ source .venv/bin/activate
 ```
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
-Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
+Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md). Roadmap: [ROADMAP.md](ROADMAP.md).
 
 **Default digest mode** needs no Ollama server and makes no network calls. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 

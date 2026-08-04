@@ -99,3 +99,99 @@ def test_apply_sticky_to_namespace_delegates() -> None:
     assert args.no_ollama is False
     assert args.no_grouping is True
     assert args.output == ["none"]
+
+
+def test_sticky_to_argv_expands_user_paths() -> None:
+    from pathlib import Path
+
+    argv = sticky_to_argv({"root": "~/Newsletters.sbd", "mail_root": "~/mail"})
+    root_idx = argv.index("--root")
+    mail_idx = argv.index("--mail-root")
+    assert argv[root_idx + 1] == str(Path("~/Newsletters.sbd").expanduser())
+    assert argv[mail_idx + 1] == str(Path("~/mail").expanduser())
+    assert "~" not in argv[root_idx + 1]
+
+
+def test_build_digest_argv_wraps_sticky_to_argv(tmp_path) -> None:
+    from rollup.config_service import build_digest_argv, resolve_effective
+    from rollup.user_config import LoadedUserConfig
+
+    loaded = LoadedUserConfig(
+        values={
+            "lookback_days": 5,
+            "root": str(tmp_path / "root"),
+            "ollama": False,
+            "no_grouping": False,
+            "output": ["none"],
+        },
+        profiles={"deep": {"lookback_days": 5}},
+    )
+    eff = resolve_effective(loaded, profile_name="deep")
+    argv = build_digest_argv(eff, config_path=tmp_path / "c.toml", dry_run=True)
+    assert argv[0:3] == ["--config", str(tmp_path / "c.toml"), "digest"]
+    assert "--profile" in argv and "deep" in argv
+    lookback_idx = argv.index("--lookback-days")
+    assert argv[lookback_idx + 1] == "5"
+    assert "--no-ollama" in argv
+    assert "--grouping" in argv
+    assert "--dry-run" in argv
+    # Sticky body matches sticky_to_argv for the same sticky map.
+    body = sticky_to_argv(eff.sticky)
+    for flag in body:
+        assert flag in argv
+
+
+def test_sticky_to_argv_apply_roundtrip(tmp_path) -> None:
+    """Emitted argv is treated as CLI-present; bare apply still fills sticky."""
+    from pathlib import Path
+
+    sticky = {
+        "lookback_days": 9,
+        "root": str(tmp_path / "root"),
+        "mail_root": str(tmp_path / "mail"),
+        "effort": "light",
+        "ollama": True,
+        "ollama_model": "llama3.2",
+        "no_grouping": True,
+        "grouping_min_size": 4,
+        "folder": ["tech"],
+        "exclude_folder": ["noise"],
+        "output": ["json", "txt"],
+        "summary_profile": "brief",
+    }
+    emitted = sticky_to_argv(sticky)
+    assert "--lookback-days" in emitted and "9" in emitted
+    assert "--ollama" in emitted
+    assert "--no-grouping" in emitted
+
+    args = argparse.Namespace(
+        lookback_days=5,
+        effort=None,
+        root="/default",
+        mail_root="/default-mail",
+        ollama=False,
+        no_ollama=True,
+        no_grouping=False,
+        grouping=True,
+        grouping_min_size=3,
+        folder=None,
+        exclude_folder=None,
+        output=[],
+        ollama_model=None,
+        summary_profile=None,
+    )
+    apply_sticky_to_namespace(args, sticky, argv=["digest", *emitted])
+    assert args.lookback_days == 5
+    assert args.effort is None
+
+    apply_sticky_to_namespace(args, sticky, argv=["digest"])
+    assert args.lookback_days == 9
+    assert args.effort == "light"
+    assert args.ollama is True
+    assert args.no_ollama is False
+    assert args.no_grouping is True
+    assert args.grouping is False
+    assert args.folder == ["tech"]
+    assert args.output == ["json", "txt"]
+    assert args.summary_profile == "brief"
+    assert Path(args.root) == tmp_path / "root"

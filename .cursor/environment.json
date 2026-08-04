@@ -1,0 +1,17 @@
+{
+  "name": "rollup",
+  "install": "uv sync --extra dev --extra web",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "mkdir -p /tmp/rollup-cloud-demo/{state,output,logs} && .venv/bin/rollup digest --root tests/fixtures/Newsletters.sbd --mail-root tests/fixtures --state-dir /tmp/rollup-cloud-demo/state --output-dir /tmp/rollup-cloud-demo/output --log-dir /tmp/rollup-cloud-demo/logs --lookback-days 3650 --no-ollama --quiet && .venv/bin/rollup web --host 127.0.0.1 --port 8765 --state-dir /tmp/rollup-cloud-demo/state --output-dir /tmp/rollup-cloud-demo/output --mail-root tests/fixtures --log-dir /tmp/rollup-cloud-demo/logs",
+      "description": "Seeds a fixture digest into /tmp/rollup-cloud-demo then serves the Rollup web UI at http://127.0.0.1:8765 (loopback only)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 8765
+    }
+  ]
+}

@@ -4,6 +4,19 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.7.0 — 2026-08-05
+
+### Added
+
+- **Roadmap** ([docs/ROADMAP.md](docs/ROADMAP.md)): shipped highlights, near-term engineering follow-ups, and product non-goals.
+- **Agent notes** (`AGENTS.md`) for local/cloud contributor setup.
+- Docs for sticky↔CLI mapping in [docs/CONFIG.md](docs/CONFIG.md); README project layout and doc index updated.
+- Tests for `cli_parser` re-export, sticky argv/apply round-trip, and `run_digest` path-validation helper.
+
+### Changed
+
+- Ignore local coverage artifacts (`.coverage`, `htmlcov/`, …).
+
 ## 0.6.3 — 2026-08-05
 
 ### Added
@@ -13,6 +26,10 @@ All notable changes to Rollup are documented in this file.
 - Sticky schema: `ollama_model`, `summary_profile`; folder `display_name` / `order`; `[ui]` landing page, preferred view, onboarding flag.
 - Shared `sticky_flags` registry for sticky↔CLI mapping; `rollup web` applies sticky TOML paths like digest.
 - First-run checklist and appearance previews in Settings; Archive “Open preferred” affordances from `[ui].preferred_view`.
+
+### Changed
+
+- Argparse construction lives in `cli_parser` (`rollup.cli.build_parser` still re-exported). `run_digest` orchestrates private phase helpers via `_DigestSession` (validate paths → lock/manifest → core stages → emit artifacts → release → web index).
 
 ### Fixed
 

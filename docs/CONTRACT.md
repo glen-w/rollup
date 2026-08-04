@@ -24,7 +24,8 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders.
 - Default profile is **weekly** (7-day lookback, grouping on)
 - Folder accents are deterministic from folder names; personal emoji/colors live in TOML
 
-See [CONFIG.md](CONFIG.md) for TOML, profiles, and path discovery.
+See [CONFIG.md](CONFIG.md) for TOML, profiles, and path discovery. Near-term
+engineering follow-ups and non-goals: [ROADMAP.md](ROADMAP.md).
 
 ## Runtime integrity (persistence and publication)
 

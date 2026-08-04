@@ -1,0 +1,48 @@
+# Roadmap
+
+Where Rollup is headed, relative to the [product contract](CONTRACT.md).
+This is guidance for contributors, not a commitment calendar.
+
+## Shipped (recent)
+
+- Optional TOML sticky config, run profiles, effort presets, folder themes ([CONFIG.md](CONFIG.md))
+- Output-writer plugin seam + builtins (xteink, txt, json, epub) ([OUTPUT_WRITERS.md](OUTPUT_WRITERS.md))
+- Loopback web UI: Archive, Quality, Registry, Admin, reader bodies ([WEB.md](WEB.md))
+- Configuration Centre (`/settings`) and Run Studio (`/run`) on the real TOML + CLI digest path
+- Shared `sticky_flags` registry (sticky ↔ CLI argv/argparse); `cli_parser` extraction; `run_digest` phase helpers
+
+## Near-term (engineering hygiene)
+
+Incremental follow-ups from the post–0.6.3 refactor audit — **behavior-preserving** preferred:
+
+1. **Shared Thunderbird folder listing** for Settings and Run Studio (sidecar skip `.msf`/`.dat`/`.toc` today duplicated in web routes)
+2. **One web helper** to load the active `ConfigDocument` (`CONFIG_PATH` / `CONFIG_EXPLICIT`) used by app startup, Settings, Run, and Archive themes
+3. **`state.py` / `source_registry.py` splits** by concern (schema migrate vs cache vs registry APIs) when the next feature forces edits there
+4. **`render.py` MD/HTML twin paths** — shared structure + thin formatters if a new output surface needs them
+5. Optional rename of `cron_helpers.build_digest_argv` to avoid colliding with `config_service.build_digest_argv` (different jobs; do not merge)
+
+## Product non-goals (still)
+
+From [CONTRACT.md](CONTRACT.md) — not planned unless the contract changes:
+
+- IMAP / Gmail API / Maildir backends
+- Thunderbird add-on (XPI)
+- Multi-user or non-loopback web UI
+- Exposing classifier thresholds as user knobs
+- In-app digest scheduler (Run Studio stays a synchronous guided runner; use [CRON.md](CRON.md) / launchd)
+
+## Open product questions (parked)
+
+- Richer onboarding when mail paths are undiscoverable
+- Optional remote Ollama remains explicit (`--allow-remote-ollama`); no hosted LLM path
+- Deeper Admin failure history when manifests are missing (incomplete-history disclaimer stays)
+
+## Related docs
+
+| Doc | Role |
+|-----|------|
+| [CONTRACT.md](CONTRACT.md) | Product shape and publication integrity |
+| [CONFIG.md](CONFIG.md) | TOML, profiles, sticky ↔ CLI |
+| [WEB.md](WEB.md) | Loopback UI surfaces |
+| [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
+| [CHANGELOG.md](../CHANGELOG.md) | What shipped |
