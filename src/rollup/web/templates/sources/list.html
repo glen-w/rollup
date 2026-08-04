@@ -2,7 +2,7 @@
 {% block title %}Source quality{% endblock %}
 {% block content %}
 <h1>Newsletter quality</h1>
-<p class="note">Ranked by confidence-adjusted score (Bayesian mean of per-source means prior). Read/save/dismiss rates are informational only.</p>
+<p class="note">Ranked by confidence-adjusted score. For enable/disable and overrides use <a href="{{ url_for('sources.list_registry') }}">Registry</a>.</p>
 {% if not sources %}
 <p class="empty">No sources with indexed messages or ratings yet.</p>
 {% else %}

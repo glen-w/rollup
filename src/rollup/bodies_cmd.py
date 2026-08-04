@@ -94,7 +94,25 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
     )
     if args.json:
-        print(json.dumps(result.__dict__))
+        print(
+            json.dumps(
+                {
+                    "candidates": result.candidates,
+                    "scanned": result.scanned,
+                    "matched": result.matched,
+                    "inserted": result.inserted,
+                    "updated": result.updated,
+                    "unchanged": result.unchanged,
+                    "conflicts": result.conflicts,
+                    "empty": result.empty,
+                    "truncated": result.truncated,
+                    "source_missing": result.source_missing,
+                    "parse_failed": result.parse_failed,
+                    "ambiguous": result.ambiguous,
+                    "incomplete": result.incomplete,
+                }
+            )
+        )
     else:
         print(
             f"backfill: candidates={result.candidates} matched={result.matched} "

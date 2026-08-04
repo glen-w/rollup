@@ -2,17 +2,28 @@
 {% block title %}Admin — Rollup{% endblock %}
 {% block content %}
 <article class="admin-page">
-  <h1>Reader body administration</h1>
-  {% if loopback_warning %}
-  <p class="banner">This server is not on loopback. Local processes may access this interface.</p>
-  {% else %}
-  <p class="banner">Local administration only. Other processes on this machine can invoke these endpoints.</p>
-  {% endif %}
+  <h1>Admin</h1>
+  <p class="banner">Local administration only. Every Admin GET is read-only and offline.</p>
+  <p class="note">{{ panels.manifests.data.incomplete_history_note if panels.manifests.ok and panels.manifests.data else "Failure history from manifests is incomplete: a run whose manifest write failed completely cannot be discovered here." }}</p>
+
+  <form method="post" action="{{ url_for('admin.admin_deep_check') }}" class="admin-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">{% if deep %}Re-run deep check{% else %}Run deep check{% endif %}</button>
+    {% if deep %}<span class="note">Showing deep diagnostics (POST-only).</span>{% endif %}
+  </form>
+
+  {% macro panel_error(p) %}
+    {% if not p.ok %}
+    <p class="banner">{{ p.name }} unavailable: {{ p.error }}</p>
+    {% endif %}
+  {% endmacro %}
 
   <details class="panel" open>
-    <summary>Configuration</summary>
+    <summary>Web process configuration</summary>
     <div class="card-body">
-      {% for section_title, items in settings %}
+      {{ panel_error(panels.settings) }}
+      {% if panels.settings.ok %}
+      {% for section_title, items in panels.settings.data %}
       <h2 class="config-group">{{ section_title }}</h2>
       <ul class="stats">
         {% for label, value in items %}
@@ -20,43 +31,225 @@
         {% endfor %}
       </ul>
       {% endfor %}
-      <p class="note">Configured at startup via <code>rollup web</code> flags (<code>--state-dir</code>, <code>--output-dir</code>, <code>--mail-root</code>, <code>--log-dir</code>, <code>--host</code>, <code>--port</code>, <code>--debug</code>).</p>
+      <p class="note">Current web process settings only — not a historical run configuration.</p>
+      {% endif %}
     </div>
   </details>
 
   <details class="panel">
-    <summary>Overview</summary>
+    <summary>Default digest effective configuration</summary>
     <div class="card-body">
+      {{ panel_error(panels.digest_defaults) }}
+      {% if panels.digest_defaults.ok %}
+      {% for section_title, items in panels.digest_defaults.data %}
+      <h2 class="config-group">{{ section_title }}</h2>
+      <ul class="stats">
+        {% for label, value in items %}
+        <li>{{ label }}: <code>{{ value }}</code></li>
+        {% endfor %}
+      </ul>
+      {% endfor %}
+      <p class="note">Resolved from user config + run profile defaults. Distinct from the web process panel above.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="panel" open>
+    <summary>Read-only doctor</summary>
+    <div class="card-body">
+      {{ panel_error(panels.doctor) }}
+      {% if panels.doctor.ok %}
+      {% set report = panels.doctor.data %}
+      <p>{% if report.ok %}OK{% else %}Issues found{% endif %}
+        · {{ report.error_count }} error(s) · {{ report.warning_count }} warning(s)</p>
+      <ul class="stats">
+        {% for c in report.checks %}
+        <li class="status-{{ c.status }}">{{ c.status }} · {{ c.message }}{% if c.fix and c.status in ['fail', 'warn'] %} — fix: {{ c.fix }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>SQLite / schema</summary>
+    <div class="card-body">
+      {{ panel_error(panels.schema) }}
+      {% if panels.schema.ok %}
+      {% set s = panels.schema.data %}
+      <ul class="stats">
+        <li>Schema version: {{ s.schema_version }} (package {{ s.package_schema_version }})</li>
+        <li>Journal mode: <code>{{ s.journal_mode }}</code> · {{ s.note }}</li>
+        {% if s.missing_tables %}
+        <li>Missing tables: {{ s.missing_tables | join(', ') }}</li>
+        {% else %}
+        <li>Canonical tables present</li>
+        {% endif %}
+      </ul>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="panel" open>
+    <summary>Recent runs / manifests</summary>
+    <div class="card-body">
+      {{ panel_error(panels.manifests) }}
+      {% if panels.manifests.ok %}
+      {% set m = panels.manifests.data %}
+      <p class="note">Examined {{ m.examined }} dir entries · parsed {{ m.parsed }} · skipped {{ m.skipped }}</p>
+      {% if m.issues %}
+      <ul>
+        {% for issue in m.issues %}
+        <li>{{ issue.code }}: {{ issue.message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if not m.cards %}
+      <p class="empty">No indexed runs or manifests in the scan window.</p>
+      {% else %}
+      {% for card in m.cards %}
+      <details class="rollup-run-card">
+        <summary>
+          <span class="{{ card.status_css }}">{{ card.status }}</span>
+          · <code>{{ card.run_id[:8] }}…</code>
+          · {{ card.started_at or "—" }}
+          · {{ card.source }}
+          {% if card.degraded %} · degraded{% endif %}
+        </summary>
+        <div class="card-body">
+          <ul class="stats">
+            <li>Messages included: {{ card.messages_included if card.messages_included is not none else "not recorded" }}</li>
+            <li>Warnings: {{ card.warning_count if card.warning_count is not none else "not recorded" }}</li>
+            <li>Config fingerprint: {{ card.config_fingerprint or "not recorded" }}</li>
+            {% if card.conflict_note %}<li>{{ card.conflict_note }}</li>{% endif %}
+            {% if card.recovery_labels %}<li>Guidance: {{ card.recovery_labels | join(', ') }}</li>{% endif %}
+          </ul>
+          {% if card.diagnostics %}
+          <ul>
+            {% for d in card.diagnostics %}
+            <li>{{ d }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if card.artifact_kinds and card.source != 'manifest' %}
+          <p class="artifact-links">
+            {% for kind in card.artifact_kinds %}
+              {% if kind != 'manifest' %}
+              <a href="{{ url_for('artifacts.serve_artifact', run_id=card.run_id, kind=kind) }}">{{ kind }}</a>
+              {% endif %}
+            {% endfor %}
+          </p>
+          {% endif %}
+        </div>
+      </details>
+      {% endfor %}
+      {% endif %}
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>Reader bodies</summary>
+    <div class="card-body">
+      {{ panel_error(panels.bodies) }}
+      {% if panels.bodies.ok %}
+      {% set b = panels.bodies.data %}
       <div class="stats-panel">
         <ul class="stats">
-          <li>Total bodies: {{ stats.total_rows }}</li>
-          <li>Populated: {{ stats.populated }}</li>
-          <li>Empty indexed: {{ stats.empty }}</li>
-          <li>Truncated: {{ stats.truncated }}</li>
-          <li>Orphans: {{ stats.orphans }}</li>
+          <li>Total bodies: {{ b.stats.total_rows }}</li>
+          <li>Populated: {{ b.stats.populated }}</li>
+          <li>Empty indexed: {{ b.stats.empty }}</li>
+          <li>Truncated: {{ b.stats.truncated }}</li>
+          <li>Orphans: {{ b.stats.orphans }}</li>
           <li>Coverage:
-            {% if stats.coverage_pct is none %}N/A ({{ stats.coverage_numerator }}/{{ stats.coverage_denominator }}){% else %}
-            {{ "%.1f"|format(stats.coverage_pct) }}% ({{ stats.coverage_numerator }}/{{ stats.coverage_denominator }}){% endif %}
+            {% if b.stats.coverage_pct is none %}N/A ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }}){% else %}
+            {{ "%.1f"|format(b.stats.coverage_pct) }}% ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }}){% endif %}
           </li>
-          <li>Database size: {{ stats.db_file_bytes }} bytes</li>
-          <li>Table storage: {{ stats.table_storage }}</li>
+          <li>Database size: {{ b.stats.db_file_bytes }} bytes</li>
+          <li>Table storage: {{ b.stats.table_storage }}{% if b.stats.table_storage_approximate %} (approximate){% endif %}</li>
+          {% if b.stats.by_reader_version %}
+          <li>By reader version:
+            {% for ver, count in b.stats.by_reader_version.items() %}v{{ ver }}={{ count }} {% endfor %}
+          </li>
+          {% endif %}
         </ul>
       </div>
-    </div>
-  </details>
-
-  <details class="panel">
-    <summary>Integrity check</summary>
-    <div class="card-body">
-      <p>Schema version: {{ report.schema_version }}</p>
-      {% if report.issues %}
+      <p>Schema version: {{ b.report.schema_version }}{% if b.deep %} · deep{% endif %}</p>
+      {% if b.report.issues %}
       <ul>
-        {% for issue in report.issues %}
+        {% for issue in b.report.issues %}
         <li>{{ issue.code }}: {{ issue.count }}</li>
         {% endfor %}
       </ul>
       {% else %}
       <p>No issues detected.</p>
+      {% endif %}
+      <p class="note">Body text is never shown on Admin. Maintenance mutations use signed one-time confirmation tokens.</p>
+      <form method="post" action="{{ url_for('admin.admin_bodies_prune') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Preview prune orphans</button>
+      </form>
+      {% if prune_preview %}
+      <p>Orphans to prune: {{ prune_preview.count }}</p>
+      <form method="post" action="{{ url_for('admin.admin_bodies_prune') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm_token" value="{{ prune_preview.token }}">
+        <button type="submit">Confirm prune</button>
+      </form>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('admin.admin_bodies_backfill') }}" class="admin-actions">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Run id (optional)
+          <input type="text" name="run_id" value="{{ backfill_preview.run_id if backfill_preview else '' }}" placeholder="leave blank for retained entries">
+        </label>
+        <button type="submit">Preview backfill</button>
+      </form>
+      {% if backfill_preview %}
+        {% if backfill_preview.error %}
+        <p class="banner">{{ backfill_preview.error }}</p>
+        {% else %}
+        <ul class="stats">
+          <li>Candidates: {{ backfill_preview.candidates }}</li>
+          <li>Matched writes: {{ backfill_preview.matched }}</li>
+          <li>Ambiguous: {{ backfill_preview.ambiguous }}</li>
+          <li>Scanned: {{ backfill_preview.scanned }} · parse failed: {{ backfill_preview.parse_failed }}</li>
+        </ul>
+        {% if backfill_preview.token %}
+        <form method="post" action="{{ url_for('admin.admin_bodies_backfill') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="run_id" value="{{ backfill_preview.run_id }}">
+          <input type="hidden" name="confirm_token" value="{{ backfill_preview.token }}">
+          <button type="submit">Confirm backfill</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      {% endif %}
+
+      <form method="post" action="{{ url_for('admin.admin_bodies_delete_all') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Preview delete all bodies</button>
+      </form>
+      {% if delete_preview %}
+      <p>Bodies to delete: {{ delete_preview.count }}</p>
+      <form method="post" action="{{ url_for('admin.admin_bodies_delete_all') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm_token" value="{{ delete_preview.token }}">
+        <button type="submit">Confirm delete all</button>
+      </form>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('admin.admin_bodies_vacuum') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Preview vacuum</button>
+      </form>
+      {% if vacuum_preview %}
+      <form method="post" action="{{ url_for('admin.admin_bodies_vacuum') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm_token" value="{{ vacuum_preview.token }}">
+        <button type="submit">Confirm vacuum</button>
+      </form>
+      {% endif %}
       {% endif %}
     </div>
   </details>

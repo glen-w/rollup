@@ -1032,6 +1032,80 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_db_mutator(db_path: Path) -> sqlite3.Connection:
+    """Open an existing DB for writes without creating or migrating schema.
+
+    Used by web POST handlers after startup ``init_db``. Fails if the file is
+    missing. Does not mkdir, migrate, or change journal mode beyond connection
+    pragmas required for FK + busy timeout.
+    """
+    path = Path(db_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"database does not exist: {path}")
+    conn = sqlite3.connect(str(path))
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    return conn
+
+
+def _sqlite_uri_path(db_path: Path) -> str:
+    """Build a file: URI path component with safe encoding for unusual paths."""
+    from urllib.parse import quote
+
+    resolved = Path(db_path).expanduser().resolve()
+    # Absolute POSIX path for URI; keep Windows drive paths workable via as_posix.
+    posix = resolved.as_posix()
+    if not posix.startswith("/"):
+        posix = "/" + posix
+    return quote(posix, safe="/:")
+
+
+def connect_db_readonly(db_path: Path) -> sqlite3.Connection:
+    """Open an existing DB read-only with query_only; never create or migrate.
+
+    Uses URI ``mode=ro`` and ``PRAGMA query_only=ON``. Does not apply journal-mode
+    or migration pragmas. Raises ``FileNotFoundError`` if the database is absent.
+    """
+    path = Path(db_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"database does not exist: {path}")
+    uri = f"file:{_sqlite_uri_path(path)}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    return conn
+
+
+class SchemaCompatibilityError(RuntimeError):
+    """Database schema is missing, incomplete, or newer than this package."""
+
+
+def assert_schema_readable(conn: sqlite3.Connection) -> int:
+    """Fail closed if schema is unsupported or below the web-required floor.
+
+    Does not migrate or repair. Returns the current schema version.
+    """
+    tables = _existing_tables(conn)
+    if "schema_version" not in tables:
+        raise SchemaCompatibilityError(
+            "database has no schema_version; start rollup web once after install "
+            "or run a digest so the database can be initialised"
+        )
+    ver = get_schema_version(conn)
+    if ver > SCHEMA_VERSION:
+        raise SchemaCompatibilityError(
+            f"unsupported schema version {ver} (max {SCHEMA_VERSION}); "
+            "upgrade the rollup package"
+        )
+    if ver < 8:
+        raise SchemaCompatibilityError(
+            f"schema version {ver} is too old for the web UI; "
+            "run a digest or open the database with a current rollup to migrate"
+        )
+    return ver
+
+
 def init_db(db_path: Path) -> sqlite3.Connection:
     """Open or create DB and migrate to the canonical full schema shape."""
     conn = connect_db(db_path)

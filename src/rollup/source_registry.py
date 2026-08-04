@@ -514,8 +514,12 @@ def set_overrides(
     updated_by: str = "cli",
     now: datetime | None = None,
     commit: bool = True,
+    summary_profile_names: frozenset[str] | None = None,
 ) -> SourceOverrides:
-    """Partial update. Use explicit None in updates to clear a field."""
+    """Partial update. Use explicit None in updates to clear a field.
+
+    Clearing the last non-null field deletes the override row (no all-null row).
+    """
     ensure_registry(conn)
     canonical = resolve_alias(conn, source_key)
     ensure_source_anchor(conn, canonical, now=now)
@@ -535,8 +539,24 @@ def set_overrides(
         if key not in data:
             raise SourceRegistryError(f"Unknown override field {key!r}")
         data[key] = value
-    _validate_override_values(data)
+    _validate_override_values(data, summary_profile_names=summary_profile_names)
     iso = _now_iso(now)
+    override_fields = (
+        "enabled",
+        "always_surface",
+        "priority",
+        "newsletter_type",
+        "grouping_policy",
+        "summary_profile",
+        "expected_cadence",
+        "display_name",
+        "notes",
+    )
+    if all(data[f] is None for f in override_fields):
+        conn.execute("DELETE FROM source_overrides WHERE source_key = ?", (canonical,))
+        if commit:
+            conn.commit()
+        return load_overrides(conn, canonical)
     conn.execute(
         """INSERT INTO source_overrides (
             source_key, enabled, always_surface, priority, newsletter_type,
@@ -585,28 +605,50 @@ def clear_overrides(
     *,
     updated_by: str = "cli",
     now: datetime | None = None,
+    commit: bool = True,
 ) -> SourceOverrides:
     canonical = resolve_alias(conn, source_key)
     if fields is None or "all" in fields:
-        updates = {
-            "enabled": None,
-            "always_surface": None,
-            "priority": None,
-            "newsletter_type": None,
-            "grouping_policy": None,
-            "summary_profile": None,
-            "expected_cadence": None,
-            "display_name": None,
-            "notes": None,
-        }
-    else:
-        updates = {f: None for f in fields}
-    return set_overrides(
-        conn, canonical, updates=updates, updated_by=updated_by, now=now
+        # clear-all: delete the override row entirely (no all-null row remains).
+        conn.execute("DELETE FROM source_overrides WHERE source_key = ?", (canonical,))
+        if commit:
+            conn.commit()
+        return load_overrides(conn, canonical)
+    updates = {f: None for f in fields}
+    result = set_overrides(
+        conn, canonical, updates=updates, updated_by=updated_by, now=now, commit=False
     )
+    # If every field is now null, drop the row.
+    if all(
+        getattr(result, f) is None
+        for f in (
+            "enabled",
+            "always_surface",
+            "priority",
+            "newsletter_type",
+            "grouping_policy",
+            "summary_profile",
+            "expected_cadence",
+            "display_name",
+            "notes",
+        )
+    ):
+        conn.execute("DELETE FROM source_overrides WHERE source_key = ?", (canonical,))
+        result = load_overrides(conn, canonical)
+    if commit:
+        conn.commit()
+    return result
 
 
-def _validate_override_values(data: Mapping[str, Any]) -> None:
+def _validate_override_values(
+    data: Mapping[str, Any],
+    *,
+    summary_profile_names: frozenset[str] | None = None,
+) -> None:
+    for bool_field in ("enabled", "always_surface"):
+        val = data.get(bool_field)
+        if val is not None and not isinstance(val, bool):
+            raise SourceRegistryError(f"{bool_field} must be a bool or null")
     if data.get("newsletter_type") is not None and data["newsletter_type"] not in NEWSLETTER_TYPES:
         raise SourceRegistryError(f"Invalid newsletter_type {data['newsletter_type']!r}")
     if data.get("grouping_policy") is not None and data["grouping_policy"] not in GROUPING_POLICIES:
@@ -614,14 +656,317 @@ def _validate_override_values(data: Mapping[str, Any]) -> None:
     if data.get("expected_cadence") is not None and data["expected_cadence"] not in CADENCE_LABELS:
         raise SourceRegistryError(f"Invalid expected_cadence {data['expected_cadence']!r}")
     if data.get("priority") is not None:
+        if not isinstance(data["priority"], int) or isinstance(data["priority"], bool):
+            raise SourceRegistryError("priority must be an int 0..100")
         p = int(data["priority"])
         if p < 0 or p > 100:
             raise SourceRegistryError("priority must be 0..100")
     if data.get("display_name") is not None:
         from rollup.source_identity import validate_display_name_override
+        from rollup.payload_limits import MAX_DISPLAY_NAME_LEN
 
-        validate_display_name_override(str(data["display_name"]))
+        name = str(data["display_name"]).strip()
+        if len(name) > MAX_DISPLAY_NAME_LEN:
+            raise SourceRegistryError("display_name too long")
+        validate_display_name_override(name)
+        # Normalise whitespace into the mutable mapping when possible.
+        if isinstance(data, dict):
+            data["display_name"] = name
+    if data.get("notes") is not None:
+        notes = str(data["notes"]).strip()
+        if len(notes) > 2000:
+            raise SourceRegistryError("notes too long")
+        if isinstance(data, dict):
+            data["notes"] = notes
+    if data.get("summary_profile") is not None:
+        profile = str(data["summary_profile"]).strip()
+        if summary_profile_names is not None and profile not in summary_profile_names:
+            raise SourceRegistryError(f"Unknown summary_profile {profile!r}")
+        if isinstance(data, dict):
+            data["summary_profile"] = profile
 
+
+def compute_source_revision(conn: sqlite3.Connection, source_key: str) -> str:
+    """Stable revision over overrides, lifecycle, superseded_by, and aliases."""
+    bulk = compute_source_revisions_bulk(conn, [source_key])
+    if source_key not in bulk:
+        # Try resolved canonical
+        canonical = resolve_alias(conn, source_key)
+        if canonical not in bulk:
+            raise SourceNotFound(source_key)
+        return bulk[canonical]
+    return bulk[source_key]
+
+
+def compute_source_revisions_bulk(
+    conn: sqlite3.Connection, source_keys: Sequence[str]
+) -> dict[str, str]:
+    """Compute revisions for many keys with batched queries (no per-key N+1)."""
+    import hashlib
+
+    if not source_keys:
+        return {}
+    canonicals: dict[str, str] = {}
+    for key in source_keys:
+        canonicals[key] = resolve_alias(conn, key)
+    uniq = sorted(set(canonicals.values()))
+    placeholders = ",".join("?" * len(uniq))
+
+    life_rows = conn.execute(
+        f"SELECT source_key, lifecycle, superseded_by FROM sources WHERE source_key IN ({placeholders})",
+        uniq,
+    ).fetchall()
+    life_map = {r[0]: (r[1], r[2]) for r in life_rows}
+    missing = [k for k in uniq if k not in life_map]
+    if missing:
+        raise SourceNotFound(missing[0])
+
+    ov_rows = conn.execute(
+        f"""SELECT source_key, enabled, always_surface, priority, newsletter_type,
+                   grouping_policy, summary_profile, expected_cadence, display_name, notes,
+                   updated_at
+            FROM source_overrides WHERE source_key IN ({placeholders})""",
+        uniq,
+    ).fetchall()
+    ov_map = {r[0]: r for r in ov_rows}
+
+    alias_rows = conn.execute(
+        f"""SELECT canonical_source_key, alias_key FROM source_aliases
+            WHERE canonical_source_key IN ({placeholders})
+            ORDER BY canonical_source_key, alias_key""",
+        uniq,
+    ).fetchall()
+    alias_map: dict[str, list[str]] = {k: [] for k in uniq}
+    for can, alias in alias_rows:
+        alias_map.setdefault(can, []).append(alias)
+
+    out: dict[str, str] = {}
+    for requested, canonical in canonicals.items():
+        life, superseded = life_map[canonical]
+        ov = ov_map.get(canonical)
+        overrides = {
+            "enabled": None if ov is None or ov[1] is None else bool(ov[1]),
+            "always_surface": None if ov is None or ov[2] is None else bool(ov[2]),
+            "priority": None if ov is None else ov[3],
+            "newsletter_type": None if ov is None else ov[4],
+            "grouping_policy": None if ov is None else ov[5],
+            "summary_profile": None if ov is None else ov[6],
+            "expected_cadence": None if ov is None else ov[7],
+            "display_name": None if ov is None else ov[8],
+            "notes": None if ov is None else ov[9],
+            "updated_at": None if ov is None else ov[10],
+        }
+        payload = json.dumps(
+            {
+                "key": canonical,
+                "lifecycle": life,
+                "superseded_by": superseded,
+                "overrides": overrides,
+                "aliases": alias_map.get(canonical, []),
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+        out[requested] = digest
+        out[canonical] = digest
+    return out
+
+
+@dataclass(frozen=True)
+class SourceRegistryPageRow:
+    source_key: str
+    display_name: str | None
+    enabled: bool
+    always_surface: bool
+    priority: int
+    lifecycle: str
+    last_seen_at: str | None
+    message_count_total: int
+    revision: str
+
+
+@dataclass(frozen=True)
+class SourceRegistryPage:
+    rows: tuple[SourceRegistryPageRow, ...]
+    page: int
+    page_size: int
+    has_next: bool
+    total: int | None  # None when total is not computed (bounded)
+
+
+_REGISTRY_SORTS = frozenset(
+    {"last_seen_desc", "last_seen_asc", "priority_desc", "key_asc"}
+)
+_REGISTRY_FILTERS = frozenset({"all", "enabled", "disabled", "active"})
+
+_OVERRIDE_FIELD_KEYS = frozenset(
+    {
+        "enabled",
+        "always_surface",
+        "priority",
+        "newsletter_type",
+        "grouping_policy",
+        "summary_profile",
+        "expected_cadence",
+        "display_name",
+        "notes",
+    }
+)
+_TRI_TRUE = frozenset({"1", "true", "yes", "on"})
+_TRI_FALSE = frozenset({"0", "false", "no", "off"})
+_TRI_INHERIT = frozenset({"", "inherit", "default"})
+
+
+def _parse_tri_bool(raw: str | None) -> bool | None:
+    text = (raw or "").strip().lower()
+    if text in _TRI_INHERIT:
+        return None
+    if text in _TRI_TRUE:
+        return True
+    if text in _TRI_FALSE:
+        return False
+    raise SourceRegistryError(f"invalid boolean {raw!r}")
+
+
+def parse_override_updates(
+    *,
+    fields: Sequence[str] | set[str],
+    values: Mapping[str, Any],
+    clear_all: bool = False,
+) -> dict[str, Any] | None:
+    """Shared core override parser for CLI/web.
+
+    Returns ``None`` when clear_all is set. Missing field keys mean do not touch.
+    Explicit inherit / empty clears to None.
+    """
+    if clear_all:
+        return None
+    field_set = {f for f in fields if f in _OVERRIDE_FIELD_KEYS}
+    updates: dict[str, Any] = {}
+    if "enabled" in field_set:
+        updates["enabled"] = _parse_tri_bool(
+            None if values.get("enabled") is None else str(values.get("enabled"))
+        )
+    if "always_surface" in field_set:
+        updates["always_surface"] = _parse_tri_bool(
+            None
+            if values.get("always_surface") is None
+            else str(values.get("always_surface"))
+        )
+    if "priority" in field_set:
+        raw = str(values.get("priority") or "").strip()
+        if raw.lower() in _TRI_INHERIT:
+            updates["priority"] = None
+        else:
+            updates["priority"] = int(raw)
+    for text_field in (
+        "newsletter_type",
+        "grouping_policy",
+        "summary_profile",
+        "expected_cadence",
+        "display_name",
+        "notes",
+    ):
+        if text_field in field_set:
+            raw = str(values.get(text_field) or "").strip()
+            updates[text_field] = raw or None
+    if not updates:
+        raise SourceRegistryError("No policy fields submitted")
+    return updates
+
+
+def list_source_registry_page(
+    conn: sqlite3.Connection,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+    sort: str = "last_seen_desc",
+    enabled_filter: str = "all",
+    q: str | None = None,
+) -> SourceRegistryPage:
+    """Paginated registry summary with allowlisted filters and stable sort."""
+    if sort not in _REGISTRY_SORTS:
+        raise SourceRegistryError(f"invalid sort {sort!r}")
+    if enabled_filter not in _REGISTRY_FILTERS:
+        raise SourceRegistryError(f"invalid filter {enabled_filter!r}")
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
+    offset = (page - 1) * page_size
+
+    where: list[str] = []
+    params: list[Any] = []
+    if enabled_filter == "all":
+        pass  # every lifecycle
+    elif enabled_filter == "active":
+        where.append("s.lifecycle = 'active'")
+    elif enabled_filter == "enabled":
+        where.append("s.lifecycle = 'active'")
+        where.append("(o.enabled IS NULL OR o.enabled = 1)")
+    elif enabled_filter == "disabled":
+        where.append("s.lifecycle = 'active'")
+        where.append("o.enabled = 0")
+    if q:
+        where.append(
+            "(s.source_key LIKE ? OR IFNULL(o.display_name, '') LIKE ? "
+            "OR IFNULL(s.display_name_observed, '') LIKE ?)"
+        )
+        like = f"%{q.strip()[:100]}%"
+        params.extend([like, like, like])
+
+    order = {
+        "last_seen_desc": "obs.last_seen_at IS NULL, obs.last_seen_at DESC, s.source_key ASC",
+        "last_seen_asc": "obs.last_seen_at IS NULL, obs.last_seen_at ASC, s.source_key ASC",
+        "priority_desc": "IFNULL(o.priority, 0) DESC, s.source_key ASC",
+        "key_asc": "s.source_key ASC",
+    }[sort]
+
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    # Prefer has_next over unbounded COUNT(*) on large registries.
+    rows = conn.execute(
+        f"""SELECT s.source_key,
+                   COALESCE(o.display_name, s.display_name_observed) AS display_name,
+                   CASE WHEN o.enabled IS NULL THEN 1 ELSE o.enabled END AS enabled,
+                   CASE WHEN o.always_surface IS NULL THEN 0 ELSE o.always_surface END AS always_surface,
+                   IFNULL(o.priority, 0) AS priority,
+                   s.lifecycle,
+                   obs.last_seen_at,
+                   IFNULL(obs.message_count_total, 0)
+            FROM sources s
+            LEFT JOIN source_overrides o ON o.source_key = s.source_key
+            LEFT JOIN source_observations obs ON obs.source_key = s.source_key
+            {where_sql}
+            ORDER BY {order}
+            LIMIT ? OFFSET ?""",
+        [*params, page_size + 1, offset],
+    ).fetchall()
+    has_next = len(rows) > page_size
+    rows = rows[:page_size]
+    keys = [r[0] for r in rows]
+    revisions = compute_source_revisions_bulk(conn, keys) if keys else {}
+    out: list[SourceRegistryPageRow] = []
+    for r in rows:
+        key = r[0]
+        out.append(
+            SourceRegistryPageRow(
+                source_key=key,
+                display_name=r[1],
+                enabled=bool(r[2]),
+                always_surface=bool(r[3]),
+                priority=int(r[4]),
+                lifecycle=r[5],
+                last_seen_at=r[6],
+                message_count_total=int(r[7]),
+                revision=revisions[key],
+            )
+        )
+    return SourceRegistryPage(
+        rows=tuple(out),
+        page=page,
+        page_size=page_size,
+        has_next=has_next,
+        total=None,
+    )
 
 def alias_sources(
     conn: sqlite3.Connection,
@@ -630,41 +975,140 @@ def alias_sources(
     *,
     note: str | None = None,
     now: datetime | None = None,
+    updated_by: str = "cli",
+    transaction: str = "self",
 ) -> None:
-    """Create alias; atomically merge if alias_key is an existing source."""
+    """Create alias; atomically merge if alias_key is an existing source.
+
+    ``transaction`` ownership:
+    - ``self``: this function BEGIN IMMEDIATE / COMMIT / ROLLBACK
+    - ``caller``: caller owns the transaction; this function must not
+      BEGIN, COMMIT, or ROLLBACK
+    """
+    if transaction not in {"self", "caller"}:
+        raise SourceRegistryError(f"invalid transaction mode {transaction!r}")
     ensure_registry(conn)
     if alias_key == canonical_key:
         raise SourceRegistryError("Cannot alias a source to itself")
+    # Resolve through existing aliases before cycle checks.
+    canonical_key = resolve_alias(conn, canonical_key)
+    alias_resolved = resolve_alias(conn, alias_key)
+    if alias_resolved == canonical_key and alias_key != alias_resolved:
+        # alias_key already points at canonical via chain
+        pass
+    if alias_key == canonical_key:
+        raise SourceRegistryError("Cannot alias a source to itself")
     iso = _now_iso(now)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
+
+    def _body() -> None:
         ensure_source_anchor(conn, canonical_key, now=now)
         existing_alias_row = conn.execute(
             "SELECT source_key, lifecycle FROM sources WHERE source_key = ?",
             (alias_key,),
         ).fetchone()
         if existing_alias_row and existing_alias_row[0] == alias_key:
-            _merge_source_into(conn, alias_key, canonical_key, iso=iso)
-        # Validate graph
+            _merge_source_into(
+                conn, alias_key, canonical_key, iso=iso, updated_by=updated_by
+            )
         proposed = dict(load_alias_map(conn))
         proposed[alias_key] = canonical_key
-        _flatten_aliases(proposed)
-        conn.execute(
-            """INSERT INTO source_aliases (alias_key, canonical_source_key, created_at, note)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(alias_key) DO UPDATE SET
-                 canonical_source_key=excluded.canonical_source_key,
-                 note=excluded.note""",
-            (alias_key, canonical_key, iso, note),
+        flat = _flatten_aliases(proposed)
+        # Persist flattened targets so no alias points at another alias.
+        for a_key, target in flat.items():
+            row_note = note if a_key == alias_key else None
+            if a_key != alias_key:
+                existing = conn.execute(
+                    "SELECT note FROM source_aliases WHERE alias_key = ?", (a_key,)
+                ).fetchone()
+                row_note = existing[0] if existing else None
+            conn.execute(
+                """INSERT INTO source_aliases (alias_key, canonical_source_key, created_at, note)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(alias_key) DO UPDATE SET
+                     canonical_source_key=excluded.canonical_source_key,
+                     note=COALESCE(excluded.note, source_aliases.note)""",
+                (a_key, target, iso, row_note),
+            )
+        assert_alias_merge_invariants(
+            conn, alias_key=alias_key, canonical_key=canonical_key
         )
+
+    if transaction == "caller":
+        _body()
+        return
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _body()
         conn.commit()
     except Exception:
         conn.rollback()
         raise
 
 
+def assert_alias_merge_invariants(
+    conn: sqlite3.Connection, *, alias_key: str, canonical_key: str
+) -> None:
+    """Post-merge checks before commit: flattening, lifecycle, refs, totals."""
+    # Alias flattening: every alias row must point at a non-alias key.
+    alias_map = load_alias_map(conn)
+    for a_key, target in alias_map.items():
+        if target in alias_map:
+            raise SourceRegistryError(
+                f"alias chain not flattened: {a_key!r} -> {target!r}"
+            )
+        if a_key == alias_key and target != canonical_key:
+            raise SourceRegistryError(
+                f"alias {alias_key!r} does not point at canonical {canonical_key!r}"
+            )
+
+    # Superseded lifecycle when alias was a real source.
+    row = conn.execute(
+        "SELECT lifecycle, superseded_by FROM sources WHERE source_key = ?",
+        (alias_key,),
+    ).fetchone()
+    if row is not None:
+        if row[0] != "superseded" or row[1] != canonical_key:
+            raise SourceRegistryError(
+                f"alias source {alias_key!r} not marked superseded by {canonical_key!r}"
+            )
+
+    # Source-referencing tables must not retain the alias key.
+    for table in (
+        "source_observation_dedup",
+        "source_cadence_samples",
+        "source_overrides",
+        "source_observations",
+    ):
+        n = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE source_key = ?", (alias_key,)
+        ).fetchone()[0]
+        if n:
+            raise SourceRegistryError(
+                f"alias key {alias_key!r} still referenced in {table} ({n} rows)"
+            )
+
+    # Canonical observation totals match dedup cardinality.
+    dedup_n = conn.execute(
+        "SELECT COUNT(*) FROM source_observation_dedup WHERE source_key = ?",
+        (canonical_key,),
+    ).fetchone()[0]
+    obs = conn.execute(
+        "SELECT message_count_total FROM source_observations WHERE source_key = ?",
+        (canonical_key,),
+    ).fetchone()
+    if obs is not None and int(obs[0]) != int(dedup_n):
+        raise SourceRegistryError(
+            f"canonical observation total {obs[0]} != dedup count {dedup_n}"
+        )
+
+
 def _merge_source_into(
-    conn: sqlite3.Connection, alias_key: str, canonical_key: str, *, iso: str
+    conn: sqlite3.Connection,
+    alias_key: str,
+    canonical_key: str,
+    *,
+    iso: str,
+    updated_by: str = "cli",
 ) -> None:
     # Move dedup rows
     rows = conn.execute(
@@ -723,7 +1167,7 @@ def _merge_source_into(
                 source_key, enabled, always_surface, priority, newsletter_type,
                 grouping_policy, summary_profile, expected_cadence, display_name, notes,
                 updated_at, updated_by
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cli')
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(source_key) DO UPDATE SET
                  enabled=excluded.enabled,
                  always_surface=excluded.always_surface,
@@ -734,7 +1178,8 @@ def _merge_source_into(
                  expected_cadence=excluded.expected_cadence,
                  display_name=excluded.display_name,
                  notes=excluded.notes,
-                 updated_at=excluded.updated_at
+                 updated_at=excluded.updated_at,
+                 updated_by=excluded.updated_by
             """,
             (
                 canonical_key,
@@ -750,6 +1195,7 @@ def _merge_source_into(
                 merged["display_name"],
                 merged["notes"],
                 iso,
+                updated_by,
             ),
         )
 
@@ -908,24 +1354,30 @@ def get_source_record(conn: sqlite3.Connection, source_key: str) -> SourceRecord
         superseded_by=row[1],
     )
 
-
 # Re-export for dry-run defaults
 __all__ = [
     "AmbiguousSourceRef",
     "ObserveResult",
     "SourceNotFound",
     "SourceRegistryError",
+    "SourceRegistryPage",
+    "SourceRegistryPageRow",
     "alias_sources",
+    "assert_alias_merge_invariants",
     "clear_overrides",
     "compute_policy_state_revision",
+    "compute_source_revision",
+    "compute_source_revisions_bulk",
     "empty_defaults_snapshot",
     "ensure_registry",
     "ensure_source_anchor",
     "get_source_record",
     "list_source_keys",
+    "list_source_registry_page",
     "load_SourceRegistrySnapshot",
     "load_alias_map",
     "observe_sources",
+    "parse_override_updates",
     "resolve_alias",
     "resolve_source_ref",
     "set_overrides",

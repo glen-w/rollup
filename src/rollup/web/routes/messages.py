@@ -13,6 +13,7 @@ from rollup.ratings import RatingError, set_rating_with_reasons
 from rollup.reader_bodies import READER_TEXT_VERSION, prepare_reader_text
 from rollup.reader_body_store import get_reader_body
 from rollup.web.csrf import validate_csrf_token as csrf_ok
+from rollup.web.db import mutation_connection
 from rollup.web.format import reader_body_fragment_html
 from rollup.web.navigation import build_reader_nav, parse_run_query
 from rollup.web_ids import IdError, decode_opaque, encode_opaque
@@ -139,10 +140,11 @@ def message_read(id_enc: str):
     action = request.form.get("action", "read")
     now = datetime.now(timezone.utc)
     try:
-        if action == "unread":
-            mark_unread(g.db, key, now=now)
-        else:
-            mark_read(g.db, key, now=now)
+        with mutation_connection() as conn:
+            if action == "unread":
+                mark_unread(conn, key, now=now)
+            else:
+                mark_read(conn, key, now=now)
     except sqlite3.OperationalError as exc:
         if "locked" in str(exc).lower() or "busy" in str(exc).lower():
             return render_template("errors/503.html", message="Database busy; retry."), 503
@@ -162,10 +164,11 @@ def message_save(id_enc: str):
     action = request.form.get("action", "save")
     now = datetime.now(timezone.utc)
     try:
-        if action == "unsave":
-            unsave(g.db, key, now=now)
-        else:
-            save(g.db, key, now=now)
+        with mutation_connection() as conn:
+            if action == "unsave":
+                unsave(conn, key, now=now)
+            else:
+                save(conn, key, now=now)
     except sqlite3.OperationalError as exc:
         if "locked" in str(exc).lower() or "busy" in str(exc).lower():
             return render_template("errors/503.html", message="Database busy; retry."), 503
@@ -185,10 +188,11 @@ def message_dismiss(id_enc: str):
     action = request.form.get("action", "dismiss")
     now = datetime.now(timezone.utc)
     try:
-        if action == "undismiss":
-            undismiss(g.db, key, now=now)
-        else:
-            dismiss(g.db, key, now=now)
+        with mutation_connection() as conn:
+            if action == "undismiss":
+                undismiss(conn, key, now=now)
+            else:
+                dismiss(conn, key, now=now)
     except sqlite3.OperationalError as exc:
         if "locked" in str(exc).lower() or "busy" in str(exc).lower():
             return render_template("errors/503.html", message="Database busy; retry."), 503
@@ -212,7 +216,8 @@ def message_rating(id_enc: str):
     reasons = request.form.getlist("reasons")
     now = datetime.now(timezone.utc)
     try:
-        set_rating_with_reasons(g.db, key, stars, reasons, now=now)
+        with mutation_connection() as conn:
+            set_rating_with_reasons(conn, key, stars, reasons, now=now)
     except RatingError as exc:
         return render_template("errors/400.html", message=str(exc)), 400
     except sqlite3.OperationalError as exc:

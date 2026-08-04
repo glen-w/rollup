@@ -5,11 +5,22 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
-from flask import Flask, abort, g, redirect, render_template, send_file, url_for
+from flask import (
+    Flask,
+    abort,
+    g,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 
 from rollup.assets import LOGO_FILENAME, asset_bytes
-from rollup.state import init_db
+from rollup.state import SchemaCompatibilityError, init_db
 from rollup.web.csrf import init_csrf
+from rollup.web.db import open_readonly
 from rollup.web.headers import init_security_headers
 from rollup.web.secrets import load_or_create_secret
 
@@ -23,6 +34,7 @@ def create_app(
     state_dir: Path,
     output_dir: Path,
     mail_root: Path | None = None,
+    newsletter_root: Path | None = None,
     testing: bool = False,
 ) -> Flask:
     state_dir = Path(state_dir)
@@ -34,21 +46,32 @@ def create_app(
     )
     secret = load_or_create_secret(state_dir)
     app.secret_key = secret
+    db_path = state_dir / "rollup.db"
     app.config.update(
         STATE_DIR=state_dir,
         OUTPUT_DIR=output_dir,
         MAIL_ROOT=Path(mail_root) if mail_root else None,
+        NEWSLETTER_ROOT=Path(newsletter_root) if newsletter_root else None,
         LOG_DIR=None,
-        DB_PATH=state_dir / "rollup.db",
+        DB_PATH=db_path,
         WEB_BIND_HOST="127.0.0.1",
         WEB_BIND_PORT=8765,
         WEB_DEBUG=False,
+        WEB_ENFORCE_HOST=False,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SAMESITE="Strict",
+        SESSION_COOKIE_SECURE=False,
         SESSION_COOKIE_PATH="/",
         MAX_CONTENT_LENGTH=1_000_000,
         TESTING=testing,
+        ADMIN_MANIFEST_MAX_DIR_ENTRIES=500,
+        ADMIN_MANIFEST_MAX_FILES=50,
+        ADMIN_MANIFEST_MAX_BYTES=512_000,
+        ADMIN_BACKFILL_MAX_CANDIDATES=5000,
     )
+
+    # Controlled startup schema initialisation — never in the per-request hook.
+    init_db(db_path).close()
 
     init_csrf(app)
     init_security_headers(app)
@@ -74,31 +97,68 @@ def create_app(
     app.jinja_env.globals["folder_section_id"] = folder_section_id
 
     @app.before_request
-    def _open_db() -> None:
+    def _open_db_ro() -> None:
         import sqlite3
 
+        if request.endpoint == "static":
+            return
+        path = Path(app.config["DB_PATH"])
         try:
-            g.db = init_db(app.config["DB_PATH"])
+            g.db_ro = open_readonly(path)
+        except FileNotFoundError:
+            abort(503)
+        except SchemaCompatibilityError as exc:
+            g.db_ro = None
+            g.db = None
+            g.schema_error = str(exc)
+            if request.method in ("GET", "HEAD"):
+                return make_response(
+                    render_template("errors/400.html", message=str(exc)),
+                    400,
+                )
+            abort(400)
         except sqlite3.OperationalError as exc:
             if "locked" in str(exc).lower() or "busy" in str(exc).lower():
                 abort(503)
             raise
 
+        g.schema_error = None
+        # Every request gets query-only only. Mutation routes open short-lived
+        # write connections explicitly after CSRF/form validation.
+        g.db = g.db_ro
+        g.db_write = None
+
     @app.teardown_request
     def _close_db(exc: BaseException | None) -> None:
-        conn = getattr(g, "db", None)
-        if conn is not None:
-            conn.close()
+        for attr in ("db_write", "db_ro"):
+            conn = getattr(g, attr, None)
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        g.db = None
+        g.db_ro = None
+        g.db_write = None
 
     @app.errorhandler(503)
     def _service_unavailable(err):
-        return (
+        from flask import make_response as _mr
+
+        response = _mr(
             render_template(
                 "errors/503.html",
                 message="Database busy (digest or another writer). Retry shortly.",
             ),
             503,
         )
+        response.headers["Retry-After"] = "5"
+        return response
+
+    @app.errorhandler(400)
+    def _bad_request(err):
+        message = getattr(err, "description", None) or "Bad request"
+        return render_template("errors/400.html", message=message), 400
 
     from rollup.web.routes.admin import bp as admin_bp
     from rollup.web.routes.artifacts import bp as artifacts_bp
@@ -121,7 +181,7 @@ def create_app(
             BytesIO(asset_bytes(name)),
             mimetype=mimetype,
             download_name=name,
-            max_age=86_400,
+            max_age=0,
         )
 
     @app.get("/")

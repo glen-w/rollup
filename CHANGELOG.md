@@ -4,6 +4,31 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.6.2 — 2026-08-05
+
+### Added
+
+- **Web admin observability**: read-only Admin hub (doctor/schema/runs/bodies), Registry management (`/sources/registry`), POST-only deep diagnostics, bounded redacted manifesto scanning with incomplete-history disclaimer.
+- **Admin maintenance surface**: backfill / prune / delete-all / vacuum with preview→confirm tokens; alias preview/confirm; separate default-digest effective-configuration panel.
+- **Read-only GET DB contract**: all browse routes use SQLite `mode=ro` + `query_only`; `init_db` only at web startup; Host validation + global `no-store`.
+- Core helpers: `connect_db_readonly` / `connect_db_mutator`, `run_doctor_readonly`, paginated `list_source_registry_page`, `compute_source_revision`, backfill uniqueness scan (`scan_backfill_candidates`), server-side one-time maintenance tokens.
+
+### Changed
+
+- POST mutations open short-lived write connections **after** CSRF/validation; deep-check stays read-only at the connection layer.
+- Source detail is provenance-first (inferred vs overrides); quality ranking kept separate from registry ops.
+- Shared `parse_override_updates` + summary-profile registry validation; `set_overrides` deletes all-null rows; registry list uses batched revisions and `has_next` (no unbounded `COUNT(*)`); filter `all` includes every lifecycle.
+- Alias merge flattens chains, runs post-merge invariants, and preserves `updated_by` on insert and conflict-update.
+- Reader-body cheap checks use SQL aggregates; full FK/hash deep checks are Admin POST-only (incremental FK fetch).
+- Manifest scan examines ≤ `max_dir_entries`, sorts by persisted timestamp, then keeps `max_files`; containment via `is_inside` / `Path.is_relative_to`.
+- Backfill takes a post-scan mbox identity check, binds identities into preview fingerprints, and always validates newsletter-root containment in `run_backfill`.
+- Session cookies use SameSite=Strict.
+
+### Fixed
+
+- Backfill no longer writes the first of conflicting duplicate `message_key` hashes; ambiguous keys are excluded after a complete scan.
+- Maintenance token replay via restored session cookies: nonces live in a bounded server-side store.
+
 ## 0.6.1 — 2026-08-04
 
 ### Changed

@@ -14,14 +14,18 @@ def is_inside(child: Path, parent: Path) -> bool:
     """Return True if resolved child is inside or equal to resolved parent."""
     child_resolved = child.resolve()
     parent_resolved = parent.resolve()
-    if child_resolved == parent_resolved:
-        return True
     try:
-        return os.path.commonpath([str(child_resolved), str(parent_resolved)]) == str(
-            parent_resolved
-        )
-    except ValueError:
-        return False
+        return child_resolved.is_relative_to(parent_resolved)
+    except (ValueError, AttributeError):
+        # Fallback for unusual path cases (different drives on some platforms).
+        if child_resolved == parent_resolved:
+            return True
+        try:
+            return os.path.commonpath([str(child_resolved), str(parent_resolved)]) == str(
+                parent_resolved
+            )
+        except ValueError:
+            return False
 
 
 def nearest_existing_parent(path: Path) -> Path:

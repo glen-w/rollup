@@ -215,7 +215,16 @@ def _cmd_set(args: argparse.Namespace) -> int:
         if dry_run:
             print(f"dry-run: would set {key} {updates}")
             return 0
-        set_overrides(conn, key, updates=updates, updated_by="cli")
+        from rollup.effort import resolve_profile_set
+
+        profiles = frozenset(resolve_profile_set().profiles)
+        set_overrides(
+            conn,
+            key,
+            updates=updates,
+            updated_by="cli",
+            summary_profile_names=profiles,
+        )
         print(f"Updated {key}")
         return 0
 

@@ -14,11 +14,21 @@
     </a>
     <nav>
       <a href="{{ url_for('rollups.list_rollups') }}">Archive</a>
-      <a href="{{ url_for('sources.list_sources') }}">Sources</a>
+      <a href="{{ url_for('sources.list_sources') }}">Quality</a>
+      <a href="{{ url_for('sources.list_registry') }}">Registry</a>
       <a href="{{ url_for('admin.admin_index') }}">Admin</a>
     </nav>
   </header>
   <main>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+      <ul class="flash">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    {% endwith %}
     {% block content %}{% endblock %}
   </main>
   <script src="{{ url_for('static', filename='web.js') }}" defer></script>

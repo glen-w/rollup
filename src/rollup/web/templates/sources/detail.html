@@ -1,102 +1,158 @@
 {% extends "base.html" %}
-{% block title %}{{ overrides.display_name or source_key }}{% endblock %}
+{% block title %}{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}{% endblock %}
 {% block content %}
 <article class="source-detail">
-  <h1>{{ overrides.display_name or source_key }}</h1>
-  <p class="meta"><code>{{ source_key }}</code></p>
+  <h1>{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}</h1>
+  <p class="meta"><code>{{ record.source_key }}</code> · lifecycle {{ record.lifecycle }}</p>
+  <p class="note">Registry management — inferred facts vs user overrides. Content browsing lives under Quality.</p>
 
-  {% if quality %}
   <details class="panel" open>
-    <summary>Quality scores</summary>
+    <summary>Inferred / observed facts</summary>
     <div class="card-body">
-      <div class="stats-panel">
-        <ul class="stats">
-          <li>Adjusted: {{ "%.2f"|format(quality.adjusted_score) if quality.adjusted_score is not none else "—" }}</li>
-          <li>Lifetime avg: {{ "%.2f"|format(quality.lifetime_average) if quality.lifetime_average is not none else "—" }}</li>
-          <li>Recent: {{ "%.2f"|format(quality.recent_weighted) if quality.recent_weighted is not none else "—" }}</li>
-          <li>Ratings: {{ quality.rating_count }}</li>
-          <li>Trend: {{ quality.trend }}</li>
-          <li>Population: {{ quality.population }}</li>
-        </ul>
-      </div>
+      <ul class="stats">
+        <li>Messages: {{ record.observation.message_count_total }}</li>
+        <li>First seen: {{ record.observation.first_seen_at or "—" }}</li>
+        <li>Last seen: {{ record.observation.last_seen_at or "—" }}</li>
+        <li>Cadence: {{ record.observation.cadence.label }} (n={{ record.observation.cadence.sample_count }}, conf={{ "%.2f"|format(record.observation.cadence.confidence) }})</li>
+        <li>Detected type: {{ record.observation.last_detected_newsletter_type or "—" }}</li>
+        <li>Last folder: {{ record.observation.last_folder_name or "—" }}</li>
+        <li>Observed display name: {{ record.observation.display_name_observed or "—" }}</li>
+        <li>List-ID: {{ record.observation.observed_list_id or "—" }}</li>
+      </ul>
     </div>
   </details>
-  {% endif %}
 
-  {% if observation %}
-  <details class="panel">
-    <summary>Observation · {{ observation.message_count_total }} messages</summary>
+  <details class="panel" open>
+    <summary>Effective policy (with provenance)</summary>
     <div class="card-body">
-      <p class="meta">
-        Last seen: {{ observation.last_seen_at or "—" }}
-        · Cadence: {{ observation.cadence_label or "—" }}
-      </p>
+      <ul class="stats">
+        <li>enabled={{ record.policy.enabled }} <code>{{ record.policy.provenance.enabled }}</code></li>
+        <li>always_surface={{ record.policy.always_surface }} <code>{{ record.policy.provenance.always_surface }}</code></li>
+        <li>priority={{ record.policy.priority }} <code>{{ record.policy.provenance.priority }}</code></li>
+        <li>type override={{ record.policy.newsletter_type_override or "—" }} <code>{{ record.policy.provenance.newsletter_type }}</code></li>
+        <li>grouping={{ record.policy.grouping_policy }} <code>{{ record.policy.provenance.grouping_policy }}</code></li>
+        <li>summary profile={{ record.policy.summary_profile_override or "—" }} <code>{{ record.policy.provenance.summary_profile }}</code></li>
+      </ul>
     </div>
   </details>
-  {% endif %}
 
-  {% if aliases %}
   <details class="panel">
-    <summary>Aliases ({{ aliases | length }})</summary>
+    <summary>Aliases{% if aliases %} ({{ aliases | length }}){% endif %} — creation/merge only</summary>
     <div class="card-body">
+      {% if aliases %}
       <ul>
         {% for a in aliases %}
         <li><code>{{ a[0] }}</code>{% if a[1] %} — {{ a[1] }}{% endif %}</li>
         {% endfor %}
       </ul>
+      {% else %}
+      <p class="empty">No aliases point at this canonical source.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('sources.source_alias_preview', id_enc=id_enc) }}" class="policy-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Alias key (source key or existing source to merge)
+          <input type="text" name="alias_key" required>
+        </label>
+        <label>Note
+          <input type="text" name="note" maxlength="500">
+        </label>
+        <button type="submit">Preview alias</button>
+      </form>
+      {% if alias_preview %}
+      <p class="banner">
+        {% if alias_preview.merge %}Merge{% else %}Create alias{% endif %}
+        <code>{{ alias_preview.alias_key }}</code>
+        → <code>{{ alias_preview.canonical_key }}</code>
+      </p>
+      <form method="post" action="{{ url_for('sources.source_alias_confirm', id_enc=id_enc) }}" class="policy-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="alias_key" value="{{ alias_preview.alias_key }}">
+        <input type="hidden" name="note" value="{{ alias_preview.note or '' }}">
+        <input type="hidden" name="confirm_token" value="{{ alias_preview.token }}">
+        <button type="submit">Confirm alias</button>
+      </form>
+      {% endif %}
     </div>
   </details>
-  {% endif %}
 
-  <details class="panel">
-    <summary>Policy</summary>
+  <details class="panel" open>
+    <summary>User overrides</summary>
     <div class="card-body">
       <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" class="policy-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="overrides_updated_at" value="{{ overrides.updated_at or '' }}">
-        <input type="hidden" name="fields" value="display_name">
+        <input type="hidden" name="source_revision" value="{{ revision }}">
+        <input type="hidden" name="fields" value="enabled">
+        <input type="hidden" name="fields" value="always_surface">
+        <input type="hidden" name="fields" value="priority">
         <input type="hidden" name="fields" value="newsletter_type">
         <input type="hidden" name="fields" value="grouping_policy">
+        <input type="hidden" name="fields" value="summary_profile">
+        <input type="hidden" name="fields" value="expected_cadence">
+        <input type="hidden" name="fields" value="display_name">
+        <input type="hidden" name="fields" value="notes">
+        <label>Enabled
+          <select name="enabled">
+            <option value="inherit" {% if record.overrides.enabled is none %}selected{% endif %}>(inherit)</option>
+            <option value="true" {% if record.overrides.enabled is sameas true %}selected{% endif %}>enabled</option>
+            <option value="false" {% if record.overrides.enabled is sameas false %}selected{% endif %}>disabled</option>
+          </select>
+        </label>
+        <label>Always surface
+          <select name="always_surface">
+            <option value="inherit" {% if record.overrides.always_surface is none %}selected{% endif %}>(inherit)</option>
+            <option value="true" {% if record.overrides.always_surface is sameas true %}selected{% endif %}>on</option>
+            <option value="false" {% if record.overrides.always_surface is sameas false %}selected{% endif %}>off</option>
+          </select>
+        </label>
+        <label>Priority (blank = inherit)
+          <input type="text" name="priority" value="{{ record.overrides.priority if record.overrides.priority is not none else '' }}" inputmode="numeric">
+        </label>
         <label>Display name
-          <input type="text" name="display_name" value="{{ overrides.display_name or '' }}" maxlength="500">
+          <input type="text" name="display_name" value="{{ record.overrides.display_name or '' }}" maxlength="500">
         </label>
         <label>Forced content type
           <select name="newsletter_type">
-            <option value="">(default)</option>
+            <option value="">(inherit)</option>
             {% for t in newsletter_types %}
-            <option value="{{ t }}" {% if overrides.newsletter_type == t %}selected{% endif %}>{{ t }}</option>
+            <option value="{{ t }}" {% if record.overrides.newsletter_type == t %}selected{% endif %}>{{ t }}</option>
             {% endfor %}
           </select>
         </label>
         <label>Preferred grouping
           <select name="grouping_policy">
-            <option value="">(default)</option>
+            <option value="">(inherit)</option>
             {% for p in grouping_policies %}
-            <option value="{{ p }}" {% if overrides.grouping_policy == p %}selected{% endif %}>{{ p }}</option>
+            <option value="{{ p }}" {% if record.overrides.grouping_policy == p %}selected{% endif %}>{{ p }}</option>
             {% endfor %}
           </select>
         </label>
-        <button type="submit">Save policy</button>
+        <label>Expected cadence
+          <select name="expected_cadence">
+            <option value="">(inherit)</option>
+            {% for c in cadence_labels %}
+            <option value="{{ c }}" {% if record.overrides.expected_cadence == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Summary profile
+          <select name="summary_profile">
+            <option value="">(inherit)</option>
+            {% for p in summary_profiles %}
+            <option value="{{ p }}" {% if record.overrides.summary_profile == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Notes
+          <textarea name="notes" maxlength="2000">{{ record.overrides.notes or '' }}</textarea>
+        </label>
+        <button type="submit">Save overrides</button>
       </form>
-    </div>
-  </details>
-
-  <details class="panel">
-    <summary>Recent emails{% if recent_emails %} ({{ recent_emails | length }}){% endif %}</summary>
-    <div class="card-body">
-      {% if not recent_emails %}
-      <p class="empty">No indexed emails for this source.</p>
-      {% else %}
-      <ul class="recent">
-        {% for e in recent_emails %}
-        <li>
-          <strong>{{ e.subject or "(no subject)" }}</strong>
-          · {{ e.date_parsed or e.date_raw or "Undated" }}
-          · <a href="{{ url_for('rollups.rollup_detail', run_id=e.run_id) }}">rollup</a>
-        </li>
-        {% endfor %}
-      </ul>
-      {% endif %}
+      <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" class="policy-form" onsubmit="return confirm('Clear all overrides for this source?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="source_revision" value="{{ revision }}">
+        <input type="hidden" name="clear_all" value="1">
+        <button type="submit">Clear all overrides</button>
+      </form>
     </div>
   </details>
 </article>

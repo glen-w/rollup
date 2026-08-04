@@ -14,7 +14,7 @@ pytest.importorskip("flask")
 
 from rollup.interaction import get_interaction
 from rollup.run_index import IndexEntry, RunIndexPayload, index_rollup_run
-from rollup.source_registry import ensure_source_anchor, set_overrides
+from rollup.source_registry import ensure_source_anchor, load_overrides, set_overrides
 from rollup.state import init_db
 from rollup.utc import format_utc
 from rollup.web.app import create_app
@@ -216,13 +216,14 @@ def test_policy_partial_and_conflict(env):
     enc = encode_opaque("from:a@example.com")
     page = client.get(f"/sources/{enc}")
     assert page.status_code == 200
-    token = _csrf(client, f"/sources/{enc}")
-    conn = init_db(db)
-    from rollup.source_registry import load_overrides
+    html = page.get_data(as_text=True)
+    # Extract source_revision from the form
+    import re
 
-    current = load_overrides(conn, "from:a@example.com")
-    token_at = current.updated_at
-    conn.close()
+    m = re.search(r'name="source_revision" value="([^"]+)"', html)
+    assert m, "source_revision missing from detail form"
+    revision = m.group(1)
+    token = _csrf(client, f"/sources/{enc}")
     # Partial: only display_name field listed — newsletter_type must remain
     r = client.post(
         f"/sources/{enc}/policy",
@@ -230,7 +231,7 @@ def test_policy_partial_and_conflict(env):
             "csrf_token": token,
             "fields": ["display_name"],
             "display_name": "Beta",
-            "overrides_updated_at": token_at,
+            "source_revision": revision,
         },
         follow_redirects=True,
     )
@@ -239,7 +240,9 @@ def test_policy_partial_and_conflict(env):
     ov = load_overrides(conn, "from:a@example.com")
     assert ov.display_name == "Beta"
     assert ov.newsletter_type == "essay"
-    stale = ov.updated_at
+    from rollup.source_registry import compute_source_revision
+
+    stale_rev = compute_source_revision(conn, "from:a@example.com")
     # Change underneath
     set_overrides(
         conn,
@@ -256,16 +259,12 @@ def test_policy_partial_and_conflict(env):
             "csrf_token": token,
             "fields": ["display_name"],
             "display_name": "Delta",
-            "overrides_updated_at": stale,
+            "source_revision": stale_rev,
         },
     )
     assert conflict.status_code == 409
 
-    # Omitting the token must also conflict once overrides exist.
-    conn = init_db(db)
-    fresh = load_overrides(conn, "from:a@example.com").updated_at
-    conn.close()
-    assert fresh is not None
+    # Omitting the revision must also conflict once overrides exist.
     token = _csrf(client, f"/sources/{enc}")
     missing = client.post(
         f"/sources/{enc}/policy",
@@ -281,7 +280,8 @@ def test_policy_partial_and_conflict(env):
     conn.close()
 
 
-def test_source_recent_emails_dedupes_across_runs(env):
+def test_source_ops_detail_hides_recent_email_content(env):
+    """Registry ops detail must not expose subjects/senders (quality view does)."""
     app, _run_id, db = env
     run_id_2 = "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
     later = datetime(2024, 6, 2, tzinfo=timezone.utc)
@@ -351,9 +351,10 @@ def test_source_recent_emails_dedupes_across_runs(env):
     enc = encode_opaque("from:a@example.com")
     page = client.get(f"/sources/{enc}")
     assert page.status_code == 200
-    assert page.data.count(b"Latest rollup subject") == 1
-    assert b"Hello" not in page.data
-    assert page.data.count(b"Recent emails (1)") == 1
+    # Ops detail is provenance-first: no recent-email subjects/senders/summaries.
+    assert b"Latest rollup subject" not in page.data
+    assert b"Recent emails" not in page.data
+    assert b"Inferred / observed" in page.data or b"observed" in page.data.lower()
 
 
 def test_message_next_rejects_protocol_relative(env):

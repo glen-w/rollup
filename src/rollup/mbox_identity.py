@@ -50,7 +50,8 @@ def classify_mbox_mutation(
 ) -> str | None:
     """Return an anomaly code when the mbox changed during parse, else None."""
     if before is None and after is None:
-        return MBOX_ANOMALY_DISAPPEARED
+        # Still absent — not a mid-operation mutation.
+        return None
     if before is not None and after is None:
         return MBOX_ANOMALY_DISAPPEARED
     if before is None and after is not None:

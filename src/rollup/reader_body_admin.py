@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from rollup.payload_limits import MAX_READER_BODY_LEN
 from rollup.state import SCHEMA_VERSION, get_schema_version
-
-_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -34,6 +31,7 @@ class ReaderBodyStats:
     coverage_denominator: int
     db_file_bytes: int
     table_storage: str
+    table_storage_approximate: bool = False
     by_reader_version: dict[int, int] = field(default_factory=dict)
 
 
@@ -50,16 +48,17 @@ def _db_file_size(db_path: Path) -> int:
         return 0
 
 
-def _table_storage_estimate(conn: sqlite3.Connection) -> str:
+def _table_storage_estimate(conn: sqlite3.Connection) -> tuple[str, bool]:
+    """Return (value, approximate). dbstat is optional."""
     try:
         row = conn.execute(
             "SELECT SUM(pgsize) FROM dbstat WHERE name = 'message_reader_bodies'"
         ).fetchone()
         if row and row[0] is not None:
-            return str(int(row[0]))
+            return str(int(row[0])), True
     except sqlite3.OperationalError:
         pass
-    return "unavailable"
+    return "unavailable", False
 
 
 def collect_stats(conn: sqlite3.Connection, *, db_path: Path) -> ReaderBodyStats:
@@ -103,6 +102,7 @@ def collect_stats(conn: sqlite3.Connection, *, db_path: Path) -> ReaderBodyStats
             by_ver[int(row[0])] = int(row[1])
     except sqlite3.OperationalError:
         pass
+    storage, approx = _table_storage_estimate(conn)
     return ReaderBodyStats(
         total_rows=total,
         populated=populated,
@@ -116,12 +116,14 @@ def collect_stats(conn: sqlite3.Connection, *, db_path: Path) -> ReaderBodyStats
         coverage_numerator=with_body,
         coverage_denominator=retained,
         db_file_bytes=_db_file_size(db_path),
-        table_storage=_table_storage_estimate(conn),
+        table_storage=storage,
+        table_storage_approximate=approx,
         by_reader_version=by_ver,
     )
 
 
-def run_check(conn: sqlite3.Connection) -> CheckReport:
+def run_check_cheap(conn: sqlite3.Connection) -> CheckReport:
+    """Bounded SQL aggregates only — safe for default Admin GET."""
     issues: list[IssueCount] = []
     over = conn.execute(
         "SELECT COUNT(*) FROM message_reader_bodies WHERE length(body_text) > ?",
@@ -136,14 +138,18 @@ def run_check(conn: sqlite3.Connection) -> CheckReport:
     ).fetchone()[0]
     if bad_trunc:
         issues.append(IssueCount("invalid_truncation_relation", int(bad_trunc)))
-    rows = conn.execute(
-        "SELECT content_hash, stored_body_hash FROM message_reader_bodies"
-    ).fetchall()
-    bad_hash = sum(
-        1 for ch, sh in rows if not _HASH_RE.match(ch or "") or not _HASH_RE.match(sh or "")
-    )
+    # Portable hex-format check without REGEXP: length + GLOB charset.
+    bad_hash = conn.execute(
+        """SELECT COUNT(*) FROM message_reader_bodies
+           WHERE length(COALESCE(content_hash, '')) != 64
+              OR length(COALESCE(stored_body_hash, '')) != 64
+              OR lower(content_hash) != content_hash
+              OR lower(stored_body_hash) != stored_body_hash
+              OR content_hash GLOB '*[^0-9a-f]*'
+              OR stored_body_hash GLOB '*[^0-9a-f]*'"""
+    ).fetchone()[0]
     if bad_hash:
-        issues.append(IssueCount("invalid_hash_format", bad_hash))
+        issues.append(IssueCount("invalid_hash_format", int(bad_hash)))
     orphans = conn.execute(
         """SELECT COUNT(*) FROM message_reader_bodies b
            WHERE NOT EXISTS (
@@ -164,6 +170,33 @@ def run_check(conn: sqlite3.Connection) -> CheckReport:
     if gap:
         issues.append(IssueCount("coverage_gap", gap))
     return CheckReport(schema_version=get_schema_version(conn), issues=tuple(issues))
+
+
+def run_check(conn: sqlite3.Connection) -> CheckReport:
+    """Default check used by CLI; same cheap aggregates as Admin GET."""
+    return run_check_cheap(conn)
+
+
+def run_check_deep(conn: sqlite3.Connection, *, max_fk_rows: int = 100) -> CheckReport:
+    """Expensive checks for explicit deep-check POST only."""
+    base = run_check_cheap(conn)
+    issues = list(base.issues)
+    try:
+        fk_rows = conn.execute("PRAGMA foreign_key_check").fetchmany(max_fk_rows + 1)
+        if fk_rows:
+            count = len(fk_rows)
+            truncated = count > max_fk_rows
+            issues.append(
+                IssueCount(
+                    "foreign_key_violations",
+                    max_fk_rows if truncated else count,
+                )
+            )
+            if truncated:
+                issues.append(IssueCount("foreign_key_check_truncated", 1))
+    except sqlite3.OperationalError:
+        pass
+    return CheckReport(schema_version=base.schema_version, issues=tuple(issues))
 
 
 def require_schema(conn: sqlite3.Connection, *, min_version: int = 9) -> None:

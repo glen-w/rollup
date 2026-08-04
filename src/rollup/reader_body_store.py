@@ -332,3 +332,9 @@ def get_maintenance_generation(conn: sqlite3.Connection) -> int:
     except sqlite3.OperationalError:
         return 0
     return int(row[0]) if row else 0
+
+
+def bump_maintenance_generation(conn: sqlite3.Connection) -> int:
+    """Bump and return the new maintenance generation (caller commits)."""
+    _bump_maintenance_generation(conn)
+    return get_maintenance_generation(conn)

@@ -397,6 +397,18 @@ table.data th {
 
 .reader-error { color: #b91c1c; }
 
+.status-success { color: #166534; }
+.status-partial { color: #a16207; }
+.status-failure { color: #b91c1c; }
+.status-dry-run { color: var(--muted); }
+.status-unknown { color: var(--muted); }
+.status-pass { color: #166534; }
+.status-warn { color: #a16207; }
+.status-fail { color: #b91c1c; }
+.status-info { color: var(--muted); }
+
+.admin-actions { margin: 0.75rem 0 1.25rem; display: flex; gap: 1rem; align-items: center; }
+
 .recent {
   padding-left: 1.25rem;
 }

@@ -1,45 +1,69 @@
-"""Source quality and policy routes."""
+"""Source quality and registry management routes."""
 
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from flask import Blueprint, g, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, g, redirect, render_template, request, url_for
 
-from rollup.payload_limits import (
-    DEFAULT_PAGE_SIZE,
-    MAX_DISPLAY_NAME_LEN,
-    MAX_PAGE_SIZE,
-    MAX_RECENT_SOURCE_EMAILS,
-)
+from rollup.effort import resolve_profile_set
+from rollup.payload_limits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from rollup.run_lock import RunLockError, acquire_state_lock
+from rollup.source_models import CADENCE_LABELS, GROUPING_POLICIES
 from rollup.source_quality import score_sources
-from rollup.source_models import GROUPING_POLICIES
 from rollup.source_registry import (
     NEWSLETTER_TYPES,
+    SourceNotFound,
     SourceRegistryError,
-    load_overrides,
+    alias_sources,
+    clear_overrides,
+    compute_source_revision,
+    get_source_record,
+    list_source_registry_page,
+    parse_override_updates,
     resolve_alias,
     set_overrides,
 )
 from rollup.web.csrf import validate_csrf_token as csrf_ok
+from rollup.web.db import mutation_connection
+from rollup.web.maintenance_tokens import (
+    consume_maintenance_token,
+    fingerprint_parts,
+    issue_maintenance_token,
+)
 from rollup.web_ids import IdError, decode_opaque, encode_opaque
 
 bp = Blueprint("sources", __name__)
 
+_BULK_MAX = 50
 
-@dataclass(frozen=True)
-class SourcePolicyPatch:
-    fields: frozenset[str]
-    display_name: str | None = None
-    newsletter_type: str | None = None
-    grouping_policy: str | None = None
-    overrides_updated_at: str | None = None
+
+def _effective_summary_profiles() -> frozenset[str]:
+    """Profile names from the effective configured registry (builtins + overlay)."""
+    try:
+        profile_set = resolve_profile_set(summary_profile_set_path=None)
+        return frozenset(profile_set.profiles)
+    except Exception:
+        from rollup.summary_profiles import get_builtin_summary_profile_set
+
+        return frozenset(get_builtin_summary_profile_set().profiles)
+
+
+def parse_override_form(form) -> dict | None:
+    """Adapt Flask form → core parse_override_updates."""
+    return parse_override_updates(
+        fields=form.getlist("fields"),
+        values={k: form.get(k) for k in form.keys()},
+        clear_all=bool(form.get("clear_all")),
+    )
 
 
 @bp.get("/sources")
 def list_sources():
+    """Quality ranking (content browsing) — separate from registry management."""
     try:
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
@@ -52,8 +76,7 @@ def list_sources():
         page_size = DEFAULT_PAGE_SIZE
     offset = (page - 1) * page_size
     now = datetime.now(timezone.utc)
-    # Fetch one extra page-worth to know has_next cheaply; score_sources already slices
-    rows = score_sources(g.db, now=now, limit=page_size + 1, offset=offset)
+    rows = score_sources(g.db_ro, now=now, limit=page_size + 1, offset=offset)
     has_next = len(rows) > page_size
     rows = rows[:page_size]
     return render_template(
@@ -64,6 +87,45 @@ def list_sources():
         has_prev=page > 1,
         has_next=has_next,
         encode_opaque=encode_opaque,
+        view="quality",
+    )
+
+
+@bp.get("/sources/registry")
+def list_registry():
+    """Operational registry list — paginated SQL, no N+1 get_source_record."""
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    try:
+        page_size = min(
+            MAX_PAGE_SIZE, max(1, int(request.args.get("page_size", DEFAULT_PAGE_SIZE)))
+        )
+    except ValueError:
+        page_size = DEFAULT_PAGE_SIZE
+    sort = request.args.get("sort", "last_seen_desc")
+    enabled_filter = request.args.get("filter", "all")
+    q = request.args.get("q") or None
+    try:
+        result = list_source_registry_page(
+            g.db_ro,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            enabled_filter=enabled_filter,
+            q=q,
+        )
+    except SourceRegistryError as exc:
+        return render_template("errors/400.html", message=str(exc)), 400
+    return render_template(
+        "sources/registry.html",
+        page_result=result,
+        sort=sort,
+        enabled_filter=enabled_filter,
+        q=q or "",
+        encode_opaque=encode_opaque,
+        view="registry",
     )
 
 
@@ -73,96 +135,27 @@ def source_detail(id_enc: str):
         source_key = decode_opaque(id_enc, kind="source")
     except IdError:
         return render_template("errors/404.html", message="Invalid source id"), 404
-    canonical = resolve_alias(g.db, source_key)
-
-    obs_row = g.db.execute(
-        """SELECT first_seen_at, last_seen_at, message_count_total, observed_list_id,
-                  last_folder_name, last_detected_newsletter_type, cadence_label
-           FROM source_observations WHERE source_key = ?""",
-        (canonical,),
-    ).fetchone()
-    observation = None
-    if obs_row:
-        observation = {
-            "first_seen_at": obs_row[0],
-            "last_seen_at": obs_row[1],
-            "message_count_total": obs_row[2],
-            "observed_list_id": obs_row[3],
-            "last_folder_name": obs_row[4],
-            "last_detected_newsletter_type": obs_row[5],
-            "cadence_label": obs_row[6],
-        }
-    anchor_row = g.db.execute(
-        "SELECT source_key, display_name_observed, lifecycle FROM sources WHERE source_key = ?",
-        (canonical,),
-    ).fetchone()
-    anchor = None
-    if anchor_row:
-        anchor = {
-            "source_key": anchor_row[0],
-            "display_name_observed": anchor_row[1],
-            "lifecycle": anchor_row[2],
-        }
-    overrides = load_overrides(g.db, canonical)
-    aliases = g.db.execute(
-        "SELECT alias_key, note FROM source_aliases WHERE canonical_source_key = ? ORDER BY alias_key",
-        (canonical,),
+    try:
+        record = get_source_record(g.db_ro, source_key)
+        revision = compute_source_revision(g.db_ro, record.source_key)
+    except SourceNotFound:
+        return render_template("errors/404.html", message="Source not found"), 404
+    aliases = g.db_ro.execute(
+        "SELECT alias_key, note FROM source_aliases WHERE canonical_source_key = ? "
+        "ORDER BY alias_key",
+        (record.source_key,),
     ).fetchall()
-
-    now = datetime.now(timezone.utc)
-    quality_rows = [
-        r for r in score_sources(g.db, now=now, limit=10_000) if r.canonical_source_key == canonical
-    ]
-    quality = quality_rows[0] if quality_rows else None
-
-    recent = g.db.execute(
-        """WITH ranked AS (
-             SELECT e.message_key, e.subject, e.sender, e.date_parsed, e.date_raw,
-                    e.run_id, e.summary, e.primary_link,
-                    ROW_NUMBER() OVER (
-                      PARTITION BY e.message_key
-                      ORDER BY COALESCE(e.date_parsed, '') DESC, e.run_id DESC
-                    ) AS rn
-             FROM rollup_entries e
-             JOIN message_source_links l ON l.message_key = e.message_key
-             WHERE l.source_key_observed = ? OR l.source_key_observed IN (
-               SELECT alias_key FROM source_aliases WHERE canonical_source_key = ?
-             ) OR l.source_key_observed = ?
-           )
-           SELECT message_key, subject, sender, date_parsed, date_raw,
-                  run_id, summary, primary_link
-           FROM ranked
-           WHERE rn = 1
-           ORDER BY COALESCE(date_parsed, '') DESC, message_key
-           LIMIT ?""",
-        (canonical, canonical, source_key, MAX_RECENT_SOURCE_EMAILS),
-    ).fetchall()
-    recent_emails = [
-        {
-            "message_key": r[0],
-            "subject": r[1],
-            "sender": r[2],
-            "date_parsed": r[3],
-            "date_raw": r[4],
-            "run_id": r[5],
-            "summary": r[6],
-            "primary_link": r[7],
-            "id_enc": encode_opaque(r[0]),
-        }
-        for r in recent
-    ]
-
     return render_template(
         "sources/detail.html",
-        source_key=canonical,
-        id_enc=encode_opaque(canonical),
-        observation=observation,
-        overrides=overrides,
+        record=record,
+        revision=revision,
         aliases=aliases,
-        quality=quality,
-        recent_emails=recent_emails,
+        id_enc=encode_opaque(record.source_key),
         newsletter_types=sorted(NEWSLETTER_TYPES),
         grouping_policies=sorted(GROUPING_POLICIES),
+        cadence_labels=sorted(CADENCE_LABELS),
+        summary_profiles=sorted(_effective_summary_profiles()),
+        alias_preview=None,
     )
 
 
@@ -175,54 +168,67 @@ def source_policy(id_enc: str):
     except IdError:
         return render_template("errors/404.html", message="Invalid source id"), 404
 
-    fields = {f for f in request.form.getlist("fields") if f}
-    allowed = {"display_name", "newsletter_type", "grouping_policy"}
-    fields &= allowed
-    if not fields:
-        return render_template("errors/400.html", message="No policy fields submitted"), 400
-
-    patch = SourcePolicyPatch(
-        fields=frozenset(fields),
-        display_name=request.form.get("display_name"),
-        newsletter_type=request.form.get("newsletter_type") or None,
-        grouping_policy=request.form.get("grouping_policy") or None,
-        overrides_updated_at=request.form.get("overrides_updated_at") or None,
-    )
+    expected_revision = request.form.get("source_revision") or ""
+    profiles = _effective_summary_profiles()
     try:
-        canonical = resolve_alias(g.db, source_key)
-        updates: dict = {}
-        if "display_name" in patch.fields:
-            name = (patch.display_name or "").strip()
-            if len(name) > MAX_DISPLAY_NAME_LEN:
-                return render_template("errors/400.html", message="Display name too long"), 400
-            updates["display_name"] = name or None
-        if "newsletter_type" in patch.fields:
-            nt = patch.newsletter_type
-            if nt is not None and nt not in NEWSLETTER_TYPES:
-                return render_template("errors/400.html", message="Invalid newsletter type"), 400
-            updates["newsletter_type"] = nt
-        if "grouping_policy" in patch.fields:
-            gp = patch.grouping_policy
-            if gp is not None and gp not in GROUPING_POLICIES:
-                return render_template("errors/400.html", message="Invalid grouping policy"), 400
-            updates["grouping_policy"] = gp
+        updates = parse_override_form(request.form)
+    except (SourceRegistryError, ValueError) as exc:
+        return render_template("errors/400.html", message=str(exc)), 400
 
-        g.db.execute("BEGIN IMMEDIATE")
-        # Optimistic lock must be checked after taking the write lock.
-        current = load_overrides(g.db, canonical)
-        if current.updated_at is not None and current.updated_at != patch.overrides_updated_at:
-            g.db.rollback()
-            return (
-                render_template(
-                    "errors/409.html",
-                    message="Source policy was modified elsewhere; reload and retry.",
-                ),
-                409,
-            )
-        set_overrides(g.db, canonical, updates=updates, updated_by="web", commit=False)
-        g.db.commit()
+    state_dir = Path(current_app.config["STATE_DIR"])
+    try:
+        lock = acquire_state_lock(
+            state_dir, run_id=str(uuid.uuid4()), operation="web-source-policy"
+        )
+    except RunLockError:
+        return (
+            render_template(
+                "errors/503.html",
+                message="Database busy (digest or another writer). Retry shortly.",
+            ),
+            503,
+        )
+    try:
+        with mutation_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                record = get_source_record(conn, source_key)
+            except SourceNotFound:
+                conn.rollback()
+                return render_template("errors/404.html", message="Source not found"), 404
+            current_rev = compute_source_revision(conn, record.source_key)
+            if current_rev != expected_revision:
+                conn.rollback()
+                return (
+                    render_template(
+                        "errors/409.html",
+                        message="Source was modified elsewhere; reload and retry.",
+                    ),
+                    409,
+                )
+            try:
+                if updates is None:
+                    clear_overrides(
+                        conn,
+                        record.source_key,
+                        fields=["all"],
+                        updated_by="web",
+                        commit=False,
+                    )
+                else:
+                    set_overrides(
+                        conn,
+                        record.source_key,
+                        updates=updates,
+                        updated_by="web",
+                        commit=False,
+                        summary_profile_names=profiles,
+                    )
+                conn.commit()
+            except SourceRegistryError as exc:
+                conn.rollback()
+                return render_template("errors/400.html", message=str(exc)), 400
     except sqlite3.OperationalError as exc:
-        g.db.rollback()
         if "locked" in str(exc).lower() or "busy" in str(exc).lower():
             return (
                 render_template(
@@ -232,8 +238,267 @@ def source_policy(id_enc: str):
                 503,
             )
         raise
-    except SourceRegistryError as exc:
-        g.db.rollback()
-        return render_template("errors/400.html", message=str(exc)), 400
+    finally:
+        lock.release()
 
+    return redirect(url_for("sources.source_detail", id_enc=encode_opaque(record.source_key)))
+
+
+@bp.post("/sources/bulk")
+def sources_bulk():
+    if not csrf_ok(request.form.get("csrf_token")):
+        return render_template("errors/400.html", message="CSRF validation failed"), 400
+    action = (request.form.get("action") or "").strip()
+    if action not in {"enable", "disable", "always_surface_on", "always_surface_off"}:
+        return render_template("errors/400.html", message="Invalid bulk action"), 400
+    raw_ids = request.form.getlist("source_sel")
+    decoded: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for token in raw_ids:
+        if ":" not in token:
+            return render_template("errors/400.html", message="Invalid source selection"), 400
+        enc, rev = token.rsplit(":", 1)
+        try:
+            key = decode_opaque(enc, kind="source")
+        except IdError:
+            return render_template("errors/400.html", message="Invalid source id"), 400
+        if key not in seen:
+            seen.add(key)
+            decoded.append((key, rev))
+    if not decoded:
+        return render_template("errors/400.html", message="No sources selected"), 400
+    if len(decoded) > _BULK_MAX:
+        return (
+            render_template(
+                "errors/400.html",
+                message=f"Too many sources selected (max {_BULK_MAX})",
+            ),
+            400,
+        )
+
+    state_dir = Path(current_app.config["STATE_DIR"])
+    try:
+        lock = acquire_state_lock(
+            state_dir, run_id=str(uuid.uuid4()), operation="web-source-bulk"
+        )
+    except RunLockError:
+        return (
+            render_template(
+                "errors/503.html",
+                message="Database busy (digest or another writer). Retry shortly.",
+            ),
+            503,
+        )
+    try:
+        with mutation_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for key, expected in decoded:
+                    try:
+                        record = get_source_record(conn, key)
+                    except SourceNotFound as exc:
+                        conn.rollback()
+                        return render_template("errors/400.html", message=str(exc)), 400
+                    current = compute_source_revision(conn, record.source_key)
+                    if current != expected:
+                        conn.rollback()
+                        return (
+                            render_template(
+                                "errors/409.html",
+                                message="A selected source changed; reload and retry.",
+                            ),
+                            409,
+                        )
+                    if action == "enable":
+                        updates = {"enabled": True}
+                    elif action == "disable":
+                        updates = {"enabled": False}
+                    elif action == "always_surface_on":
+                        updates = {"always_surface": True}
+                    else:
+                        updates = {"always_surface": False}
+                    set_overrides(
+                        conn,
+                        record.source_key,
+                        updates=updates,
+                        updated_by="web",
+                        commit=False,
+                    )
+                conn.commit()
+            except SourceRegistryError as exc:
+                conn.rollback()
+                return render_template("errors/400.html", message=str(exc)), 400
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+            return (
+                render_template(
+                    "errors/503.html",
+                    message="Database busy (digest or another writer). Retry shortly.",
+                ),
+                503,
+            )
+        raise
+    finally:
+        lock.release()
+    return redirect(url_for("sources.list_registry"))
+
+
+@bp.post("/sources/<id_enc>/alias/preview")
+def source_alias_preview(id_enc: str):
+    if not csrf_ok(request.form.get("csrf_token")):
+        return render_template("errors/400.html", message="CSRF validation failed"), 400
+    try:
+        canonical_raw = decode_opaque(id_enc, kind="source")
+    except IdError:
+        return render_template("errors/404.html", message="Invalid source id"), 404
+    alias_raw = (request.form.get("alias_key") or "").strip()
+    note = (request.form.get("note") or "").strip() or None
+    if not alias_raw:
+        return render_template("errors/400.html", message="alias_key required"), 400
+    try:
+        canonical = resolve_alias(g.db_ro, canonical_raw)
+        alias_resolved = resolve_alias(g.db_ro, alias_raw)
+        can_rec = get_source_record(g.db_ro, canonical)
+        can_rev = compute_source_revision(g.db_ro, can_rec.source_key)
+    except (SourceNotFound, SourceRegistryError) as exc:
+        return render_template("errors/400.html", message=str(exc)), 400
+    if alias_raw == canonical or alias_resolved == canonical:
+        return render_template("errors/400.html", message="Cannot alias a source to itself"), 400
+    alias_is_source = (
+        g.db_ro.execute(
+            "SELECT 1 FROM sources WHERE source_key = ?", (alias_raw,)
+        ).fetchone()
+        is not None
+    )
+    alias_rev = None
+    if alias_is_source:
+        try:
+            alias_rev = compute_source_revision(g.db_ro, alias_raw)
+        except SourceNotFound:
+            alias_rev = None
+    scope_fp = fingerprint_parts("alias", alias_raw, canonical)
+    preview_fp = fingerprint_parts("alias", alias_raw, canonical, can_rev, alias_rev)
+    token = issue_maintenance_token(
+        secret=current_app.secret_key,
+        action="alias",
+        scope_fingerprint=scope_fp,
+        preview_fingerprint=preview_fp,
+    )
+    aliases = g.db_ro.execute(
+        "SELECT alias_key, note FROM source_aliases WHERE canonical_source_key = ? "
+        "ORDER BY alias_key",
+        (can_rec.source_key,),
+    ).fetchall()
+    return render_template(
+        "sources/detail.html",
+        record=can_rec,
+        revision=can_rev,
+        aliases=aliases,
+        id_enc=encode_opaque(can_rec.source_key),
+        newsletter_types=sorted(NEWSLETTER_TYPES),
+        grouping_policies=sorted(GROUPING_POLICIES),
+        cadence_labels=sorted(CADENCE_LABELS),
+        summary_profiles=sorted(_effective_summary_profiles()),
+        alias_preview={
+            "alias_key": alias_raw,
+            "canonical_key": canonical,
+            "note": note,
+            "merge": alias_is_source,
+            "token": token,
+            "alias_revision": alias_rev,
+            "canonical_revision": can_rev,
+        },
+    )
+
+
+@bp.post("/sources/<id_enc>/alias/confirm")
+def source_alias_confirm(id_enc: str):
+    if not csrf_ok(request.form.get("csrf_token")):
+        return render_template("errors/400.html", message="CSRF validation failed"), 400
+    try:
+        canonical_raw = decode_opaque(id_enc, kind="source")
+    except IdError:
+        return render_template("errors/404.html", message="Invalid source id"), 404
+    alias_raw = (request.form.get("alias_key") or "").strip()
+    note = (request.form.get("note") or "").strip() or None
+    token = request.form.get("confirm_token")
+    if not alias_raw or not token:
+        return render_template("errors/400.html", message="Missing alias confirmation"), 400
+
+    state_dir = Path(current_app.config["STATE_DIR"])
+    try:
+        lock = acquire_state_lock(
+            state_dir, run_id=str(uuid.uuid4()), operation="web-source-alias"
+        )
+    except RunLockError:
+        return (
+            render_template(
+                "errors/503.html",
+                message="Database busy (digest or another writer). Retry shortly.",
+            ),
+            503,
+        )
+    try:
+        with mutation_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                canonical = resolve_alias(conn, canonical_raw)
+                can_rev = compute_source_revision(conn, canonical)
+                alias_is_source = (
+                    conn.execute(
+                        "SELECT 1 FROM sources WHERE source_key = ?", (alias_raw,)
+                    ).fetchone()
+                    is not None
+                )
+                alias_rev = (
+                    compute_source_revision(conn, alias_raw) if alias_is_source else None
+                )
+                scope_fp = fingerprint_parts("alias", alias_raw, canonical)
+                preview_fp = fingerprint_parts(
+                    "alias", alias_raw, canonical, can_rev, alias_rev
+                )
+                ok, code = consume_maintenance_token(
+                    token,
+                    secret=current_app.secret_key,
+                    action="alias",
+                    scope_fingerprint=scope_fp,
+                    preview_fingerprint=preview_fp,
+                )
+                if not ok:
+                    conn.rollback()
+                    status = 409 if code in {"stale_preview", "replay", "expired"} else 400
+                    return (
+                        render_template(
+                            "errors/400.html",
+                            message=f"Alias confirmation rejected ({code})",
+                        ),
+                        status,
+                    )
+                alias_sources(
+                    conn,
+                    alias_raw,
+                    canonical,
+                    note=note,
+                    updated_by="web",
+                    transaction="caller",
+                )
+                conn.commit()
+            except SourceRegistryError as exc:
+                conn.rollback()
+                return render_template("errors/400.html", message=str(exc)), 400
+            except SourceNotFound as exc:
+                conn.rollback()
+                return render_template("errors/404.html", message=str(exc)), 404
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+            return (
+                render_template(
+                    "errors/503.html",
+                    message="Database busy (digest or another writer). Retry shortly.",
+                ),
+                503,
+            )
+        raise
+    finally:
+        lock.release()
     return redirect(url_for("sources.source_detail", id_enc=encode_opaque(canonical)))

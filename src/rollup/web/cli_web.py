@@ -7,7 +7,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from rollup.config import DEFAULT_MAIL_ROOT, DEFAULT_OUTPUT_DIR, DEFAULT_STATE_DIR
+from rollup.config import DEFAULT_MAIL_ROOT, DEFAULT_NEWSLETTER_ROOT, DEFAULT_OUTPUT_DIR, DEFAULT_STATE_DIR
 from rollup.safety import SafetyError, assert_safe_write_paths
 from rollup.web.bind import BindError, validate_bind_host
 
@@ -37,6 +37,9 @@ def cmd_web(args: argparse.Namespace) -> int:
     state_dir = Path(args.state_dir).expanduser()
     output_dir = Path(args.output_dir).expanduser()
     mail_root = Path(args.mail_root).expanduser()
+    newsletter_root = Path(
+        getattr(args, "root", None) or DEFAULT_NEWSLETTER_ROOT
+    ).expanduser()
     log_dir = Path(getattr(args, "log_dir", "./logs")).expanduser()
 
     try:
@@ -50,6 +53,7 @@ def cmd_web(args: argparse.Namespace) -> int:
         state_dir=state_dir,
         output_dir=output_dir,
         mail_root=mail_root,
+        newsletter_root=newsletter_root,
     )
     app.config.update(
         LOG_DIR=log_dir,
@@ -101,6 +105,11 @@ def register_web_parser(sub: argparse._SubParsersAction) -> None:
     web.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
     web.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     web.add_argument("--mail-root", default=str(DEFAULT_MAIL_ROOT))
+    web.add_argument(
+        "--root",
+        default=str(DEFAULT_NEWSLETTER_ROOT),
+        help="Newsletter root for backfill (must be under mail-root)",
+    )
     web.add_argument("--log-dir", default="./logs")
     web.add_argument("--open", action="store_true", help="Open browser once")
     web.add_argument("--debug", action="store_true", help="Flask debug (loopback only)")

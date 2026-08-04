@@ -11,8 +11,9 @@ __pycache__/
 dist/
 build/
 
-# Cursor (local custom commands)
-.cursor/
+# Cursor (local custom commands); keep cloud env config trackable
+.cursor/*
+!.cursor/environment.json
 
 # macOS / secrets
 .DS_Store

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Source registry — Rollup{% endblock %}
+{% block content %}
+<h1>Source registry</h1>
+<p class="note">Operational controls. Quality ranking is under <a href="{{ url_for('sources.list_sources') }}">Sources</a>.</p>
+
+<form method="get" class="registry-filters">
+  <label>Filter
+    <select name="filter">
+      <option value="all" {% if enabled_filter == 'all' %}selected{% endif %}>all</option>
+      <option value="enabled" {% if enabled_filter == 'enabled' %}selected{% endif %}>enabled</option>
+      <option value="disabled" {% if enabled_filter == 'disabled' %}selected{% endif %}>disabled</option>
+    </select>
+  </label>
+  <label>Sort
+    <select name="sort">
+      <option value="last_seen_desc" {% if sort == 'last_seen_desc' %}selected{% endif %}>last seen ↓</option>
+      <option value="last_seen_asc" {% if sort == 'last_seen_asc' %}selected{% endif %}>last seen ↑</option>
+      <option value="priority_desc" {% if sort == 'priority_desc' %}selected{% endif %}>priority ↓</option>
+      <option value="key_asc" {% if sort == 'key_asc' %}selected{% endif %}>key</option>
+    </select>
+  </label>
+  <label>Search <input type="search" name="q" value="{{ q }}" maxlength="100"></label>
+  <button type="submit">Apply</button>
+</form>
+
+{% if not page_result.rows %}
+<p class="empty">No sources match.</p>
+{% else %}
+<form method="post" action="{{ url_for('sources.sources_bulk') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p>
+    <button type="submit" name="action" value="enable">Enable</button>
+    <button type="submit" name="action" value="disable">Disable</button>
+    <button type="submit" name="action" value="always_surface_on">Always-surface on</button>
+    <button type="submit" name="action" value="always_surface_off">Always-surface off</button>
+  </p>
+  <details class="panel" open>
+    <summary>{{ page_result.rows | length }} source{{ 's' if page_result.rows | length != 1 else '' }}{% if page_result.total is not none %} (total {{ page_result.total }}){% elif page_result.has_next %} (more pages){% endif %}</summary>
+    <div class="card-body">
+      {% for s in page_result.rows %}
+      <div class="rollup-run-card">
+        <label>
+          <input type="checkbox" name="source_sel" value="{{ encode_opaque(s.source_key) }}:{{ s.revision }}">
+          <strong>{{ s.display_name or s.source_key }}</strong>
+          · <code>{{ s.source_key }}</code>
+          · {% if s.enabled %}enabled{% else %}disabled{% endif %}
+          · priority {{ s.priority }}
+          · seen {{ s.last_seen_at or "—" }}
+          · {{ s.message_count_total }} msgs
+          · <a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.source_key)) }}">manage</a>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+</form>
+<nav class="pager">
+  {% if page_result.page > 1 %}<a href="?page={{ page_result.page - 1 }}&sort={{ sort }}&filter={{ enabled_filter }}&q={{ q }}">Previous</a>{% endif %}
+  <span>Page {{ page_result.page }}</span>
+  {% if page_result.has_next %}<a href="?page={{ page_result.page + 1 }}&sort={{ sort }}&filter={{ enabled_filter }}&q={{ q }}">Next</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}
