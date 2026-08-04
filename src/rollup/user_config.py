@@ -32,6 +32,8 @@ STICKY_KEYS = frozenset(
         "exclude_folder",
         "effort",
         "ollama",
+        "ollama_model",
+        "summary_profile",
         "no_grouping",
         "grouping_min_size",
         "profile",
@@ -39,9 +41,22 @@ STICKY_KEYS = frozenset(
     }
 )
 
-TOP_LEVEL_KEYS = STICKY_KEYS | frozenset({"folders", "profiles"})
+UI_KEYS = frozenset({"landing_page", "preferred_view", "onboarding_complete"})
+UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
+UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
-FOLDER_THEME_KEYS = frozenset({"emoji", "accent"})
+TOP_LEVEL_KEYS = STICKY_KEYS | frozenset({"folders", "profiles", "ui"})
+
+FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
+
+
+@dataclass(frozen=True)
+class UiPreferences:
+    """Web UI preferences stored in TOML [ui], not SQLite."""
+
+    landing_page: str = "archive"
+    preferred_view: str = "html"
+    onboarding_complete: bool = False
 
 
 @dataclass(frozen=True)
@@ -51,6 +66,7 @@ class LoadedUserConfig:
     values: dict[str, Any] = field(default_factory=dict)
     folder_themes: dict[str, FolderThemeOverride] = field(default_factory=dict)
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    ui: UiPreferences = field(default_factory=UiPreferences)
     sources: tuple[Path, ...] = ()
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -98,15 +114,60 @@ def _parse_folder_themes(
             )
         emoji = body.get("emoji")
         accent = body.get("accent")
+        display_name = body.get("display_name")
+        order = body.get("order")
         if emoji is not None and not isinstance(emoji, str):
             raise UserConfigError(f"{path}: [folders.{slug}].emoji must be a string")
         if accent is not None and not isinstance(accent, str):
             raise UserConfigError(f"{path}: [folders.{slug}].accent must be a string")
+        if display_name is not None and not isinstance(display_name, str):
+            raise UserConfigError(
+                f"{path}: [folders.{slug}].display_name must be a string"
+            )
+        if order is not None and (
+            not isinstance(order, int) or isinstance(order, bool)
+        ):
+            raise UserConfigError(
+                f"{path}: [folders.{slug}].order must be an integer"
+            )
         themes[slug.strip().lower()] = FolderThemeOverride(
             emoji=emoji,
             accent=accent,
+            display_name=display_name,
+            order=order,
         )
     return themes
+
+
+def _parse_ui(raw: Any, *, path: Path) -> UiPreferences:
+    if raw is None:
+        return UiPreferences()
+    if not isinstance(raw, dict):
+        raise UserConfigError(f"{path}: [ui] must be a table")
+    unknown = set(raw) - UI_KEYS
+    if unknown:
+        keys = ", ".join(sorted(unknown))
+        raise UserConfigError(f"{path}: unknown key(s) in [ui]: {keys}")
+    landing = raw.get("landing_page", "archive")
+    preferred = raw.get("preferred_view", "html")
+    complete = raw.get("onboarding_complete", False)
+    if not isinstance(landing, str) or landing not in UI_LANDING_PAGES:
+        raise UserConfigError(
+            f"{path}: [ui].landing_page must be one of "
+            f"{', '.join(sorted(UI_LANDING_PAGES))}"
+        )
+    if not isinstance(preferred, str) or preferred not in UI_PREFERRED_VIEWS:
+        raise UserConfigError(
+            f"{path}: [ui].preferred_view must be one of "
+            f"{', '.join(sorted(UI_PREFERRED_VIEWS))}"
+        )
+    if not isinstance(complete, bool):
+        raise UserConfigError(f"{path}: [ui].onboarding_complete must be a boolean")
+    return UiPreferences(
+        landing_page=landing,
+        preferred_view=preferred,
+        onboarding_complete=complete,
+    )
 
 
 def _normalize_sticky(
@@ -138,6 +199,18 @@ def _normalize_sticky(
         elif key == "profile":
             if not isinstance(value, str) or not value.strip():
                 raise UserConfigError(f"{path}: profile must be a non-empty string")
+            out[key] = value.strip()
+        elif key == "ollama_model":
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(
+                    f"{path}: ollama_model must be a non-empty string"
+                )
+            out[key] = value.strip()
+        elif key == "summary_profile":
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(
+                    f"{path}: summary_profile must be a non-empty string"
+                )
             out[key] = value.strip()
         elif key == "ollama":
             if not isinstance(value, bool):
@@ -201,10 +274,12 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     values = _normalize_sticky(sticky_raw, path=path, context="top level")
     folder_themes = _parse_folder_themes(data.get("folders"), path=path)
     profiles = _parse_profiles(data.get("profiles"), path=path)
+    ui = _parse_ui(data.get("ui"), path=path)
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
+        ui=ui,
         sources=(path,),
     )
 
@@ -233,10 +308,13 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         merged = dict(profiles.get(name, {}))
         merged.update(body)
         profiles[name] = merged
+    # Later file wins for [ui] wholesale (same as sticky values).
+    ui = overlay.ui if overlay.sources else base.ui
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
+        ui=ui,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )
 
@@ -294,62 +372,7 @@ def apply_sticky_to_namespace(
     argv: list[str],
 ) -> None:
     """Apply sticky config onto argparse namespace where CLI did not set the flag."""
-    if "lookback_days" in sticky and not flag_present(argv, "--lookback-days"):
-        args.lookback_days = sticky["lookback_days"]
-    if "effort" in sticky and not flag_present(argv, "--effort"):
-        args.effort = sticky["effort"]
-    if "grouping_min_size" in sticky and not flag_present(
-        argv, "--grouping-min-size"
-    ):
-        args.grouping_min_size = sticky["grouping_min_size"]
+    from rollup.sticky_flags import apply_sticky_specs
 
-    if "folder" in sticky and not flag_present(argv, "--folder"):
-        args.folder = list(sticky["folder"])
-    if "exclude_folder" in sticky and not flag_present(argv, "--exclude-folder"):
-        args.exclude_folder = list(sticky["exclude_folder"])
-
-    path_map = {
-        "root": "--root",
-        "mail_root": "--mail-root",
-        "output_dir": "--output-dir",
-        "state_dir": "--state-dir",
-        "log_dir": "--log-dir",
-    }
-    for key, flag in path_map.items():
-        if key in sticky and not flag_present(argv, flag):
-            setattr(args, key, sticky[key])
-
-    # Grouping: only apply when neither --grouping nor --no-grouping was passed.
-    if "no_grouping" in sticky and not (
-        flag_present(argv, "--grouping") or flag_present(argv, "--no-grouping")
-    ):
-        if sticky["no_grouping"]:
-            args.no_grouping = True
-            args.grouping = False
-        else:
-            args.no_grouping = False
-
-    # Ollama: only when neither opt-in nor opt-out flag was passed.
-    if "ollama" in sticky and not (
-        flag_present(argv, "--ollama") or flag_present(argv, "--no-ollama")
-    ):
-        if sticky["ollama"]:
-            args.ollama = True
-            args.no_ollama = False
-        else:
-            args.ollama = False
-            args.no_ollama = True
-
-    # Output writers: only when neither --output nor --xteink/--x3 was passed.
-    if "output" in sticky and not (
-        flag_present(argv, "--output")
-        or flag_present(argv, "--xteink")
-        or flag_present(argv, "--x3")
-    ):
-        values = list(sticky["output"])
-        if values == ["all"]:
-            # Empty list → default-all policy in requested_writer_names.
-            args.output = []
-        else:
-            args.output = values
+    apply_sticky_specs(args, sticky, argv)
 

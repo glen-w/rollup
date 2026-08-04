@@ -7,7 +7,13 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from rollup.config import DEFAULT_MAIL_ROOT, DEFAULT_NEWSLETTER_ROOT, DEFAULT_OUTPUT_DIR, DEFAULT_STATE_DIR
+from rollup.config import (
+    DEFAULT_MAIL_ROOT,
+    DEFAULT_NEWSLETTER_ROOT,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_STATE_DIR,
+)
+from rollup.config_service import resolve_config_path
 from rollup.safety import SafetyError, assert_safe_write_paths
 from rollup.web.bind import BindError, validate_bind_host
 
@@ -41,6 +47,7 @@ def cmd_web(args: argparse.Namespace) -> int:
         getattr(args, "root", None) or DEFAULT_NEWSLETTER_ROOT
     ).expanduser()
     log_dir = Path(getattr(args, "log_dir", "./logs")).expanduser()
+    explicit_config = getattr(args, "_config_path", None)
 
     try:
         assert_safe_write_paths(mail_root, state_dir, output_dir, log_dir)
@@ -54,6 +61,7 @@ def cmd_web(args: argparse.Namespace) -> int:
         output_dir=output_dir,
         mail_root=mail_root,
         newsletter_root=newsletter_root,
+        config_path=resolve_config_path(explicit=explicit_config),
     )
     app.config.update(
         LOG_DIR=log_dir,
@@ -61,6 +69,13 @@ def cmd_web(args: argparse.Namespace) -> int:
         WEB_BIND_PORT=args.port,
         WEB_DEBUG=bool(args.debug),
     )
+    # CONFIG_PATH may resolve differently from the path passed at create_app when
+    # cwd rollup.toml appears later; refresh derived prefs after bind config.
+    app.config["CONFIG_PATH"] = str(resolve_config_path(explicit=explicit_config))
+    app.config["CONFIG_EXPLICIT"] = bool(explicit_config)
+    from rollup.web.app import refresh_config_derived
+
+    refresh_config_derived(app)
     url = f"http://{host}:{args.port}/"
     print(f"Rollup web listening on {url} (loopback only)", file=sys.stderr)
     if args.open:

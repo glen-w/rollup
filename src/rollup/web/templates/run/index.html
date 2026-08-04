@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Run Studio — Rollup{% endblock %}
+{% block content %}
+<h1>Run Studio</h1>
+<p class="meta">Compose a digest, preview the effective run, dry-run discovery, then generate outputs.</p>
+
+{% if busy %}
+<p class="banner">A digest is currently running. <a href="{{ url_for('run.run_status') }}">Status JSON</a>
+ · <a href="{{ url_for('run.run_result') }}">Result</a></p>
+{% endif %}
+
+{% if effective %}
+<section class="card-section effective-run">
+  <h2>Effective run</h2>
+  <dl class="kv">
+    <dt>Profile</dt><dd>{{ effective.profile_name }}</dd>
+    <dt>Lookback</dt><dd>{{ sticky.get('lookback_days', '—') }} days</dd>
+    <dt>Ollama</dt>
+    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">will contact Ollama</span>{% else %}<span class="hint-badge local">local-only previews</span>{% endif %}</dd>
+    <dt>Writers</dt><dd>{{ effective.writers | join(', ') }} (+ Markdown/HTML)</dd>
+    <dt>Newsletter root</dt><dd><code>{{ sticky.get('root', '—') }}</code></dd>
+    <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
+    <dt>Matched folders</dt>
+    <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
+  </dl>
+</section>
+
+<form method="post" class="settings-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="card-section">
+    <h2>Compose</h2>
+    <p class="note">Temporary adjustments apply to this run only unless you save them in Settings.</p>
+    <label>Profile
+      <select name="profile">
+        {% for p in profiles %}
+        <option value="{{ p.name }}" {% if effective.profile_name == p.name %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Lookback days (override)
+      <input type="number" name="lookback_days" min="1" placeholder="{{ sticky.get('lookback_days', 7) }}">
+    </label>
+    <label>Folders (comma-separated override)
+      <input type="text" name="folder" placeholder="{{ (sticky.get('folder') or []) | join(', ') }}">
+    </label>
+    <label>Effort
+      <select name="effort">
+        <option value="">(profile default)</option>
+        {% for e in ['light', 'balanced', 'high'] %}
+        <option value="{{ e }}">{{ e }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Ollama
+      <select name="ollama">
+        <option value="">(profile default)</option>
+        <option value="1">on — uses Ollama</option>
+        <option value="0">off — local-only</option>
+      </select>
+    </label>
+    <label>Writers
+      <select name="output_mode">
+        <option value="">(config default)</option>
+        <option value="all">all</option>
+        <option value="none">Markdown/HTML only</option>
+      </select>
+    </label>
+  </section>
+
+  <p class="run-actions">
+    <button type="submit" formaction="{{ url_for('run.run_preview') }}">Update effective preview</button>
+    <button type="submit" formaction="{{ url_for('run.run_dry') }}">Dry-run / discovery</button>
+    <button type="submit" class="primary" formaction="{{ url_for('run.run_start') }}">Run digest</button>
+  </p>
+</form>
+
+<section class="card-section">
+  <h2>Automation</h2>
+  <p class="note">No in-app scheduler — copy a CLI or cron command instead. See docs/CRON.md.</p>
+  <pre class="cli-block">{{ cli_command }}</pre>
+  <pre class="cli-block">{{ cron_hint }}</pre>
+</section>
+{% else %}
+<p class="banner">Could not resolve configuration. <a href="{{ url_for('settings.settings_index') }}">Open Settings</a>.</p>
+{% endif %}
+{% endblock %}

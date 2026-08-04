@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Settings — Rollup{% endblock %}
+{% block content %}
+<h1>Configuration Centre</h1>
+<p class="meta">Edit the real digest TOML — not a separate web settings database.</p>
+
+{% if doc and doc.search_conflict %}
+<p class="banner">Multiple config files found ({{ doc.conflicting_paths | join(', ') }}).
+Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on merge when both exist.</p>
+{% endif %}
+
+{% if onboarding %}
+<section class="onboarding card-section">
+  <h2>First-run checklist</h2>
+  <ul class="checklist">
+    {% for label, done, hint in onboarding %}
+    <li class="{% if done %}done{% endif %}">
+      <span class="check">{% if done %}✓{% else %}○{% endif %}</span>
+      <strong>{{ label }}</strong>
+      <span class="muted"> — {{ hint }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="note"><a href="{{ url_for('run.run_studio') }}">Open Run Studio</a> for a dry-run after paths are set.</p>
+</section>
+{% endif %}
+
+{% if not doc %}
+<p class="banner">Configuration could not be loaded.</p>
+{% else %}
+<p class="meta">Editing <code>{{ doc.path }}</code>
+  {% if not doc.exists %}(will be created){% endif %}
+  · revision <code>{{ doc.revision[:20] }}…</code>
+</p>
+
+<form method="post" action="{{ url_for('settings.settings_preview') }}" class="settings-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="card-section">
+    <h2>Paths</h2>
+    <p class="hint-badge local">local-only</p>
+    <p class="note">Writes stay outside the mail root. Containment is validated before save.</p>
+    <label>Mail root <span class="hint-badge writes">reads mail here</span>
+      <input type="text" name="mail_root" value="{{ sticky.get('mail_root', '') }}" placeholder="~/Library/Thunderbird/…/Mail/…">
+    </label>
+    <label>Newsletter root <code>.sbd</code>
+      <input type="text" name="root" value="{{ sticky.get('root', '') }}" placeholder="…/Newsletters.sbd">
+    </label>
+    <label>Output directory <span class="hint-badge writes">writes digests here</span>
+      <input type="text" name="output_dir" value="{{ sticky.get('output_dir', '') }}">
+    </label>
+    <label>State directory <span class="hint-badge writes">writes database here</span>
+      <input type="text" name="state_dir" value="{{ sticky.get('state_dir', '') }}">
+    </label>
+    <label>Log directory
+      <input type="text" name="log_dir" value="{{ sticky.get('log_dir', '') }}">
+    </label>
+  </section>
+
+  <section class="card-section">
+    <h2>Defaults</h2>
+    <label>Default run profile
+      <select name="profile">
+        {% for p in profiles %}
+        <option value="{{ p.name }}" {% if sticky.get('profile', effective.profile_name) == p.name %}selected{% endif %}>{{ p.name }} — {{ p.description }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Lookback days
+      <input type="number" name="lookback_days" min="1" value="{{ sticky.get('lookback_days', 7) }}">
+    </label>
+    <label>Include folders (comma-separated; empty = all)
+      <input type="text" name="folder" value="{{ (sticky.get('folder') or []) | join(', ') }}">
+    </label>
+    <label>Exclude folders
+      <input type="text" name="exclude_folder" value="{{ (sticky.get('exclude_folder') or []) | join(', ') }}">
+    </label>
+    <label>
+      <input type="hidden" name="no_grouping" value="0">
+      <input type="checkbox" name="no_grouping" value="1" {% if sticky.get('no_grouping') %}checked{% endif %}>
+      Disable grouping
+    </label>
+    <label>Grouping min size
+      <input type="number" name="grouping_min_size" min="1" value="{{ sticky.get('grouping_min_size', 2) }}">
+    </label>
+  </section>
+
+  <section class="card-section">
+    <h2>Summaries</h2>
+    <label>
+      <input type="hidden" name="ollama" value="0">
+      <input type="checkbox" name="ollama" value="1" {% if sticky.get('ollama') %}checked{% endif %}>
+      Enable Ollama <span class="hint-badge ollama">uses Ollama</span>
+    </label>
+    <p class="note">When off, Rollup stays local-only and uses preview excerpts.</p>
+    <label>Effort
+      <select name="effort">
+        {% for e in ['light', 'balanced', 'high'] %}
+        <option value="{{ e }}" {% if sticky.get('effort', 'balanced') == e %}selected{% endif %}>{{ e }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Ollama model (optional override)
+      <input type="text" name="ollama_model" value="{{ sticky.get('ollama_model', '') }}" placeholder="leave blank for effort default">
+    </label>
+    <label>Summary profile
+      <input type="text" name="summary_profile" value="{{ sticky.get('summary_profile', '') }}" placeholder="e.g. standard">
+    </label>
+  </section>
+
+  <section class="card-section">
+    <h2>Outputs</h2>
+    <p class="note">Markdown and HTML are always written. Add-ons (xteink / txt / json / epub) are optional.</p>
+    {% set outs = sticky.get('output') or ['all'] %}
+    <label>
+      <input type="radio" name="output_mode" value="all" {% if outs == ['all'] or not outs %}checked{% endif %}>
+      All discovered writers
+    </label>
+    <label>
+      <input type="radio" name="output_mode" value="none" {% if outs == ['none'] %}checked{% endif %}>
+      Markdown / HTML only
+    </label>
+    <label>
+      <input type="radio" name="output_mode" value="subset" {% if outs not in [['all'], ['none'], []] and outs %}checked{% endif %}>
+      Selected writers
+    </label>
+    <div class="writer-list">
+      {% for w in writers %}
+      <label class="inline">
+        <input type="checkbox" name="output_writer" value="{{ w }}" {% if w in outs %}checked{% endif %}>
+        {{ w }}{% if w == 'xteink' %} <span class="muted">(Xteink X3)</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card-section">
+    <h2>Folder presentation</h2>
+    <p class="note">Emoji, accent, display name, and order. Preview uses placeholder cards.</p>
+    <div class="folder-theme-grid">
+      {% for row in folder_rows %}
+      <div class="folder-theme-row" style="border-left: 4px solid {{ row.accent }};">
+        <input type="hidden" name="folder_slug" value="{{ row.slug }}">
+        <strong class="folder-preview">{{ row.preview_label }}</strong>
+        <label>Emoji <input type="text" name="folder_emoji" value="{{ row.emoji }}" maxlength="8"></label>
+        <label>Accent <input type="text" name="folder_accent" value="{{ row.accent }}"></label>
+        <label>Display name <input type="text" name="folder_display_name" value="{{ row.display_name }}" placeholder="{{ row.name }}"></label>
+        <label>Order <input type="number" name="folder_order" value="{{ row.order }}"></label>
+        <div class="appearance-preview">
+          <article class="placeholder-card" style="border-left-color: {{ row.accent }};">
+            <strong>{{ row.preview_label }}</strong>
+            <p class="muted">Sample newsletter · 3 min</p>
+            <p>Placeholder summary for appearance preview.</p>
+          </article>
+        </div>
+      </div>
+      {% else %}
+      <p class="muted">No folders discovered yet — set newsletter root first, or add themes after a digest.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card-section">
+    <h2>Saved profiles</h2>
+    <p class="note">Built-ins <code>weekly</code> / <code>daily</code> are read-only. Add custom profiles (e.g. tech-only).</p>
+    {% for p in profiles if p.name not in ['weekly', 'daily'] %}
+    <div class="profile-row">
+      <input type="text" name="profile_name" value="{{ p.name }}">
+      <input type="number" name="profile_lookback" placeholder="lookback" value="{{ p.values.get('lookback_days', '') }}">
+      <input type="text" name="profile_folder" placeholder="folders" value="{{ (p.values.get('folder') or []) | join(', ') }}">
+      <input type="text" name="profile_effort" placeholder="effort" value="{{ p.values.get('effort', '') }}">
+      <select name="profile_ollama">
+        <option value="">ollama: default</option>
+        <option value="1" {% if p.values.get('ollama') is sameas true %}selected{% endif %}>ollama on</option>
+        <option value="0" {% if p.values.get('ollama') is sameas false %}selected{% endif %}>ollama off</option>
+      </select>
+      <label class="inline"><input type="checkbox" name="remove_profile" value="{{ p.name }}"> Remove</label>
+    </div>
+    {% endfor %}
+    <div class="profile-row">
+      <input type="text" name="profile_name" placeholder="new-profile-name">
+      <input type="number" name="profile_lookback" placeholder="lookback" value="7">
+      <input type="text" name="profile_folder" placeholder="e.g. tech">
+      <input type="text" name="profile_effort" placeholder="light">
+      <select name="profile_ollama">
+        <option value="">ollama: default</option>
+        <option value="1">ollama on</option>
+        <option value="0">ollama off</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="card-section">
+    <h2>Personalisation</h2>
+    <label>Default landing page
+      <select name="landing_page">
+        {% for lp in landing_pages %}
+        <option value="{{ lp }}" {% if doc.loaded.ui.landing_page == lp %}selected{% endif %}>{{ lp }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Preferred output view
+      <select name="preferred_view">
+        {% for pv in preferred_views %}
+        <option value="{{ pv }}" {% if doc.loaded.ui.preferred_view == pv %}selected{% endif %}>{{ pv }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <input type="hidden" name="onboarding_complete" value="0">
+      <input type="checkbox" name="onboarding_complete" value="1" {% if doc.loaded.ui.onboarding_complete %}checked{% endif %}>
+      Setup complete (hide checklist emphasis)
+    </label>
+  </section>
+
+  <p>
+    <button type="submit" class="primary">Preview effective diff</button>
+    <a class="button-link" href="{{ url_for('run.run_studio') }}">Open Run Studio</a>
+  </p>
+</form>
+{% endif %}
+{% endblock %}

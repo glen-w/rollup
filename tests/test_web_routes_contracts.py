@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import stat
 import uuid
@@ -408,3 +409,15 @@ def test_web_secret_permissions_and_symlink(tmp_path: Path):
     link.symlink_to(target)
     with pytest.raises(WebSecretError):
         load_or_create_secret(bad)
+
+
+def test_web_secret_preserves_whitespace_bytes(tmp_path: Path):
+    """Regression: binary secrets must not be .strip()'d on reload."""
+    state = tmp_path / "state"
+    state.mkdir()
+    path = state / "web_secret"
+    # Leading/trailing ASCII whitespace are valid in secrets.token_bytes output.
+    crafted = b" \t" + b"A" * 28 + b"\n"
+    path.write_bytes(crafted)
+    os.chmod(path, 0o600)
+    assert load_or_create_secret(state) == crafted

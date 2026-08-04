@@ -27,9 +27,13 @@
           </ul>
         </div>
         <p class="artifact-links">
+          {% if preferred_view == 'entries' or not (r.has_md or r.has_html) %}
+          <a href="{{ url_for('rollups.rollup_detail', run_id=r.run_id) }}">{% if preferred_view == 'entries' %}<strong>Open preferred (entries)</strong>{% else %}Browse web{% endif %}</a>
+          {% else %}
           <a href="{{ url_for('rollups.rollup_detail', run_id=r.run_id) }}">Browse web</a>
-          {% if r.has_md %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='md') }}">Markdown</a>{% endif %}
-          {% if r.has_html %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='html') }}">HTML</a>{% endif %}
+          {% endif %}
+          {% if r.has_md %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='md') }}">{% if preferred_view == 'markdown' %}<strong>Open preferred (Markdown)</strong>{% else %}Markdown{% endif %}</a>{% endif %}
+          {% if r.has_html %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='html') }}">{% if preferred_view == 'html' %}<strong>Open preferred (HTML)</strong>{% else %}HTML{% endif %}</a>{% endif %}
           {% if r.has_manifest %}<a href="{{ url_for('artifacts.serve_artifact', run_id=r.run_id, kind='manifest') }}">Manifest</a>{% endif %}
         </p>
       </div>

@@ -24,7 +24,8 @@ def load_or_create_secret(state_dir: Path) -> bytes:
         mode = path.stat().st_mode
         if mode & (stat.S_IRWXG | stat.S_IRWXO):
             raise WebSecretError(f"secret file permissions too open: {path}")
-        data = path.read_bytes().strip()
+        # Binary secret — never strip(); whitespace bytes are valid in token_bytes.
+        data = path.read_bytes()
         if len(data) < 16:
             raise WebSecretError("secret file too short or empty")
         return data

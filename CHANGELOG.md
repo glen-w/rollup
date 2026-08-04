@@ -4,6 +4,21 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.6.3 — 2026-08-05
+
+### Added
+
+- **Configuration Centre** (`/settings`): edit real digest TOML (paths, profiles, Ollama/effort/summary profile, writers, folder presentation, `[ui]` prefs) via shared `config_service` — validated preview diff, maintenance-token confirm, atomic save, `.bak` + timestamped backups, optimistic concurrency. No parallel SQLite web settings for digest config.
+- **Run Studio** (`/run`): compose profile/overrides, show effective run, dry-run and synchronous subprocess digest with status/log/artifact links and CLI/cron snippets (no in-app scheduler).
+- Sticky schema: `ollama_model`, `summary_profile`; folder `display_name` / `order`; `[ui]` landing page, preferred view, onboarding flag.
+- Shared `sticky_flags` registry for sticky↔CLI mapping; `rollup web` applies sticky TOML paths like digest.
+- First-run checklist and appearance previews in Settings; Archive “Open preferred” affordances from `[ui].preferred_view`.
+
+### Fixed
+
+- Web session secret reload no longer `.strip()`s binary bytes (whitespace in `token_bytes` corrupted secrets and flaked tests).
+- Run Studio busy path returns HTTP 503 with `Retry-After` instead of a redirect tuple.
+
 ## 0.6.2 — 2026-08-05
 
 ### Added

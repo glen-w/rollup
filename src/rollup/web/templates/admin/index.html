@@ -31,7 +31,9 @@
         {% endfor %}
       </ul>
       {% endfor %}
-      <p class="note">Current web process settings only — not a historical run configuration.</p>
+      <p class="note">Current web process settings only — not a historical run configuration.
+      Edit sticky digest config in <a href="{{ url_for('settings.settings_index') }}">Settings</a>
+      or compose a run in <a href="{{ url_for('run.run_studio') }}">Run Studio</a>.</p>
       {% endif %}
     </div>
   </details>
@@ -49,7 +51,8 @@
         {% endfor %}
       </ul>
       {% endfor %}
-      <p class="note">Resolved from user config + run profile defaults. Distinct from the web process panel above.</p>
+      <p class="note">Resolved from user config + run profile defaults (read-only here).
+      Edit and save sticky config in <a href="{{ url_for('settings.settings_index') }}">Settings</a>.</p>
       {% endif %}
     </div>
   </details>

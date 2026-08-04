@@ -15,6 +15,7 @@ from rollup.folder_theme import (
     folder_accent_css,
     folder_display_name,
     folder_slug,
+    sort_folder_names,
     theme_for,
 )
 from rollup.links import (
@@ -150,10 +151,12 @@ def _folder_section_id(folder: str) -> str:
 
 def _folder_anchor_map(
     report: DigestReport,
+    folder_themes: FolderThemeMap | None = None,
 ) -> list[tuple[str, str, int]]:
     slug_counts: dict[str, int] = {}
     anchors: list[tuple[str, str, int]] = []
-    for folder, entries in sorted(report.dated_by_folder.items()):
+    for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
+        entries = report.dated_by_folder[folder]
         base = folder_slug(folder)
         slug_counts[base] = slug_counts.get(base, 0) + 1
         count = slug_counts[base]
@@ -458,7 +461,7 @@ def _render_toc_md(
     folder_themes: FolderThemeMap | None = None,
 ) -> list[str]:
     lines = ["## Contents", ""]
-    for folder, _section_id, count in _folder_anchor_map(report):
+    for folder, _section_id, count in _folder_anchor_map(report, folder_themes):
         lines.append(f"- {_folder_display_name(folder, folder_themes)} ({count})")
     if report.undated:
         lines.append("- Undated / needs review")
@@ -707,7 +710,8 @@ def render_markdown(
         "",
     ]
     lines.extend(_render_toc_md(report, folder_themes))
-    for folder, entries in sorted(report.dated_by_folder.items()):
+    for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
+        entries = report.dated_by_folder[folder]
         lines.append(f"## {_folder_display_name(folder, folder_themes)}")
         lines.append("")
         for item in _sort_entries_by_read_time(entries):
@@ -802,7 +806,7 @@ def render_html(
 ) -> str:
     window_label = _format_window_range(report.window_start, report.window_end)
     total = report.stats.dated_included + report.stats.undated_needing_review
-    anchor_map = _folder_anchor_map(report)
+    anchor_map = _folder_anchor_map(report, folder_themes)
     folders = tuple(folder for folder, _, _ in anchor_map)
     body_parts = [
         "<!DOCTYPE html>",
@@ -856,7 +860,8 @@ def render_html(
         ),
     ]
     section_ids = {folder: section_id for folder, section_id, _ in anchor_map}
-    for folder, entries in sorted(report.dated_by_folder.items()):
+    for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
+        entries = report.dated_by_folder[folder]
         section_id = section_ids[folder]
         accent_class = _folder_accent_class(folder)
         sorted_entries = _sort_entries_by_read_time(entries)

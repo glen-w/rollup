@@ -137,7 +137,10 @@ def format_newsletter_type(ntype: str | None) -> str:
 
 
 def folder_display_name(folder: str | None) -> str:
-    return _folder_display_name(folder or "misc")
+    from flask import current_app
+
+    themes = current_app.config.get("FOLDER_THEMES") or None
+    return _folder_display_name(folder or "misc", themes)
 
 
 def folder_accent_class(folder: str | None) -> str:

@@ -21,6 +21,24 @@ def _sum_nullable(*vals):
     return sum(nums)
 
 
+def _preferred_view() -> str:
+    from flask import current_app
+
+    cached = current_app.config.get("UI_PREFERRED_VIEW")
+    if cached in ("html", "markdown", "entries"):
+        return cached
+    try:
+        from rollup.config_service import load_document
+
+        explicit = current_app.config.get("CONFIG_PATH")
+        doc = load_document(explicit=explicit) if explicit else load_document()
+        view = doc.loaded.ui.preferred_view
+        current_app.config["UI_PREFERRED_VIEW"] = view
+        return view
+    except Exception:
+        return "html"
+
+
 @bp.get("/rollups")
 def list_rollups():
     try:
@@ -78,6 +96,7 @@ def list_rollups():
         page_size=page_size,
         total=total,
         has_prev=page > 1,
+        preferred_view=_preferred_view(),
         has_next=offset + page_size < total,
     )
 

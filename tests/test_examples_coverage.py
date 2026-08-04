@@ -55,6 +55,9 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("output writers guide", "OUTPUT_WRITERS.md"),
     ("web command", "rollup web"),
     ("web reindex", "rollup web reindex"),
+    ("web settings centre", "/settings"),
+    ("web run studio", "/run"),
+    ("web config path", "rollup web --config"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),
 )

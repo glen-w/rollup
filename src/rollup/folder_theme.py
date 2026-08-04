@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Iterable, Mapping
 
 # Curated neutral palette — intentional without personal taxonomy branding.
 ACCENT_PALETTE: tuple[str, ...] = (
@@ -23,6 +23,7 @@ ACCENT_PALETTE: tuple[str, ...] = (
 )
 
 DEFAULT_FOLDER_ACCENT = "#ccc"
+DEFAULT_FOLDER_ORDER = 10_000
 
 _FOLDER_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -31,12 +32,16 @@ _FOLDER_SLUG_RE = re.compile(r"[^a-z0-9]+")
 class FolderTheme:
     emoji: str | None
     accent: str
+    display_name: str | None = None
+    order: int | None = None
 
 
 @dataclass(frozen=True)
 class FolderThemeOverride:
     emoji: str | None = None
     accent: str | None = None
+    display_name: str | None = None
+    order: int | None = None
 
 
 def folder_slug(folder: str) -> str:
@@ -68,12 +73,23 @@ def theme_for(
         override = overrides.get(folder.lower())
     emoji: str | None = None
     accent = accent_for_slug(slug)
+    display_name: str | None = None
+    order: int | None = None
     if override is not None:
         if override.emoji is not None:
             emoji = override.emoji or None
         if override.accent is not None:
             accent = override.accent
-    return FolderTheme(emoji=emoji, accent=accent)
+        if override.display_name is not None:
+            display_name = override.display_name.strip() or None
+        if override.order is not None:
+            order = override.order
+    return FolderTheme(
+        emoji=emoji,
+        accent=accent,
+        display_name=display_name,
+        order=order,
+    )
 
 
 def folder_display_name(
@@ -81,9 +97,24 @@ def folder_display_name(
     overrides: Mapping[str, FolderThemeOverride] | None = None,
 ) -> str:
     theme = theme_for(folder, overrides)
+    label = theme.display_name or folder
     if theme.emoji:
-        return f"{theme.emoji} {folder}"
-    return folder
+        return f"{theme.emoji} {label}"
+    return label
+
+
+def sort_folder_names(
+    folders: Iterable[str],
+    overrides: Mapping[str, FolderThemeOverride] | None = None,
+) -> list[str]:
+    """Sort folders by optional theme order, then case-insensitive name."""
+
+    def _key(folder: str) -> tuple[int, str]:
+        theme = theme_for(folder, overrides)
+        order = theme.order if theme.order is not None else DEFAULT_FOLDER_ORDER
+        return (order, folder.lower())
+
+    return sorted(folders, key=_key)
 
 
 def folder_accent_css(

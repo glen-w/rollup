@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Run result — Rollup{% endblock %}
+{% block content %}
+<h1>Run result</h1>
+
+{% if not active %}
+<p class="muted">No run in this web process yet.</p>
+{% else %}
+<section class="card-section">
+  <dl class="kv">
+    <dt>Run id</dt><dd><code>{{ active.run_id }}</code></dd>
+    <dt>Status</dt>
+    <dd><span class="status-{{ active.status }}">{{ active.status }}</span>
+      (exit {{ active.exit_code if active.exit_code is not none else '—' }})</dd>
+    <dt>Mode</dt><dd>{% if active.dry_run %}dry-run{% else %}digest{% endif %}</dd>
+  </dl>
+  {% if active.error %}
+  <p class="banner">{{ active.error }}</p>
+  {% endif %}
+  <h2>Log</h2>
+  <pre class="cli-block log-tail">{% for line in active.log_lines %}{{ line }}
+{% endfor %}</pre>
+</section>
+
+{% if active.status in ['success', 'partial'] and not active.dry_run %}
+<section class="card-section">
+  <h2>Artifacts</h2>
+  <ul>
+    {% if latest_run_id %}
+    <li><a href="{{ url_for('rollups.rollup_detail', run_id=latest_run_id) }}">Open latest archive entry</a></li>
+    <li><a href="{{ url_for('artifacts.serve_artifact', run_id=latest_run_id, kind='md') }}">Markdown</a></li>
+    <li><a href="{{ url_for('artifacts.serve_artifact', run_id=latest_run_id, kind='html') }}">HTML</a></li>
+    <li><a href="{{ url_for('artifacts.serve_artifact', run_id=latest_run_id, kind='manifest') }}">Manifest</a></li>
+    {% else %}
+    <li><a href="{{ url_for('rollups.list_rollups') }}">Open Archive</a> (index the new run if it is not listed yet)</li>
+    {% endif %}
+  </ul>
+  {% if active.status == 'partial' %}
+  <p class="note">Partial success — usable digest with soft failures. Check Admin / manifest for degraded services.</p>
+  {% endif %}
+</section>
+{% elif active.status == 'failure' %}
+<p class="banner">Hard failure — no usable digest. Fix paths/folders or check the log above.</p>
+{% elif active.status == 'dry_run' %}
+<p class="note">Dry-run complete — no outputs or index writes. Ready to run a real digest.</p>
+{% endif %}
+{% endif %}
+
+<p><a href="{{ url_for('run.run_studio') }}">Back to Run Studio</a>
+ · <a href="{{ url_for('settings.settings_index') }}">Settings</a></p>
+{% endblock %}
+

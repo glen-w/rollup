@@ -645,6 +645,747 @@ def build_digest_report(
     )
 
 
+@dataclass
+class _DigestSession:
+    """Mutable run state for ``run_digest`` phase helpers."""
+
+    config: Config
+    run_options: RunOptions
+    grouping: GroupingConfig
+    manifest_config: ManifestConfig
+    acquire_lock: bool
+    output_writers: list | None
+    writer_cli_args: object | None
+    ctx: RunContext
+    generated_at: datetime
+    aggregated: AggregatedResults
+    window_start: datetime
+    window_end: datetime
+    effective_run: Any
+    resolved_apply_policy: Any
+    lock: Any = None
+    conn: Any = None
+    report: DigestReport | None = None
+    stats: DigestStats | None = None
+    md_path: Path | None = None
+    html_path: Path | None = None
+    manifest_path: Path | None = None
+    secondary_manifest_error: str | None = None
+    error_message: str | None = None
+    status: RunStatus = "failure"
+    manifest_builder: Any = None
+    summarize_result: SummarizeResult | None = None
+
+
+def _failure_result(session: _DigestSession) -> DigestRunResult:
+    return DigestRunResult(
+        status=session.status,
+        exit_code=EXIT_FAILURE,
+        context=session.ctx,
+        report=session.report,
+        stats=session.stats,
+        aggregated=session.aggregated,
+        md_path=session.md_path,
+        html_path=session.html_path,
+        error_message=session.error_message,
+    )
+
+
+def _validate_run_paths(session: _DigestSession) -> DigestRunResult | None:
+    from rollup.safety import SafetyError, validate_writable_run_paths
+
+    config = session.config
+    try:
+        validate_writable_run_paths(
+            newsletter_root=config.root,
+            mail_root=config.mail_root,
+            output_dir=config.output_dir,
+            state_dir=config.state_dir,
+            log_dir=config.log_dir,
+            db_path=config.db_path,
+        )
+    except SafetyError as exc:
+        session.aggregated.hard_failure = True
+        session.aggregated.hard_failure_reason = str(exc)
+        session.error_message = str(exc)
+        session.status = "failure"
+        return _failure_result(session)
+    return None
+
+
+def _prepare_lock_and_manifest(session: _DigestSession) -> DigestRunResult | None:
+    from rollup.manifest import ManifestBuilder
+    from rollup.run_lock import RunLockError, acquire_run_lock
+
+    config = session.config
+    run_options = session.run_options
+    if run_options.write_manifest and not run_options.dry_run:
+        session.manifest_builder = ManifestBuilder(
+            session.ctx,
+            config=config,
+            run_options=run_options,
+            grouping=session.grouping,
+            manifest_config=session.manifest_config,
+            window_start=session.window_start,
+            window_end=session.window_end,
+        )
+
+    if session.acquire_lock and not run_options.dry_run:
+        try:
+            session.lock = acquire_run_lock(
+                config.state_dir, session.ctx.run_id, started_at=session.generated_at
+            )
+            if getattr(session.lock, "stale_recovered", False):
+                session.ctx.add_event(
+                    "stale_lock_recovered",
+                    "Recovered stale run lock",
+                    level="warning",
+                )
+        except RunLockError as exc:
+            session.aggregated.hard_failure = True
+            session.aggregated.hard_failure_reason = str(exc)
+            session.error_message = str(exc)
+            session.status = "failure"
+            if session.manifest_builder is not None:
+                session.manifest_builder.record_failure(exc)
+                session.manifest_builder.finalize(
+                    status="failure", aggregated=session.aggregated
+                )
+            return _failure_result(session)
+    return None
+
+
+def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
+    """Discover → parse → filter → group → summarize → report (+ group summaries)."""
+    config = session.config
+    run_options = session.run_options
+    grouping = session.grouping
+    aggregated = session.aggregated
+    generated_at = session.generated_at
+    effective_run = session.effective_run
+
+    profile_set = require_valid_summary_profile_set(
+        resolve_profile_set(
+            effort=config.effort,
+            summary_profile_set_path=config.summary_profile_set_path,
+        ),
+        get_canonical_newsletter_types(),
+    )
+
+    discovery = stage_discover(config)
+    aggregated.discovery = discovery
+    logger.info(
+        "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
+        config.root,
+        len(discovery.folders),
+        config.lookback_days,
+        run_options.dry_run,
+        config.no_ollama,
+    )
+
+    parse_result = stage_parse(config, discovery.folders)
+    aggregated.parse = parse_result
+    if parse_result.mutated_folders:
+        aggregated.mbox_mutation_detected = True
+
+    no_input = evaluate_no_input(
+        folders_include=config.folders_include,
+        discovery=discovery,
+        parse=parse_result,
+    )
+    if no_input:
+        aggregated.hard_failure = True
+        aggregated.hard_failure_reason = no_input
+        aggregated.no_input_reason = no_input
+        session.error_message = no_input
+        session.status = "failure"
+        if session.manifest_builder is not None:
+            session.manifest_builder.record_failure(RuntimeError(no_input))
+            session.manifest_builder.finalize(
+                status="failure", aggregated=aggregated
+            )
+        return _failure_result(session)
+
+    if effective_run.allow_summary_network:
+        from rollup.summarize import OllamaError, validate_ollama_url
+
+        try:
+            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+        except OllamaError as exc:
+            aggregated.hard_failure = True
+            session.error_message = str(exc)
+            raise
+
+    if effective_run.allow_final_review_network:
+        from rollup.summarize import OllamaError, validate_ollama_url
+
+        try:
+            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+        except OllamaError as exc:
+            aggregated.hard_failure = True
+            session.error_message = str(exc)
+            raise
+
+    seen_keys: set[str] = set()
+    snapshot = None
+    if not run_options.dry_run:
+        from rollup.source_registry import (
+            load_SourceRegistrySnapshot,
+            observe_sources,
+        )
+        from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
+
+        # Canonical init always materializes full schema (including caches).
+        session.conn = init_db(config.db_path)
+        if config.final_review_enabled:
+            ensure_final_review_schema(session.conn)
+        if config.group_summaries_enabled:
+            from rollup.state import ensure_group_summary_schema
+
+            ensure_group_summary_schema(session.conn)
+        seen_keys = load_seen_keys(session.conn)
+        observe_result = observe_sources(
+            session.conn, parse_result.messages, generated_at=generated_at
+        )
+        needed = {m.source_key for m in parse_result.messages if m.source_key}
+        snapshot = load_SourceRegistrySnapshot(
+            session.conn,
+            needed,
+            discovered_this_run=observe_result.discovered_this_run,
+            messages_unidentifiable_source=observe_result.messages_unidentifiable,
+        )
+    else:
+        from rollup.source_models import empty_defaults_snapshot
+
+        snapshot = empty_defaults_snapshot(
+            messages_unidentifiable_source=sum(
+                1 for m in parse_result.messages if not m.source_key
+            )
+        )
+
+    filter_result = stage_filter(
+        parse_result.messages,
+        generated_at=generated_at,
+        lookback_days=config.lookback_days,
+        no_ollama=config.no_ollama,
+        seen_keys=seen_keys,
+        include_seen_undated=config.include_seen_undated,
+        snapshot=snapshot,
+    )
+    aggregated.filter = filter_result
+
+    grouping_result = stage_group(
+        filter_result.dated_entries,
+        filter_result.undated_entries,
+        grouping,
+        snapshot=snapshot,
+    )
+    aggregated.grouping = grouping_result
+
+    # Summarise individual entries (flatten groups for plan, then rebuild).
+    flat_dated = _flatten_items_to_entries(grouping_result.dated_items)
+    flat_undated = _flatten_items_to_entries(grouping_result.undated_items)
+
+    summarize_result = stage_summarize(
+        config,
+        flat_dated,
+        flat_undated,
+        profile_set,
+        session.conn,
+        allow_network=effective_run.allow_summary_network,
+        quiet=run_options.quiet,
+        snapshot=snapshot,
+    )
+    session.summarize_result = summarize_result
+    aggregated.summarize = summarize_result
+    aggregated.source_snapshot = snapshot  # type: ignore[attr-defined]
+
+    # Rebuild item structure with summaries when grouping is active.
+    if grouping.enabled and grouping_result.groups:
+        dated_items = _rebuild_items_with_summaries(
+            grouping_result.dated_items, list(summarize_result.dated_entries)
+        )
+        undated_items = _rebuild_items_with_summaries(
+            grouping_result.undated_items, list(summarize_result.undated_entries)
+        )
+    else:
+        dated_items = summarize_result.dated_entries
+        undated_items = summarize_result.undated_entries
+
+    all_rendered = list(summarize_result.dated_entries) + list(
+        summarize_result.undated_entries
+    )
+    ollama_c, cache_c, fallback_c = count_summary_sources(all_rendered)
+    meta = summarize_result.summary_metadata
+    session.stats = DigestStats(
+        folders_scanned=len(discovery.folders),
+        messages_parsed=parse_result.counts.messages_parsed,
+        dated_included=len(summarize_result.dated_entries),
+        undated_needing_review=len(summarize_result.undated_entries),
+        skipped_outside_window=filter_result.counts.skipped_outside_window,
+        skipped_seen_undated=filter_result.counts.skipped_seen_undated,
+        deduped_messages=filter_result.counts.deduped_messages,
+        parse_errors=parse_result.counts.parse_fatal_errors,
+        summaries_ollama=ollama_c,
+        summaries_cache=cache_c,
+        summaries_fallback=fallback_c,
+        summaries_errors=meta.summaries_errors if meta else 0,
+    )
+
+    # Prefer grouped folder view when DigestGroup is available.
+    dated_by_folder = _group_items_by_folder(dated_items)
+
+    session.report = DigestReport(
+        generated_at=generated_at,
+        lookback_days=config.lookback_days,
+        window_start=session.window_start,
+        window_end=session.window_end,
+        dated_by_folder=dated_by_folder,
+        undated=tuple(
+            _flatten_items_to_entries(undated_items)
+            if grouping.enabled
+            else undated_items
+        ),
+        stats=session.stats,
+        summary_metadata=meta,
+        grouping_metadata=_grouping_metadata(grouping_result)
+        if grouping.enabled
+        else None,
+    )
+
+    if effective_run.allow_group_summary_network:
+        from rollup.group_summarize import apply_group_summaries
+
+        new_dated, new_undated, gsm = apply_group_summaries(
+            session.report.dated_by_folder,
+            session.report.undated,
+            config,
+            session.conn,
+            max_calls=config.max_group_summary_calls,
+        )
+        session.report = replace(
+            session.report,
+            dated_by_folder=new_dated,
+            undated=new_undated,
+            group_summary_metadata=gsm,
+        )
+        aggregated.group_summary_ollama_calls = gsm.ollama_calls
+        aggregated.group_summary_cache_hits = gsm.cache_hits
+        aggregated.group_summary_stream_failures = gsm.stream_failures
+        aggregated.group_summary_cache_write_errors = gsm.cache_write_errors
+        aggregated.group_summary_error_counts = dict(gsm.error_counts)
+        if gsm.degraded or (
+            gsm.groups_attempted > 0 and gsm.groups_succeeded == 0
+        ):
+            aggregated.group_summaries_degraded = True
+            logger.warning(
+                "Group summaries degraded: attempted=%d succeeded=%d "
+                "errors=%d stream_failures=%d cache_write_errors=%d",
+                gsm.groups_attempted,
+                gsm.groups_succeeded,
+                gsm.errors,
+                gsm.stream_failures,
+                gsm.cache_write_errors,
+            )
+    return None
+
+
+def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
+    """Archive, render, required writers, latest publish, seen state, manifest finalize."""
+    config = session.config
+    run_options = session.run_options
+    aggregated = session.aggregated
+    generated_at = session.generated_at
+    ctx = session.ctx
+    summarize_result = session.summarize_result
+    assert summarize_result is not None
+    assert session.stats is not None
+    stats = session.stats
+    report = session.report
+    assert report is not None
+
+    if run_options.dry_run:
+        aggregated.usable_digest = True
+        session.status = derive_run_status(aggregated, dry_run=True)
+        if session.manifest_builder is not None and run_options.write_manifest:
+            session.manifest_builder.finalize(
+                status=session.status, aggregated=aggregated, stats=stats
+            )
+        return DigestRunResult(
+            status=session.status,
+            exit_code=status_to_exit_code(session.status),
+            context=ctx,
+            report=report,
+            stats=stats,
+            aggregated=aggregated,
+        )
+
+    # Keep only the new batch in output_dir root; prior digests → archive/.
+    from rollup.output_archive import archive_previous_outputs
+
+    archive_previous_outputs(config.output_dir, db_path=config.db_path)
+
+    # Write outputs (variants or default).
+    rendered_variants = summarize_result.rendered_variants
+    execution = summarize_result.execution
+    md_path = session.md_path
+    html_path = session.html_path
+    if rendered_variants and any(name != "default" for name in rendered_variants):
+        for variant_name, (variant_dated, variant_undated) in rendered_variants.items():
+            variant_metadata = (
+                execution.summary_metadata_by_variant.get(variant_name)
+                if execution
+                else None
+            )
+            variant_stats = DigestStats(
+                folders_scanned=stats.folders_scanned,
+                messages_parsed=stats.messages_parsed,
+                dated_included=len(variant_dated),
+                undated_needing_review=len(variant_undated),
+                skipped_outside_window=stats.skipped_outside_window,
+                skipped_seen_undated=stats.skipped_seen_undated,
+                deduped_messages=stats.deduped_messages,
+                parse_errors=stats.parse_errors,
+                summaries_ollama=(
+                    variant_metadata.summaries_ollama if variant_metadata else 0
+                ),
+                summaries_cache=(
+                    variant_metadata.summaries_cache if variant_metadata else 0
+                ),
+                summaries_fallback=(
+                    variant_metadata.summaries_fallback if variant_metadata else 0
+                ),
+                summaries_errors=(
+                    variant_metadata.summaries_errors if variant_metadata else 0
+                ),
+            )
+            variant_report = DigestReport(
+                generated_at=generated_at,
+                lookback_days=config.lookback_days,
+                window_start=session.window_start,
+                window_end=session.window_end,
+                dated_by_folder=group_dated_by_folder(variant_dated),
+                undated=tuple(variant_undated),
+                stats=variant_stats,
+                summary_metadata=variant_metadata,
+            )
+            variant_report = _maybe_final_review(
+                variant_report,
+                config,
+                session.conn,
+                generated_at,
+                variant_name,
+                use_explicit_path=False,
+                aggregated=aggregated,
+                apply_policy=session.resolved_apply_policy,
+                dry_run=run_options.dry_run,
+                quiet=run_options.quiet,
+            )
+            stem = digest_output_stem(
+                generated_at, variant_name, run_id_short=ctx.run_id_short
+            )
+            md = render_markdown(
+                variant_report,
+                config.max_display_links,
+                folder_themes=config.folder_themes or None,
+            )
+            html_content = render_html(
+                variant_report,
+                config.max_display_links,
+                folder_themes=config.folder_themes or None,
+            )
+            v_md, v_html = _write_digest_outputs(
+                config.output_dir,
+                generated_at,
+                md,
+                html_content,
+                variant_name=variant_name,
+                run_id_short=ctx.run_id_short,
+            )
+            aggregated.renders.append(
+                RenderResult(
+                    markdown=md,
+                    html=html_content,
+                    output_stem=stem,
+                    variant_name=variant_name,
+                    md_path=v_md,
+                    html_path=v_html,
+                )
+            )
+            if md_path is None:
+                md_path, html_path = v_md, v_html
+                report = variant_report
+    else:
+        stem = digest_output_stem(generated_at, run_id_short=ctx.run_id_short)
+        report = _maybe_final_review(
+            report,
+            config,
+            session.conn,
+            generated_at,
+            None,
+            use_explicit_path=bool(config.final_review_report_path),
+            aggregated=aggregated,
+            apply_policy=session.resolved_apply_policy,
+            dry_run=run_options.dry_run,
+            quiet=run_options.quiet,
+        )
+        md = render_markdown(
+            report,
+            config.max_display_links,
+            folder_themes=config.folder_themes or None,
+        )
+        html_content = render_html(
+            report,
+            config.max_display_links,
+            folder_themes=config.folder_themes or None,
+        )
+        md_path, html_path = _write_digest_outputs(
+            config.output_dir,
+            generated_at,
+            md,
+            html_content,
+            run_id_short=ctx.run_id_short,
+        )
+        aggregated.renders.append(
+            RenderResult(
+                markdown=md,
+                html=html_content,
+                output_stem=stem,
+                md_path=md_path,
+                html_path=html_path,
+            )
+        )
+
+    session.report = report
+    session.md_path = md_path
+    session.html_path = html_path
+
+    aggregated.dated_outputs_written = True
+    aggregated.usable_digest = True
+    aggregated.messages_included = len(summarize_result.dated_entries) + len(
+        summarize_result.undated_entries
+    )
+
+    # Required output writers run before latest/seen/index (irreversible boundary).
+    if (
+        session.output_writers
+        and session.report is not None
+        and session.writer_cli_args is not None
+    ):
+        from rollup.output_writers import (
+            OutputWriterError,
+            WriteContext,
+            run_enabled_writers,
+        )
+
+        try:
+            written = run_enabled_writers(
+                session.output_writers,
+                session.report,
+                WriteContext(
+                    output_dir=config.output_dir,
+                    generated_at=generated_at,
+                    max_display_links=config.max_display_links,
+                    dry_run=run_options.dry_run,
+                    run_id_short=ctx.run_id_short,
+                    logger=logger,
+                    folder_themes=config.folder_themes or None,
+                ),
+                args=session.writer_cli_args,
+                config=config,
+            )
+            aggregated.writer_artifacts.extend(written)
+        except OutputWriterError as writer_exc:
+            aggregated.required_writer_failed = True
+            aggregated.hard_failure = True
+            aggregated.hard_failure_reason = str(writer_exc)
+            session.error_message = str(writer_exc)
+            logger.error("Required output writer failed: %s", writer_exc)
+            ctx.add_event("required_writer_failed", str(writer_exc), level="error")
+            session.status = "failure"
+            if session.manifest_builder is not None:
+                try:
+                    session.manifest_builder.record_failure(writer_exc)
+                    session.manifest_builder.finalize(
+                        status="failure", aggregated=aggregated
+                    )
+                except Exception:
+                    pass
+            return _failure_result(session)
+
+    # Publish latest outputs transactionally when requested.
+    # Dated digests are the durable source of truth; latest failure still
+    # permits seen-state updates below (only after required pubs).
+    session.status = derive_run_status(aggregated, dry_run=False)
+    allow_latest = (
+        run_options.publish_latest
+        and session.md_path
+        and session.html_path
+        and aggregated.messages_included > 0
+        and not aggregated.mbox_mutation_detected
+        and not aggregated.required_writer_failed
+    )
+    if run_options.publish_latest and not allow_latest:
+        if aggregated.messages_included == 0:
+            ctx.add_event(
+                "latest_skipped_empty_window",
+                "Refusing latest.* update when messages_included == 0",
+                level="info",
+            )
+        elif aggregated.mbox_mutation_detected:
+            ctx.add_event(
+                "latest_skipped_mbox_mutation",
+                "Refusing latest.* update after mbox mutation",
+                level="warning",
+            )
+    if allow_latest and session.md_path and session.html_path:
+        from rollup.publication import publish_latest_outputs
+
+        try:
+            pub = publish_latest_outputs(
+                output_dir=config.output_dir,
+                md_path=session.md_path,
+                html_path=session.html_path,
+                run_status=session.status,
+                publish_latest=run_options.publish_latest,
+                allow_partial_latest=run_options.allow_partial_latest,
+            )
+            aggregated.latest_outputs_updated = pub.latest_outputs_updated
+        except OSError as pub_exc:
+            aggregated.publication_failed = True
+            logger.error("Latest publication failed: %s", pub_exc)
+            ctx.add_event(
+                "publication_failed",
+                str(pub_exc),
+                level="error",
+            )
+        except (ValueError, FileNotFoundError) as pub_exc:
+            aggregated.publication_failed = True
+            logger.error("Latest publication failed: %s", pub_exc)
+            ctx.add_event(
+                "publication_failed",
+                str(pub_exc),
+                level="error",
+            )
+
+    if session.conn is not None:
+        from rollup.state import upsert_seen_keys
+
+        rendered_undated_keys = [
+            e.classified.parsed.message_key
+            for e in summarize_result.undated_entries
+        ]
+        try:
+            upsert_seen_keys(session.conn, rendered_undated_keys, generated_at)
+            aggregated.seen_state_updated = True
+        except Exception as seen_exc:
+            # Digest exists; safe consequence is repetition → partial.
+            aggregated.seen_state_failed = True
+            logger.error("Seen-state update failed: %s", seen_exc)
+            ctx.add_event(
+                "seen_state_failed",
+                str(seen_exc),
+                level="error",
+            )
+
+    session.status = derive_run_status(aggregated, dry_run=False)
+    if session.manifest_builder is not None:
+        session.manifest_builder.set_outputs(
+            md_path=session.md_path,
+            html_path=session.html_path,
+            dated_outputs_written=aggregated.dated_outputs_written,
+            latest_outputs_updated=aggregated.latest_outputs_updated,
+        )
+        session.manifest_builder.finalize(
+            status=session.status,
+            aggregated=aggregated,
+            stats=session.stats,
+            report=session.report,
+        )
+    return None
+
+
+def _release_resources(session: _DigestSession) -> None:
+    if session.conn is not None:
+        try:
+            session.conn.close()
+        except Exception:
+            pass
+    if session.lock is not None:
+        try:
+            session.lock.release()
+        except Exception as exc:
+            logger.warning("Failed to release run lock: %s", exc)
+    if session.manifest_builder is not None:
+        try:
+            written = session.manifest_builder.write_if_state_writable(
+                update_latest=session.aggregated.latest_outputs_updated
+                and session.status == "success"
+            )
+            if written is not None:
+                session.manifest_path = written
+        except Exception as manifest_exc:
+            session.secondary_manifest_error = str(manifest_exc)
+            session.aggregated.manifest_write_failed = True
+            logger.error("Manifest write failed: %s", manifest_exc)
+            if session.status in ("success", "partial", "dry_run"):
+                session.status = derive_run_status(
+                    session.aggregated, dry_run=False
+                )
+
+
+def _index_web_run(session: _DigestSession) -> None:
+    run_options = session.run_options
+    aggregated = session.aggregated
+    if (
+        not run_options.dry_run
+        and aggregated.dated_outputs_written
+        and session.status in ("success", "partial")
+        and session.report is not None
+        and session.md_path is not None
+        and session.html_path is not None
+    ):
+        manifests_required = run_options.write_manifest
+        manifests_ok = (not manifests_required) or (
+            session.manifest_path is not None
+            and not aggregated.manifest_write_failed
+        )
+        if manifests_ok:
+            try:
+                from rollup import __version__
+                from rollup.run_index import build_pipeline_payload, index_rollup_run
+                from rollup.utc import now_utc
+
+                payload = build_pipeline_payload(
+                    run_id=session.ctx.run_id,
+                    report=session.report,
+                    status=session.status,
+                    mode=run_options.mode,
+                    rollup_version=__version__,
+                    started_at=session.ctx.run_start_time,
+                    completed_at=now_utc(),
+                    md_path=session.md_path,
+                    html_path=session.html_path,
+                    manifest_path=session.manifest_path,
+                    output_dir=session.config.output_dir,
+                    state_dir=session.config.state_dir,
+                    aggregated=aggregated,
+                    max_display_links=session.config.max_display_links,
+                )
+                index_rollup_run(session.config.db_path, payload)
+            except Exception as index_exc:
+                aggregated.web_index_failed = True
+                aggregated.web_index_error = str(index_exc)
+                logger.error("Web run index failed: %s", index_exc)
+                session.ctx.add_event(
+                    "web_index_failed", str(index_exc), level="error"
+                )
+        else:
+            logger.warning(
+                "Skipping web run index: manifest required but missing/failed"
+            )
+
+
 def run_digest(
     config: Config,
     run_options: RunOptions,
@@ -672,715 +1413,75 @@ def run_digest(
     effective_run = resolve_effective_run(config, run_options, grouping=grouping)
     resolved_apply_policy = effective_run.apply_policy
 
-    from rollup.safety import SafetyError, validate_writable_run_paths
+    session = _DigestSession(
+        config=config,
+        run_options=run_options,
+        grouping=grouping,
+        manifest_config=manifest_config,
+        acquire_lock=acquire_lock,
+        output_writers=output_writers,
+        writer_cli_args=writer_cli_args,
+        ctx=ctx,
+        generated_at=generated_at,
+        aggregated=aggregated,
+        window_start=window_start,
+        window_end=window_end,
+        effective_run=effective_run,
+        resolved_apply_policy=resolved_apply_policy,
+    )
+
+    early = _validate_run_paths(session)
+    if early is not None:
+        return early
 
     try:
-        validate_writable_run_paths(
-            newsletter_root=config.root,
-            mail_root=config.mail_root,
-            output_dir=config.output_dir,
-            state_dir=config.state_dir,
-            log_dir=config.log_dir,
-            db_path=config.db_path,
-        )
-    except SafetyError as exc:
-        aggregated.hard_failure = True
-        aggregated.hard_failure_reason = str(exc)
-        return DigestRunResult(
-            status="failure",
-            exit_code=EXIT_FAILURE,
-            context=ctx,
-            report=None,
-            stats=None,
-            aggregated=aggregated,
-            error_message=str(exc),
-        )
+        early = _prepare_lock_and_manifest(session)
+        if early is not None:
+            return early
 
-    lock = None
-    conn = None
-    report: DigestReport | None = None
-    stats: DigestStats | None = None
-    md_path: Path | None = None
-    html_path: Path | None = None
-    manifest_path: Path | None = None
-    secondary_manifest_error: str | None = None
-    error_message: str | None = None
-    status: RunStatus = "failure"
+        early = _run_core_stages(session)
+        if early is not None:
+            return early
 
-    from rollup.manifest import ManifestBuilder
-    from rollup.run_lock import RunLockError, acquire_run_lock
-
-    manifest_builder = None
-    if run_options.write_manifest and not run_options.dry_run:
-        manifest_builder = ManifestBuilder(
-            ctx,
-            config=config,
-            run_options=run_options,
-            grouping=grouping,
-            manifest_config=manifest_config,
-            window_start=window_start,
-            window_end=window_end,
-        )
-
-    try:
-        if acquire_lock and not run_options.dry_run:
-            try:
-                lock = acquire_run_lock(
-                    config.state_dir, ctx.run_id, started_at=generated_at
-                )
-                if getattr(lock, "stale_recovered", False):
-                    ctx.add_event(
-                        "stale_lock_recovered",
-                        "Recovered stale run lock",
-                        level="warning",
-                    )
-            except RunLockError as exc:
-                aggregated.hard_failure = True
-                aggregated.hard_failure_reason = str(exc)
-                error_message = str(exc)
-                status = "failure"
-                if manifest_builder is not None:
-                    manifest_builder.record_failure(exc)
-                    manifest_builder.finalize(status="failure", aggregated=aggregated)
-                return DigestRunResult(
-                    status=status,
-                    exit_code=EXIT_FAILURE,
-                    context=ctx,
-                    report=None,
-                    stats=None,
-                    aggregated=aggregated,
-                    error_message=error_message,
-                )
-
-        profile_set = require_valid_summary_profile_set(
-            resolve_profile_set(
-                effort=config.effort,
-                summary_profile_set_path=config.summary_profile_set_path,
-            ),
-            get_canonical_newsletter_types(),
-        )
-
-        discovery = stage_discover(config)
-        aggregated.discovery = discovery
-        logger.info(
-            "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
-            config.root,
-            len(discovery.folders),
-            config.lookback_days,
-            run_options.dry_run,
-            config.no_ollama,
-        )
-
-        parse_result = stage_parse(config, discovery.folders)
-        aggregated.parse = parse_result
-        if parse_result.mutated_folders:
-            aggregated.mbox_mutation_detected = True
-
-        no_input = evaluate_no_input(
-            folders_include=config.folders_include,
-            discovery=discovery,
-            parse=parse_result,
-        )
-        if no_input:
-            aggregated.hard_failure = True
-            aggregated.hard_failure_reason = no_input
-            aggregated.no_input_reason = no_input
-            error_message = no_input
-            status = "failure"
-            if manifest_builder is not None:
-                manifest_builder.record_failure(RuntimeError(no_input))
-                manifest_builder.finalize(status="failure", aggregated=aggregated)
-            return DigestRunResult(
-                status=status,
-                exit_code=EXIT_FAILURE,
-                context=ctx,
-                report=None,
-                stats=None,
-                aggregated=aggregated,
-                error_message=error_message,
-            )
-
-        if effective_run.allow_summary_network:
-            from rollup.summarize import OllamaError, validate_ollama_url
-
-            try:
-                validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-            except OllamaError as exc:
-                aggregated.hard_failure = True
-                error_message = str(exc)
-                raise
-
-        if effective_run.allow_final_review_network:
-            from rollup.summarize import OllamaError, validate_ollama_url
-
-            try:
-                validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-            except OllamaError as exc:
-                aggregated.hard_failure = True
-                error_message = str(exc)
-                raise
-
-        seen_keys: set[str] = set()
-        snapshot = None
-        if not run_options.dry_run:
-            from rollup.source_models import empty_defaults_snapshot
-            from rollup.source_registry import (
-                load_SourceRegistrySnapshot,
-                observe_sources,
-            )
-            from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
-
-            # Canonical init always materializes full schema (including caches).
-            conn = init_db(config.db_path)
-            if config.final_review_enabled:
-                ensure_final_review_schema(conn)
-            if config.group_summaries_enabled:
-                from rollup.state import ensure_group_summary_schema
-
-                ensure_group_summary_schema(conn)
-            seen_keys = load_seen_keys(conn)
-            observe_result = observe_sources(
-                conn, parse_result.messages, generated_at=generated_at
-            )
-            needed = {
-                m.source_key for m in parse_result.messages if m.source_key
-            }
-            snapshot = load_SourceRegistrySnapshot(
-                conn,
-                needed,
-                discovered_this_run=observe_result.discovered_this_run,
-                messages_unidentifiable_source=observe_result.messages_unidentifiable,
-            )
-        else:
-            from rollup.source_models import empty_defaults_snapshot
-
-            snapshot = empty_defaults_snapshot(
-                messages_unidentifiable_source=sum(
-                    1 for m in parse_result.messages if not m.source_key
-                )
-            )
-
-        filter_result = stage_filter(
-            parse_result.messages,
-            generated_at=generated_at,
-            lookback_days=config.lookback_days,
-            no_ollama=config.no_ollama,
-            seen_keys=seen_keys,
-            include_seen_undated=config.include_seen_undated,
-            snapshot=snapshot,
-        )
-        aggregated.filter = filter_result
-
-        grouping_result = stage_group(
-            filter_result.dated_entries,
-            filter_result.undated_entries,
-            grouping,
-            snapshot=snapshot,
-        )
-        aggregated.grouping = grouping_result
-
-        # Summarise individual entries (flatten groups for plan, then rebuild).
-        flat_dated = _flatten_items_to_entries(grouping_result.dated_items)
-        flat_undated = _flatten_items_to_entries(grouping_result.undated_items)
-
-        summarize_result = stage_summarize(
-            config,
-            flat_dated,
-            flat_undated,
-            profile_set,
-            conn,
-            allow_network=effective_run.allow_summary_network,
-            quiet=run_options.quiet,
-            snapshot=snapshot,
-        )
-        aggregated.summarize = summarize_result
-        aggregated.source_snapshot = snapshot  # type: ignore[attr-defined]
-
-        # Rebuild item structure with summaries when grouping is active.
-        if grouping.enabled and grouping_result.groups:
-            dated_items = _rebuild_items_with_summaries(
-                grouping_result.dated_items, list(summarize_result.dated_entries)
-            )
-            undated_items = _rebuild_items_with_summaries(
-                grouping_result.undated_items, list(summarize_result.undated_entries)
-            )
-        else:
-            dated_items = summarize_result.dated_entries
-            undated_items = summarize_result.undated_entries
-
-        all_rendered = list(summarize_result.dated_entries) + list(
-            summarize_result.undated_entries
-        )
-        ollama_c, cache_c, fallback_c = count_summary_sources(all_rendered)
-        meta = summarize_result.summary_metadata
-        stats = DigestStats(
-            folders_scanned=len(discovery.folders),
-            messages_parsed=parse_result.counts.messages_parsed,
-            dated_included=len(summarize_result.dated_entries),
-            undated_needing_review=len(summarize_result.undated_entries),
-            skipped_outside_window=filter_result.counts.skipped_outside_window,
-            skipped_seen_undated=filter_result.counts.skipped_seen_undated,
-            deduped_messages=filter_result.counts.deduped_messages,
-            parse_errors=parse_result.counts.parse_fatal_errors,
-            summaries_ollama=ollama_c,
-            summaries_cache=cache_c,
-            summaries_fallback=fallback_c,
-            summaries_errors=meta.summaries_errors if meta else 0,
-        )
-
-        # Prefer grouped folder view when DigestGroup is available.
-        dated_by_folder = _group_items_by_folder(dated_items)
-
-        report = DigestReport(
-            generated_at=generated_at,
-            lookback_days=config.lookback_days,
-            window_start=window_start,
-            window_end=window_end,
-            dated_by_folder=dated_by_folder,
-            undated=tuple(
-                _flatten_items_to_entries(undated_items)
-                if grouping.enabled
-                else undated_items
-            ),
-            stats=stats,
-            summary_metadata=meta,
-            grouping_metadata=_grouping_metadata(grouping_result)
-            if grouping.enabled
-            else None,
-        )
-
-        if effective_run.allow_group_summary_network:
-            from rollup.group_summarize import apply_group_summaries
-
-            new_dated, new_undated, gsm = apply_group_summaries(
-                report.dated_by_folder,
-                report.undated,
-                config,
-                conn,
-                max_calls=config.max_group_summary_calls,
-            )
-            report = replace(
-                report,
-                dated_by_folder=new_dated,
-                undated=new_undated,
-                group_summary_metadata=gsm,
-            )
-            aggregated.group_summary_ollama_calls = gsm.ollama_calls
-            aggregated.group_summary_cache_hits = gsm.cache_hits
-            aggregated.group_summary_stream_failures = gsm.stream_failures
-            aggregated.group_summary_cache_write_errors = gsm.cache_write_errors
-            aggregated.group_summary_error_counts = dict(gsm.error_counts)
-            if gsm.degraded or (
-                gsm.groups_attempted > 0 and gsm.groups_succeeded == 0
-            ):
-                aggregated.group_summaries_degraded = True
-                logger.warning(
-                    "Group summaries degraded: attempted=%d succeeded=%d "
-                    "errors=%d stream_failures=%d cache_write_errors=%d",
-                    gsm.groups_attempted,
-                    gsm.groups_succeeded,
-                    gsm.errors,
-                    gsm.stream_failures,
-                    gsm.cache_write_errors,
-                )
-
-        if run_options.dry_run:
-            aggregated.usable_digest = True
-            status = derive_run_status(
-                aggregated, dry_run=True
-            )
-            if manifest_builder is not None and run_options.write_manifest:
-                manifest_builder.finalize(status=status, aggregated=aggregated, stats=stats)
-            return DigestRunResult(
-                status=status,
-                exit_code=status_to_exit_code(status),
-                context=ctx,
-                report=report,
-                stats=stats,
-                aggregated=aggregated,
-            )
-
-        # Keep only the new batch in output_dir root; prior digests → archive/.
-        from rollup.output_archive import archive_previous_outputs
-
-        archive_previous_outputs(config.output_dir, db_path=config.db_path)
-
-        # Write outputs (variants or default).
-        rendered_variants = summarize_result.rendered_variants
-        execution = summarize_result.execution
-        if rendered_variants and any(name != "default" for name in rendered_variants):
-            for variant_name, (variant_dated, variant_undated) in rendered_variants.items():
-                variant_metadata = (
-                    execution.summary_metadata_by_variant.get(variant_name)
-                    if execution
-                    else None
-                )
-                variant_stats = DigestStats(
-                    folders_scanned=stats.folders_scanned,
-                    messages_parsed=stats.messages_parsed,
-                    dated_included=len(variant_dated),
-                    undated_needing_review=len(variant_undated),
-                    skipped_outside_window=stats.skipped_outside_window,
-                    skipped_seen_undated=stats.skipped_seen_undated,
-                    deduped_messages=stats.deduped_messages,
-                    parse_errors=stats.parse_errors,
-                    summaries_ollama=(
-                        variant_metadata.summaries_ollama if variant_metadata else 0
-                    ),
-                    summaries_cache=(
-                        variant_metadata.summaries_cache if variant_metadata else 0
-                    ),
-                    summaries_fallback=(
-                        variant_metadata.summaries_fallback if variant_metadata else 0
-                    ),
-                    summaries_errors=(
-                        variant_metadata.summaries_errors if variant_metadata else 0
-                    ),
-                )
-                variant_report = DigestReport(
-                    generated_at=generated_at,
-                    lookback_days=config.lookback_days,
-                    window_start=window_start,
-                    window_end=window_end,
-                    dated_by_folder=group_dated_by_folder(variant_dated),
-                    undated=tuple(variant_undated),
-                    stats=variant_stats,
-                    summary_metadata=variant_metadata,
-                )
-                variant_report = _maybe_final_review(
-                    variant_report,
-                    config,
-                    conn,
-                    generated_at,
-                    variant_name,
-                    use_explicit_path=False,
-                    aggregated=aggregated,
-                    apply_policy=resolved_apply_policy,
-                    dry_run=run_options.dry_run,
-                    quiet=run_options.quiet,
-                )
-                stem = digest_output_stem(
-                    generated_at, variant_name, run_id_short=ctx.run_id_short
-                )
-                md = render_markdown(
-                    variant_report,
-                    config.max_display_links,
-                    folder_themes=config.folder_themes or None,
-                )
-                html_content = render_html(
-                    variant_report,
-                    config.max_display_links,
-                    folder_themes=config.folder_themes or None,
-                )
-                v_md, v_html = _write_digest_outputs(
-                    config.output_dir,
-                    generated_at,
-                    md,
-                    html_content,
-                    variant_name=variant_name,
-                    run_id_short=ctx.run_id_short,
-                )
-                aggregated.renders.append(
-                    RenderResult(
-                        markdown=md,
-                        html=html_content,
-                        output_stem=stem,
-                        variant_name=variant_name,
-                        md_path=v_md,
-                        html_path=v_html,
-                    )
-                )
-                if md_path is None:
-                    md_path, html_path = v_md, v_html
-                    report = variant_report
-        else:
-            stem = digest_output_stem(
-                generated_at, run_id_short=ctx.run_id_short
-            )
-            report = _maybe_final_review(
-                report,
-                config,
-                conn,
-                generated_at,
-                None,
-                use_explicit_path=bool(config.final_review_report_path),
-                aggregated=aggregated,
-                apply_policy=resolved_apply_policy,
-                dry_run=run_options.dry_run,
-                quiet=run_options.quiet,
-            )
-            md = render_markdown(
-                report,
-                config.max_display_links,
-                folder_themes=config.folder_themes or None,
-            )
-            html_content = render_html(
-                report,
-                config.max_display_links,
-                folder_themes=config.folder_themes or None,
-            )
-            md_path, html_path = _write_digest_outputs(
-                config.output_dir,
-                generated_at,
-                md,
-                html_content,
-                run_id_short=ctx.run_id_short,
-            )
-            aggregated.renders.append(
-                RenderResult(
-                    markdown=md,
-                    html=html_content,
-                    output_stem=stem,
-                    md_path=md_path,
-                    html_path=html_path,
-                )
-            )
-
-        aggregated.dated_outputs_written = True
-        aggregated.usable_digest = True
-        aggregated.messages_included = (
-            len(summarize_result.dated_entries) + len(summarize_result.undated_entries)
-        )
-
-        # Required output writers run before latest/seen/index (irreversible boundary).
-        if output_writers and report is not None and writer_cli_args is not None:
-            from rollup.output_writers import (
-                OutputWriterError,
-                WriteContext,
-                run_enabled_writers,
-            )
-
-            try:
-                written = run_enabled_writers(
-                    output_writers,
-                    report,
-                    WriteContext(
-                        output_dir=config.output_dir,
-                        generated_at=generated_at,
-                        max_display_links=config.max_display_links,
-                        dry_run=run_options.dry_run,
-                        run_id_short=ctx.run_id_short,
-                        logger=logger,
-                        folder_themes=config.folder_themes or None,
-                    ),
-                    args=writer_cli_args,
-                    config=config,
-                )
-                aggregated.writer_artifacts.extend(written)
-            except OutputWriterError as writer_exc:
-                aggregated.required_writer_failed = True
-                aggregated.hard_failure = True
-                aggregated.hard_failure_reason = str(writer_exc)
-                error_message = str(writer_exc)
-                logger.error("Required output writer failed: %s", writer_exc)
-                ctx.add_event("required_writer_failed", str(writer_exc), level="error")
-                status = "failure"
-                if manifest_builder is not None:
-                    try:
-                        manifest_builder.record_failure(writer_exc)
-                        manifest_builder.finalize(
-                            status="failure", aggregated=aggregated
-                        )
-                    except Exception:
-                        pass
-                return DigestRunResult(
-                    status=status,
-                    exit_code=EXIT_FAILURE,
-                    context=ctx,
-                    report=report,
-                    stats=stats,
-                    aggregated=aggregated,
-                    md_path=md_path,
-                    html_path=html_path,
-                    error_message=error_message,
-                )
-
-        # Publish latest outputs transactionally when requested.
-        # Dated digests are the durable source of truth; latest failure still
-        # permits seen-state updates below (only after required pubs).
-        status = derive_run_status(aggregated, dry_run=False)
-        allow_latest = (
-            run_options.publish_latest
-            and md_path
-            and html_path
-            and aggregated.messages_included > 0
-            and not aggregated.mbox_mutation_detected
-            and not aggregated.required_writer_failed
-        )
-        if run_options.publish_latest and not allow_latest:
-            if aggregated.messages_included == 0:
-                ctx.add_event(
-                    "latest_skipped_empty_window",
-                    "Refusing latest.* update when messages_included == 0",
-                    level="info",
-                )
-            elif aggregated.mbox_mutation_detected:
-                ctx.add_event(
-                    "latest_skipped_mbox_mutation",
-                    "Refusing latest.* update after mbox mutation",
-                    level="warning",
-                )
-        if allow_latest and md_path and html_path:
-            from rollup.publication import publish_latest_outputs
-
-            try:
-                pub = publish_latest_outputs(
-                    output_dir=config.output_dir,
-                    md_path=md_path,
-                    html_path=html_path,
-                    run_status=status,
-                    publish_latest=run_options.publish_latest,
-                    allow_partial_latest=run_options.allow_partial_latest,
-                )
-                aggregated.latest_outputs_updated = pub.latest_outputs_updated
-            except OSError as pub_exc:
-                aggregated.publication_failed = True
-                logger.error("Latest publication failed: %s", pub_exc)
-                ctx.add_event(
-                    "publication_failed",
-                    str(pub_exc),
-                    level="error",
-                )
-            except (ValueError, FileNotFoundError) as pub_exc:
-                aggregated.publication_failed = True
-                logger.error("Latest publication failed: %s", pub_exc)
-                ctx.add_event(
-                    "publication_failed",
-                    str(pub_exc),
-                    level="error",
-                )
-
-        if conn is not None:
-            from rollup.state import upsert_seen_keys
-
-            rendered_undated_keys = [
-                e.classified.parsed.message_key
-                for e in summarize_result.undated_entries
-            ]
-            try:
-                upsert_seen_keys(conn, rendered_undated_keys, generated_at)
-                aggregated.seen_state_updated = True
-            except Exception as seen_exc:
-                # Digest exists; safe consequence is repetition → partial.
-                aggregated.seen_state_failed = True
-                logger.error("Seen-state update failed: %s", seen_exc)
-                ctx.add_event(
-                    "seen_state_failed",
-                    str(seen_exc),
-                    level="error",
-                )
-
-        status = derive_run_status(aggregated, dry_run=False)
-        if manifest_builder is not None:
-            manifest_builder.set_outputs(
-                md_path=md_path,
-                html_path=html_path,
-                dated_outputs_written=aggregated.dated_outputs_written,
-                latest_outputs_updated=aggregated.latest_outputs_updated,
-            )
-            manifest_builder.finalize(
-                status=status, aggregated=aggregated, stats=stats, report=report
-            )
+        early = _emit_digest_artifacts(session)
+        if early is not None:
+            return early
 
     except Exception as exc:
-        aggregated.hard_failure = True
-        if error_message is None:
-            error_message = str(exc)
+        session.aggregated.hard_failure = True
+        if session.error_message is None:
+            session.error_message = str(exc)
         logger.error("Digest failed: %s", exc)
-        status = "failure"
-        if manifest_builder is not None:
+        session.status = "failure"
+        if session.manifest_builder is not None:
             try:
-                manifest_builder.record_failure(exc)
-                manifest_builder.finalize(
-                    status="failure", aggregated=aggregated, stats=stats
+                session.manifest_builder.record_failure(exc)
+                session.manifest_builder.finalize(
+                    status="failure",
+                    aggregated=session.aggregated,
+                    stats=session.stats,
                 )
             except Exception:
                 pass
     finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        if lock is not None:
-            try:
-                lock.release()
-            except Exception as exc:
-                logger.warning("Failed to release run lock: %s", exc)
-        if manifest_builder is not None:
-            try:
-                written = manifest_builder.write_if_state_writable(
-                    update_latest=aggregated.latest_outputs_updated
-                    and status == "success"
-                )
-                if written is not None:
-                    manifest_path = written
-            except Exception as manifest_exc:
-                secondary_manifest_error = str(manifest_exc)
-                aggregated.manifest_write_failed = True
-                logger.error("Manifest write failed: %s", manifest_exc)
-                if status in ("success", "partial", "dry_run"):
-                    status = derive_run_status(aggregated, dry_run=False)
+        _release_resources(session)
 
-    # Index for web UI after artifacts (+ manifest when enabled). Dedicated DB txn.
-    if (
-        not run_options.dry_run
-        and aggregated.dated_outputs_written
-        and status in ("success", "partial")
-        and report is not None
-        and md_path is not None
-        and html_path is not None
-    ):
-        manifests_required = run_options.write_manifest
-        manifests_ok = (not manifests_required) or (
-            manifest_path is not None and not aggregated.manifest_write_failed
-        )
-        if manifests_ok:
-            try:
-                from rollup import __version__
-                from rollup.run_index import build_pipeline_payload, index_rollup_run
-                from rollup.utc import now_utc
-
-                payload = build_pipeline_payload(
-                    run_id=ctx.run_id,
-                    report=report,
-                    status=status,
-                    mode=run_options.mode,
-                    rollup_version=__version__,
-                    started_at=ctx.run_start_time,
-                    completed_at=now_utc(),
-                    md_path=md_path,
-                    html_path=html_path,
-                    manifest_path=manifest_path,
-                    output_dir=config.output_dir,
-                    state_dir=config.state_dir,
-                    aggregated=aggregated,
-                    max_display_links=config.max_display_links,
-                )
-                index_rollup_run(config.db_path, payload)
-            except Exception as index_exc:
-                aggregated.web_index_failed = True
-                aggregated.web_index_error = str(index_exc)
-                logger.error("Web run index failed: %s", index_exc)
-                ctx.add_event("web_index_failed", str(index_exc), level="error")
-        else:
-            logger.warning(
-                "Skipping web run index: manifest required but missing/failed"
-            )
+    _index_web_run(session)
 
     return DigestRunResult(
-        status=status,
-        exit_code=status_to_exit_code(status),
-        context=ctx,
-        report=report,
-        stats=stats,
-        aggregated=aggregated,
-        md_path=md_path,
-        html_path=html_path,
-        manifest_path=manifest_path,
-        secondary_manifest_error=secondary_manifest_error,
-        error_message=error_message,
+        status=session.status,
+        exit_code=status_to_exit_code(session.status),
+        context=session.ctx,
+        report=session.report,
+        stats=session.stats,
+        aggregated=session.aggregated,
+        md_path=session.md_path,
+        html_path=session.html_path,
+        manifest_path=session.manifest_path,
+        secondary_manifest_error=session.secondary_manifest_error,
+        error_message=session.error_message,
     )
+
 
 
 def _write_digest_outputs(

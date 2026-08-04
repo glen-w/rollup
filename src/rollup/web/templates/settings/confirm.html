@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Confirm settings — Rollup{% endblock %}
+{% block content %}
+<h1>Confirm configuration save</h1>
+<p class="meta">Writing to <code>{{ doc.path }}</code>. A <code>.bak</code> backup is created first.</p>
+
+{% if diff_rows %}
+<table class="diff-table">
+  <thead><tr><th>Key</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    {% for key, old, new in diff_rows %}
+    <tr>
+      <td><code>{{ key }}</code></td>
+      <td>{{ old }}</td>
+      <td><strong>{{ new }}</strong></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="note">No sticky-value changes detected (folder themes / profiles / UI may still update).</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('settings.settings_save') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="confirm_token" value="{{ preview_token }}">
+  <input type="hidden" name="preview_fp" value="{{ preview_fp }}">
+  {% for key in form_data.keys() %}
+    {% if key not in ['csrf_token'] %}
+      {% for val in form_data.getlist(key) %}
+      <input type="hidden" name="{{ key }}" value="{{ val }}">
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+  <p>
+    <button type="submit" class="primary">Confirm and save</button>
+    <a href="{{ url_for('settings.settings_index') }}">Cancel</a>
+  </p>
+</form>
+{% endblock %}

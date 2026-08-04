@@ -1,7 +1,9 @@
 # Rollup configuration
 
 Optional TOML config, run profiles, folder themes, and path discovery.
-CLI flags always win over files.
+CLI flags always win over files. The web **Configuration Centre** (`/settings`)
+edits the same TOML via a shared config service (atomic write, backup, optimistic
+concurrency) — there is no separate SQLite “web settings” store for digest config.
 
 ## Precedence
 
@@ -12,6 +14,10 @@ CLI flags always win over files.
 5. Explicit CLI flags
 
 Pass `--config PATH` to load a single file instead of the search paths.
+
+The Configuration Centre writes to `--config` when the web process was started with
+it; otherwise `./rollup.toml` when that file exists; otherwise
+`~/.config/rollup/config.toml` (created on first save).
 
 Inspect the merge:
 
@@ -32,7 +38,7 @@ effort = "balanced"
 
 `output_dir` should live **outside** the mail root (and preferably outside the
 git checkout). Default is `~/Documents/rollup-outputs`. Override with
-`--output-dir` or sticky `output_dir` in TOML.
+`--output-dir` or sticky `output_dir` in config.toml.
 
 Each digest run keeps only the **current batch** in the output root (dated
 Markdown/HTML plus any writer artifacts). Prior batches are moved into
@@ -59,10 +65,36 @@ Override per folder:
 [folders.tech]
 emoji = "💻"
 accent = "#4a7fd4"
+display_name = "Technology"
+order = 10
 
 [folders.hoops]
 emoji = "🏀"
 accent = "#e8923a"
+order = 20
+```
+
+`display_name` replaces the raw folder name in digests; `order` sorts sections
+(lower first), then alphabetical.
+
+## Summaries (sticky)
+
+```toml
+ollama = true
+ollama_model = "llama3.2"   # optional; otherwise effort defaults apply
+summary_profile = "standard"
+effort = "balanced"
+```
+
+## UI preferences
+
+Web-only preferences live in the same TOML under `[ui]` (still not SQLite):
+
+```toml
+[ui]
+landing_page = "archive"       # archive | run | settings
+preferred_view = "html"        # html | markdown | entries
+onboarding_complete = false
 ```
 
 ## Run profiles vs effort
@@ -104,5 +136,6 @@ If `root` / `mail_root` are not set in config or CLI:
 ## Related
 
 - Product contract: [CONTRACT.md](CONTRACT.md)
+- Web UI (Settings + Run Studio): [WEB.md](WEB.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)

@@ -29,6 +29,26 @@ _BRANDING = {
 }
 
 
+def refresh_config_derived(app: Flask) -> None:
+    """Reload folder themes and [ui] prefs from the configured TOML path."""
+    _refresh_config_derived(app)
+
+
+def _refresh_config_derived(app: Flask) -> None:
+    try:
+        from rollup.config_service import load_document
+
+        explicit = app.config.get("CONFIG_PATH")
+        doc = load_document(explicit=explicit) if explicit else load_document()
+        app.config["FOLDER_THEMES"] = dict(doc.loaded.folder_themes)
+        app.config["UI_LANDING_PAGE"] = doc.loaded.ui.landing_page
+        app.config["UI_PREFERRED_VIEW"] = doc.loaded.ui.preferred_view
+    except Exception:
+        app.config.setdefault("FOLDER_THEMES", {})
+        app.config.setdefault("UI_LANDING_PAGE", "archive")
+        app.config.setdefault("UI_PREFERRED_VIEW", "html")
+
+
 def create_app(
     *,
     state_dir: Path,
@@ -36,6 +56,7 @@ def create_app(
     mail_root: Path | None = None,
     newsletter_root: Path | None = None,
     testing: bool = False,
+    config_path: str | Path | None = None,
 ) -> Flask:
     state_dir = Path(state_dir)
     output_dir = Path(output_dir)
@@ -68,10 +89,17 @@ def create_app(
         ADMIN_MANIFEST_MAX_FILES=50,
         ADMIN_MANIFEST_MAX_BYTES=512_000,
         ADMIN_BACKFILL_MAX_CANDIDATES=5000,
+        CONFIG_PATH=str(Path(config_path).expanduser()) if config_path else None,
+        CONFIG_EXPLICIT=bool(config_path),
+        FOLDER_THEMES={},
+        UI_LANDING_PAGE="archive",
+        UI_PREFERRED_VIEW="html",
     )
 
     # Controlled startup schema initialisation — never in the per-request hook.
     init_db(db_path).close()
+
+    _refresh_config_derived(app)
 
     init_csrf(app)
     init_security_headers(app)
@@ -165,12 +193,16 @@ def create_app(
     from rollup.web.routes.messages import bp as messages_bp
     from rollup.web.routes.rollups import bp as rollups_bp
     from rollup.web.routes.sources import bp as sources_bp
+    from rollup.web.routes.settings import bp as settings_bp
+    from rollup.web.routes.run import bp as run_bp
 
     app.register_blueprint(rollups_bp)
     app.register_blueprint(sources_bp)
     app.register_blueprint(messages_bp)
     app.register_blueprint(artifacts_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(settings_bp)
+    app.register_blueprint(run_bp)
 
     @app.get("/branding/<name>")
     def branding(name: str):
@@ -186,6 +218,11 @@ def create_app(
 
     @app.get("/")
     def index():
+        landing = app.config.get("UI_LANDING_PAGE") or "archive"
+        if landing == "run":
+            return redirect(url_for("run.run_studio"))
+        if landing == "settings":
+            return redirect(url_for("settings.settings_index"))
         return redirect(url_for("rollups.list_rollups"))
 
     return app

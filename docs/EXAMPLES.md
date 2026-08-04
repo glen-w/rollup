@@ -370,15 +370,18 @@ python -m rollup digest --root tests/fixtures/Newsletters.sbd
 python -m rollup web --open
 ```
 
+**Configuration Centre** (`/settings`) edits the real digest TOML (paths, profiles, writers, folder themes). **Run Studio** (`/run`) previews the effective run, dry-runs discovery, and starts a digest without composing CLI by hand. See [WEB.md](WEB.md) and [CONFIG.md](CONFIG.md).
+
 Variants:
 
 ```bash
 python -m rollup web
 python -m rollup web --host 127.0.0.1 --port 8765 --open
+python -m rollup web --config ~/.config/rollup/config.toml --open
 python -m rollup web reindex --state-dir ./state --output-dir ./output
 ```
 
-See [WEB.md](WEB.md) for security model, quality score, and backup notes.
+See [WEB.md](WEB.md) for security model, Settings / Run Studio, quality score, and backup notes.
 
 ## Benchmark local models
 
