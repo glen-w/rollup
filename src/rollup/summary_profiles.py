@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
 from rollup.models import NewsletterType
 
@@ -15,6 +15,8 @@ PROMPT_STYLES = frozenset({"rough", "standard", "deep"})
 ROUTING_RESERVED_KEYS = frozenset({"default"})
 DEFAULT_NUM_PREDICT = 2048
 DEFAULT_THINK = False
+THINK_LEVELS = frozenset({"low", "medium", "high"})
+ThinkValue = bool | Literal["low", "medium", "high"]
 OLLAMA_OPTIONS_RESERVED_KEYS = frozenset({"num_predict", "think"})
 CACHE_THINK_IDENTITY_KEY = "__rollup_think__"
 
@@ -35,6 +37,36 @@ class UnknownNewsletterTypeError(SummaryConfigError):
     """Raised when a summary route references an unknown classifier label."""
 
 
+def parse_think_value(raw: Any) -> ThinkValue:
+    """Normalize a profile `think` value for the Ollama API.
+
+    Booleans disable/enable thinking on models that support it (e.g. Qwen3).
+    GPT-OSS ignores booleans and requires a level: ``low``, ``medium``, or ``high``.
+    """
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if lowered in THINK_LEVELS:
+            return lowered  # type: ignore[return-value]
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    raise SummaryConfigError(
+        f"Invalid think value {raw!r}; expected bool or one of "
+        f"{sorted(THINK_LEVELS)}."
+    )
+
+
+def is_valid_think_value(raw: Any) -> bool:
+    try:
+        parse_think_value(raw)
+    except SummaryConfigError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class SummaryProfile:
     name: str
@@ -45,7 +77,7 @@ class SummaryProfile:
     timeout_seconds: int | None = None
     prompt_style: str = "standard"
     num_predict: int = DEFAULT_NUM_PREDICT
-    think: bool = DEFAULT_THINK
+    think: ThinkValue = DEFAULT_THINK
     options: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     description: str | None = None
@@ -90,7 +122,7 @@ class SummaryProfileInfo:
     num_ctx: int | None
     timeout_seconds: int | None
     num_predict: int
-    think: bool
+    think: ThinkValue
     enabled: bool
     description: str | None
     created_by: str | None
@@ -119,7 +151,7 @@ def _make_profile(
     timeout_seconds: int | None,
     description: str,
     num_predict: int = DEFAULT_NUM_PREDICT,
-    think: bool = DEFAULT_THINK,
+    think: ThinkValue = DEFAULT_THINK,
     options: dict[str, Any] | None = None,
 ) -> SummaryProfile:
     return SummaryProfile(
@@ -152,7 +184,7 @@ def resolve_profile_ollama_options(profile: SummaryProfile) -> dict[str, Any]:
 
 
 def summary_job_options_for_cache(
-    options: dict[str, Any], *, think: bool
+    options: dict[str, Any], *, think: ThinkValue
 ) -> dict[str, Any]:
     """Extend generation options with cache identity for `think`."""
     cached = dict(options)
@@ -191,7 +223,9 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_ctx=32768,
             timeout_seconds=240,
             description="Higher-effort synthesis for analytical or policy-heavy items.",
-            num_predict=1024,
+            num_predict=2048,
+            # gpt-oss ignores bool think; low keeps a short reasoning trace.
+            think="low",
         ),
         "max": _make_profile(
             "max",
@@ -245,7 +279,7 @@ def _profile_from_dict(name: str, raw: dict[str, Any]) -> SummaryProfile:
         timeout_seconds=raw.get("timeout_seconds"),
         prompt_style=str(raw.get("prompt_style", "standard")),
         num_predict=int(num_predict_raw),
-        think=bool(think_raw),
+        think=parse_think_value(think_raw),
         options=options,
         enabled=bool(raw.get("enabled", True)),
         description=raw.get("description"),
@@ -407,6 +441,17 @@ def validate_summary_profile_set(
                     code="invalid_num_predict",
                     message=f"Profile {name!r} must define num_predict >= 1.",
                     path=f"profiles.{name}.num_predict",
+                )
+            )
+        if not is_valid_think_value(profile.think):
+            issues.append(
+                ValidationIssue(
+                    code="invalid_think",
+                    message=(
+                        f"Profile {name!r} think must be a bool or one of "
+                        f"{sorted(THINK_LEVELS)}."
+                    ),
+                    path=f"profiles.{name}.think",
                 )
             )
         misplaced = OLLAMA_OPTIONS_RESERVED_KEYS.intersection(profile.options)

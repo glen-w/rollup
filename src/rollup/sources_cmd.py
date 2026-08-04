@@ -295,7 +295,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
         from rollup.config import DEFAULT_MAIL_ROOT
 
         mail_root = Path(getattr(args, "mail_root", DEFAULT_MAIL_ROOT))
-        assert_safe_write_paths(mail_root, [out, state_dir])
+        assert_safe_write_paths(mail_root, out, state_dir)
         export_sources(
             conn,
             out,

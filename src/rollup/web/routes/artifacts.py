@@ -6,6 +6,7 @@ from pathlib import Path
 
 from flask import Blueprint, current_app, g, send_file
 
+from rollup.output_archive import resolve_output_artifact
 from rollup.safety import is_inside
 from rollup.web_ids import IdError, validate_run_id
 
@@ -35,27 +36,36 @@ def serve_artifact(run_id: str, kind: str):
         mimetype = "text/markdown; charset=utf-8"
         as_attachment = True
         download_name = Path(rel).name if rel else "digest.md"
+        use_archive_fallback = True
     elif kind == "html":
         rel, root = html_rel, Path(current_app.config["OUTPUT_DIR"])
         mimetype = "text/html; charset=utf-8"
         as_attachment = True
         download_name = Path(rel).name if rel else "digest.html"
+        use_archive_fallback = True
     else:
         rel, root = manifest_rel, Path(current_app.config["STATE_DIR"])
         mimetype = "application/json"
         as_attachment = True
         download_name = Path(rel).name if rel else "manifest.json"
+        use_archive_fallback = False
 
     if not rel:
         return "Artifact not indexed", 404
     if Path(rel).is_absolute() or ".." in Path(rel).parts:
         return "Unsafe artifact path", 400
 
-    candidate = (root / rel).resolve()
+    if use_archive_fallback:
+        candidate = resolve_output_artifact(root, rel)
+        if candidate is None:
+            return "Artifact missing on disk", 404
+    else:
+        candidate = (root / rel).resolve()
+        if not candidate.is_file():
+            return "Artifact missing on disk", 404
+
     if not is_inside(candidate, root.resolve()):
         return "Artifact path escapes root", 400
-    if not candidate.is_file():
-        return "Artifact missing on disk", 404
 
     return send_file(
         candidate,

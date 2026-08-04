@@ -8,20 +8,24 @@ Local, read-only Thunderbird mbox newsletter digest for macOS.
 
 Rollup reads newsletters from your Thunderbird/Gmail mbox store, classifies them, and produces **the rollup** — weekly Markdown and HTML digests — without modifying any mail files.
 
+**Contract:** Thunderbird filters file mail into folders; Rollup digests those folders. See [docs/CONTRACT.md](docs/CONTRACT.md).
+
 ## Quick start (digest + web UI)
 
 Install the optional web extra once (`pip install -e ".[web]"` or `pip install 'rollup[web]'`), then:
 
 ```bash
-# 7-day digest (indexes into state for the UI; default lookback is already 7)
-rollup digest --lookback-days 7
+# weekly digest (default profile; indexes into state for the UI)
+rollup digest
 
 # optional: with Ollama
-rollup digest --ollama --lookback-days 7
+rollup digest --ollama
 
 # browse the archive (loopback only)
 rollup web --open
 ```
+
+Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — see [docs/CONFIG.md](docs/CONFIG.md).
 
 See [docs/WEB.md](docs/WEB.md).
 
@@ -56,6 +60,7 @@ pip install .
 ```
 
 For the local browser UI (Flask), install the optional web extra: `pip install 'rollup[web]'` or `pip install -e '.[web]'` from a checkout. See [Quick start (digest + web UI)](#quick-start-digest--web-ui) and [docs/WEB.md](docs/WEB.md).
+For rich EPUB digests (`--output epub`), install `pip install 'rollup[epub]'` (or `.[epub]` / `.[dev]` which includes ebooklib).
 ## Development setup
 
 ```bash
@@ -138,8 +143,51 @@ Rollup exposes:
 Common flags include `--root`, `--folder`, `--lookback-days`, `--dry-run`, `--cron`,
 `--ollama`, `--grouping` / `--no-grouping`, and `--final-review`.
 
-See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/SOURCES.md](docs/SOURCES.md), [docs/WEB.md](docs/WEB.md), [docs/CRON.md](docs/CRON.md), and
+See [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/SOURCES.md](docs/SOURCES.md), [docs/WEB.md](docs/WEB.md), [docs/CRON.md](docs/CRON.md), [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md), [docs/XTEINK_USAGE.md](docs/XTEINK_USAGE.md), and
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## Output writers / addons
+
+Default MD/HTML stay in core. Niche formats attach as **output writers** after
+the digest report is built. **By default every discovered writer runs**; pass
+`--output NAME` to select a subset, or `--output none` for Markdown/HTML only:
+
+```bash
+rollup digest --lookback-days 7                 # all writers
+rollup digest --output xteink --lookback-days 7 # xteink only (+ md/html)
+rollup digest --output none --lookback-days 7   # md/html only
+rollup digest --output epub --lookback-days 7   # pip install 'rollup[epub]'
+```
+
+Built-in writers: **`xteink`**, **`txt`**, **`json`**, **`epub`** — see
+[docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md).
+
+Third-party packages can register writers via setuptools entry points:
+
+```toml
+[project.entry-points."rollup.output_writers"]
+custom = "my_pkg.writers:CustomWriter"
+```
+
+Writers implement `name`, `register_cli`, `enabled`, and `write` (see
+`rollup.output_writers`). Addon code should import public helpers from
+`rollup.render` (`display_sender`, `format_date`, `format_read_time`,
+`render_summary_html`, `folder_display_name`, `digest_output_stem`).
+
+## XTEINK output
+
+`--xteink` / `--output xteink` writes an extra e-ink-oriented Markdown digest beside the normal output:
+
+- Short lines (~60 chars), no external URLs
+- Filename uses a `.xteink` variant suffix, e.g. `2026-07-02T103000Z-newsletter-digest.xteink.md`
+- For a rich offline ebook, use `--output epub` instead
+
+```bash
+rollup digest --xteink --lookback-days 7
+rollup digest --output xteink --ollama --effort high --lookback-days 7
+```
+
+See [docs/XTEINK_USAGE.md](docs/XTEINK_USAGE.md).
 
 ## Recommended personal setup
 
@@ -239,31 +287,36 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
 
 ## Configuration
 
-All settings via CLI flags and defaults. No `.env` file required for v1.
+Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.toml`, `./rollup.toml`, or `--config`), run `--profile`, then explicit CLI flags (CLI wins). No `.env` file is required. Full reference: [docs/CONFIG.md](docs/CONFIG.md).
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--root` | `Path.home() / "email" / "gmail" / "Newsletters.sbd"` | Newsletter mbox folder |
-| `--mail-root` | `Path.home() / "email" / "gmail"` | Safety boundary for writes |
-| `--output-dir` | `./output` | Digest Markdown + HTML |
+| `--config` | search paths | Load one TOML file instead of `~/.config/rollup/config.toml` + `./rollup.toml` |
+| `--root` | discovered or `~/email/gmail/Newsletters.sbd` | Newsletter mbox folder |
+| `--mail-root` | parent of `--root` / `~/email/gmail` | Safety boundary for writes |
+| `--output-dir` | `~/Documents/rollup-outputs` | Digest Markdown + HTML (+ writers); prior batches → `archive/`; keep outside mail root / repo |
 | `--state-dir` | `./state` | SQLite: `rollup.db` |
 | `--log-dir` | `./logs` | Run logs (non-dry-run) |
-| `--lookback-days` | `7` | Inclusive calendar-day window |
+| `--profile` | `weekly` | Run profile: `weekly` / `daily` / custom `[profiles.*]` |
+| `--list-profiles` | off | List run profiles and exit |
+| `--lookback-days` | from profile (`7` weekly) | Inclusive calendar-day window |
 | *(digest mode)* | **no Ollama** | Omit both `--ollama` and `--no-ollama` |
 | `--no-ollama` | implicit default | Preview summaries; no network |
 | `--ollama` | off | Opt-in local Ollama summarisation |
+| `--effort` | `balanced` | Machine-power preset: `light` / `balanced` / `high` (models + related defaults) |
+| `--list-efforts` | off | List effort presets and exit |
 | `--summary-profile` | — | **Ollama only:** one profile for all messages |
 | `--summary-type-routing` | on when `--ollama` | **Ollama only:** per-type routing |
 | `--no-summary-type-routing` | — | **Ollama only:** use `standard` for all |
 | `--summary-variants` | — | **Ollama only:** one digest per profile |
-| `--summary-profile-set` | built-in | Load profiles/routes from JSON |
+| `--summary-profile-set` | built-in | Load profiles/routes from JSON (cannot combine with `--effort`) |
 | `--summary-routing-report` | off | **Ollama only:** print routing stats |
 | `--rebuild-summaries` | off | **Ollama only:** bypass summary cache |
 | `--final-review` | off | Whole-digest editorial QA; writes JSON sidecar |
 | `--final-review-mode` | `report` | `report` or `apply` (cron apply needs `--final-review-allow-cron-apply`) |
 | `--final-review-allow-cron-apply` | off | Explicit opt-in for unattended apply |
 | `--final-review-profile` | `strict` | `strict`, `concise`, or `editorial` |
-| `--final-review-model` | profile default | Override Ollama model for review |
+| `--final-review-model` | from `--effort` | Override Ollama model for review |
 | `--group-summaries` | off | Opt-in group LLM blurbs (requires `--ollama`) |
 | `--final-review-report` | `<digest-stem>.final-review.json` | Explicit sidecar path |
 | `--no-final-review-cache` | off | Bypass final review cache |
@@ -272,8 +325,28 @@ All settings via CLI flags and defaults. No `.env` file required for v1.
 | `--latest` | off | Publish `output/latest.md` / `latest.html` |
 | `--no-grouping` | off | Disable notification/daily grouping |
 | `--grouping-report` | off | Print grouping reason codes |
+| `--xteink` | (see `--output`) | Write XTEINK e-ink Markdown (alias for `--output xteink`; `--x3` still works; replaces default-all) |
+| `--output NAME` | **all writers** | Named writer addon (repeatable; built-ins: `xteink`, `txt`, `json`, `epub`). Pass `none` for Markdown/HTML only |
 
 Final review does **not** require `--ollama`. It calls Ollama independently when enabled. Digest content is not mutated in report mode; a short QA summary appears in the collapsed run-details section. See [docs/EXAMPLES.md](docs/EXAMPLES.md#final-review-editorial-qa).
+
+## Effort presets
+
+`--effort` swaps the whole summary ladder plus companion defaults (`--ollama-model`, `--final-review-model`, `--max-chars-for-llm`) in one flag. Profile *names* and type routes stay the same; only models and budgets change.
+
+| Effort | Rough | Standard | Deep | Max | Group / fallback | Final review | `max_chars_for_llm` |
+|--------|-------|----------|------|-----|------------------|--------------|---------------------|
+| `light` | `llama3.2:3b` | `llama3.2:3b` | `qwen2.5:7b` | `qwen2.5:7b` | `llama3.2:3b` | `qwen2.5:7b` | 20_000 |
+| `balanced` (default) | `llama3.2:3b` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `llama3.2:3b` | `qwen2.5:7b` | 30_000 |
+| `high` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `qwen3.6:27b` | `qwen2.5:7b` | `gpt-oss:20b` | 50_000 |
+
+Explicit flags (`--ollama-model`, `--final-review-model`, `--max-chars-for-llm`) override the effort preset. Do not combine `--effort` with `--summary-profile-set` (custom JSON remains the escape hatch for nonstandard tags).
+
+```bash
+python -m rollup digest --list-efforts
+python -m rollup digest --ollama --effort high
+python -m rollup doctor --ollama --effort high --network
+```
 
 ## Summary profiles
 
@@ -283,7 +356,7 @@ Rollup includes built-in summary profiles:
 |---------|-------|---------------|---------|----------|
 | `rough` | `llama3.2:3b` | 256 | `false` | Fast summaries for short updates and link roundups |
 | `standard` | `qwen2.5:7b` | 512 | `false` | Default balanced profile |
-| `deep` | `gpt-oss:20b` | 1024 | `false` | Higher-effort synthesis for analytical or policy-heavy items |
+| `deep` | `gpt-oss:20b` | 2048 | `low` | Higher-effort synthesis for analytical or policy-heavy items |
 | `max` | `qwen3.6:27b` | 2048 | `false` | Highest-effort profile for long essays (default route) |
 
 These are defaults, not hard requirements. Rollup does not validate local model installation at config-load time. If a model is missing at runtime, Rollup falls back gracefully and reports the issue in the stats block.
@@ -294,10 +367,10 @@ Each summary profile exposes two generation controls for Ollama summarisation:
 
 | Field | Default | Sent to Ollama as | Purpose |
 |-------|---------|-------------------|---------|
-| `think` | `false` | Top-level `"think": false` on `/api/generate` | Disables Qwen3-family **thinking mode**. When thinking is on, the model can spend the entire token budget on internal reasoning (`thinking` field) and return an empty `response` — which Rollup treats as a failed summary. |
-| `num_predict` | `2048` | `options.num_predict` | Maximum number of tokens the model may generate for one summary. Lower values are faster; higher values leave more room for long syntheses. |
+| `think` | `false` | Top-level `"think"` on `/api/generate` | Controls reasoning. Use `false`/`true` for Qwen3-family models. **GPT-OSS ignores booleans** and requires `"low"`, `"medium"`, or `"high"` — otherwise it may spend the whole `num_predict` budget on a reasoning trace and return an empty `response`, which Rollup treats as a failed summary. |
+| `num_predict` | `2048` | `options.num_predict` | Maximum number of tokens the model may generate for one summary. Lower values are faster; higher values leave more room for long syntheses (and for GPT-OSS reasoning + visible output). |
 
-**Defaults:** new profiles inherit `think: false` and `num_predict: 2048` unless you override them. The built-in tiered profiles above keep smaller `num_predict` values on `rough` / `standard` / `deep` for speed.
+**Defaults:** new profiles inherit `think: false` and `num_predict: 2048` unless you override them. The built-in tiered profiles above keep smaller `num_predict` values on `rough` / `standard` for speed. GPT-OSS profiles use `think: "low"` plus a larger `num_predict`.
 
 **Configure in a profile set JSON** (preferred):
 
@@ -325,7 +398,7 @@ Each summary profile exposes two generation controls for Ollama summarisation:
 
 **Cache behaviour:** summary cache keys include both `num_predict` (via `options_json`) and `think` (via an internal cache identity marker). Changing either field causes a cache miss for that profile — you do not need `--rebuild-summaries` unless you want to refresh everything.
 
-**When to enable thinking:** leave `think: false` for digest summarisation. Thinking models are useful for open-ended reasoning tasks, but Rollup prompts are structured extraction/synthesis jobs where visible output should start immediately.
+**When to enable thinking:** leave `think: false` for Qwen3 digest summarisation. For GPT-OSS, use `think: "low"` (not `false`) so the model keeps a short reasoning trace and still emits a visible summary before hitting `num_predict`.
 
 List configured values:
 
@@ -440,6 +513,7 @@ Use the stdlib-only benchmark helper documented in [docs/EXAMPLES.md](docs/EXAMP
 
 ```
 src/rollup/                       # package source
+src/rollup/addons/                # in-tree output writer addons (e.g. xteink)
 src/rollup/prompts/               # bundled Ollama + final-review prompt templates
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)

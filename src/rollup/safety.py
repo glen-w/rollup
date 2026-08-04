@@ -59,8 +59,17 @@ def validate_read_root(
             raise SafetyError(f"--root must not equal {label}")
 
     live_newsletters = (mail_root / "Newsletters.sbd").resolve()
+    # Case-insensitive match for discovered Thunderbird folder names.
+    if not live_newsletters.is_dir():
+        try:
+            for child in mail_root.iterdir():
+                if child.is_dir() and child.name.lower() == "newsletters.sbd":
+                    live_newsletters = child.resolve()
+                    break
+        except OSError:
+            pass
     fixture_hint = Path("tests/fixtures/Newsletters.sbd").resolve()
-    if root == live_newsletters and root != fixture_hint:
+    if root.resolve() == live_newsletters and root.resolve() != fixture_hint:
         warnings.append(
             "WARNING: Reading live Thunderbird data. Recommend testing with:\n"
             "  python -m rollup inventory --root tests/fixtures/Newsletters.sbd\n"

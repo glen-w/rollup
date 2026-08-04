@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from rollup.clock import FixedClock
-from rollup.fsutil import atomic_write_text, publish_file_set
+from rollup.fsutil import atomic_copy, atomic_write_bytes, atomic_write_text, publish_file_set
 from rollup.pipeline import (
     AggregatedResults,
     ParseCounts,
@@ -19,7 +19,7 @@ from rollup.pipeline import (
     status_to_exit_code,
 )
 from rollup.run_context import RunContext
-from rollup.run_lock import RunLockError, acquire_run_lock
+from rollup.run_lock import RunLockError, acquire_run_lock, acquire_state_lock
 from rollup.run_options import resolve_run_options
 
 
@@ -56,6 +56,45 @@ def test_atomic_write_and_publish_file_set(tmp_path: Path) -> None:
     assert dest.read_text() == "hello"
 
 
+def test_atomic_write_bytes_and_copy(tmp_path: Path) -> None:
+    nested = tmp_path / "sub" / "bin.dat"
+    atomic_write_bytes(nested, b"\x00\x01\xff")
+    assert nested.read_bytes() == b"\x00\x01\xff"
+    dest = tmp_path / "copy" / "bin.dat"
+    atomic_copy(nested, dest)
+    assert dest.read_bytes() == b"\x00\x01\xff"
+
+
+def test_publish_file_set_rollback_on_failure(tmp_path: Path, monkeypatch) -> None:
+    src_a = tmp_path / "a.md"
+    src_b = tmp_path / "b.md"
+    atomic_write_text(src_a, "A-new")
+    atomic_write_text(src_b, "B-new")
+    dest_a = tmp_path / "latest.md"
+    dest_b = tmp_path / "latest.html"
+    atomic_write_text(dest_a, "A-old")
+    atomic_write_text(dest_b, "B-old")
+
+    original_replace = Path.replace
+    calls = {"n": 0}
+
+    def flaky_replace(self: Path, target: Path):
+        # Allow staging backups and first commit; fail on second commit rename.
+        calls["n"] += 1
+        # Commit phase renames temps onto destinations (names start with .tmp-).
+        if self.name.startswith(".tmp-") and calls["n"] >= 4:
+            raise OSError("simulated commit failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+    with pytest.raises(OSError, match="simulated"):
+        publish_file_set([(src_a, dest_a), (src_b, dest_b)])
+    assert dest_a.read_text() == "A-old"
+    assert dest_b.read_text() == "B-old"
+    assert not list(tmp_path.glob(".tmp-*"))
+    assert not list(tmp_path.glob(".bak-*"))
+
+
 def test_run_lock_blocks_second_acquisition(tmp_path: Path) -> None:
     lock = acquire_run_lock(tmp_path, "run-1")
     try:
@@ -79,6 +118,49 @@ def test_run_lock_stale_recovery(tmp_path: Path) -> None:
     assert lock.stale_recovered is True
     lock.release()
     assert not lock_path.exists()
+
+
+def test_state_lock_operation_in_payload(tmp_path: Path) -> None:
+    lock = acquire_state_lock(tmp_path, "src-1", operation="sources_set")
+    try:
+        payload = json.loads(lock.lock_path.read_text(encoding="utf-8"))
+        assert payload["operation"] == "sources_set"
+        assert payload["run_id"] == "src-1"
+        with pytest.raises(RunLockError) as excinfo:
+            acquire_state_lock(tmp_path, "src-2", operation="sources_import")
+        assert excinfo.value.other_operation == "sources_set"
+        assert "sources_set" in str(excinfo.value)
+    finally:
+        lock.release()
+
+
+def test_corrupt_lock_stale_recovery(tmp_path: Path) -> None:
+    lock_path = tmp_path / "rollup.lock"
+    lock_path.write_text("{not-json", encoding="utf-8")
+    lock = acquire_run_lock(tmp_path, "after-corrupt")
+    assert lock.stale_recovered is True
+    lock.release()
+    lock.release()  # idempotent
+    assert not lock_path.exists()
+
+
+def test_live_pid_lock_blocks_even_when_fresh(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("rollup.run_lock._pid_alive", lambda pid: True)
+    lock_path = tmp_path / "rollup.lock"
+    lock_path.write_text(
+        json.dumps(
+            {
+                "pid": 1,
+                "run_id": "alive",
+                "operation": "digest",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(RunLockError) as excinfo:
+        acquire_run_lock(tmp_path, "blocked", ttl_seconds=3600)
+    assert excinfo.value.reason == "already_running"
 
 
 def test_derive_run_status_thresholds() -> None:

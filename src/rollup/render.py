@@ -10,6 +10,13 @@ from email.utils import parseaddr
 from pathlib import Path
 
 from rollup.assets import FAVICON_FILENAME, LOGO_FILENAME
+from rollup.folder_theme import (
+    FolderThemeOverride,
+    folder_accent_css,
+    folder_display_name,
+    folder_slug,
+    theme_for,
+)
 from rollup.links import (
     prepare_links_for_render,
     render_link_html,
@@ -25,33 +32,21 @@ logger = logging.getLogger(__name__)
 
 ROLLUP_TITLE = "Rollup"
 
-_FOLDERS_SLUG_RE = re.compile(r"[^a-z0-9]+")
+FolderThemeMap = dict[str, FolderThemeOverride]
 
-FOLDER_EMOJI: dict[str, str] = {
-    "brainfood": "🧠",
-    "enviro": "🌲",
-    "hoops": "🏀",
-    "tech": "💻",
-    "misc": "📬",
-    "trackerwall": "📰",
-}
-
-FOLDER_ACCENT: dict[str, str] = {
-    "brainfood": "#e8a0bf",
-    "enviro": "#4a9e6b",
-    "hoops": "#e8923a",
-    "tech": "#4a7fd4",
-    "misc": "#8b7fa8",
-    "trackerwall": "#9a8b7a",
-}
-
-DEFAULT_FOLDER_ACCENT = "#ccc"
+# Public helpers for output-writer addons (also keep private aliases below):
+# display_sender, format_date, format_read_time, render_summary_html,
+# folder_display_name (re-exported from folder_theme), digest_output_stem.
 
 
-def _format_date(dt: datetime | None) -> str:
+def format_date(dt: datetime | None) -> str:
+    """Public date label for digest / addon renderers."""
     if dt is None:
         return "undated"
     return dt.strftime("%Y-%m-%d %H:%M")
+
+
+_format_date = format_date
 
 
 def _format_window_range(start: datetime, end: datetime) -> str:
@@ -71,7 +66,7 @@ def _format_window_range(start: datetime, end: datetime) -> str:
     )
 
 
-def _display_sender(sender: str) -> str:
+def display_sender(sender: str) -> str:
     """Return a human-readable sender name without the email address."""
     name, addr = parseaddr(sender)
     display = name.strip()
@@ -82,22 +77,24 @@ def _display_sender(sender: str) -> str:
     return sender.strip() or "(unknown)"
 
 
-def _folder_display_name(folder: str) -> str:
-    emoji = FOLDER_EMOJI.get(folder.lower())
-    if emoji:
-        return f"{emoji} {folder}"
-    return folder
+_display_sender = display_sender
+
+# Public for addons: ``folder_display_name`` is re-exported from folder_theme.
+_folder_display_name = folder_display_name
 
 
 def _folder_accent_class(folder: str) -> str:
-    slug = _folder_slug(folder)
-    if slug in FOLDER_ACCENT:
-        return f"folder-accent-{slug}"
-    return "folder-accent-default"
+    slug = folder_slug(folder)
+    if slug == "folder" and not folder.strip():
+        return "folder-accent-default"
+    return f"folder-accent-{slug}"
 
 
-def _folder_accent_color(folder: str) -> str:
-    return FOLDER_ACCENT.get(_folder_slug(folder), DEFAULT_FOLDER_ACCENT)
+def _folder_accent_color(
+    folder: str,
+    overrides: FolderThemeMap | None = None,
+) -> str:
+    return theme_for(folder, overrides).accent
 
 
 def _format_newsletter_type(ntype: str) -> str:
@@ -143,36 +140,12 @@ def _sort_entries_by_read_time(
     return tuple(sorted(entries, key=key))
 
 
-def _folder_accent_css() -> str:
-    rules: list[str] = []
-    for slug, color in FOLDER_ACCENT.items():
-        selector = f".folder-accent-{slug}"
-        rules.append(f"{selector}>h2{{border-left:4px solid {color};padding-left:0.5rem;}}")
-        rules.append(
-            f"{selector} .newsletter-card{{border-color:{color};border-left-width:3px;}}"
-        )
-        rules.append(
-            f"{selector} .digest-group{{border-color:{color};border-left-width:3px;}}"
-        )
-    rules.append(
-        f".folder-accent-default>h2{{border-left:4px solid {DEFAULT_FOLDER_ACCENT};padding-left:0.5rem;}}"
-    )
-    rules.append(
-        f".folder-accent-default .newsletter-card{{border-color:{DEFAULT_FOLDER_ACCENT};border-left-width:3px;}}"
-    )
-    rules.append(
-        f".folder-accent-default .digest-group{{border-color:{DEFAULT_FOLDER_ACCENT};border-left-width:3px;}}"
-    )
-    return "".join(rules)
-
-
 def _folder_slug(folder: str) -> str:
-    slug = _FOLDERS_SLUG_RE.sub("-", folder.lower()).strip("-")
-    return slug or "folder"
+    return folder_slug(folder)
 
 
 def _folder_section_id(folder: str) -> str:
-    return f"folder-{_folder_slug(folder)}"
+    return f"folder-{folder_slug(folder)}"
 
 
 def _folder_anchor_map(
@@ -181,7 +154,7 @@ def _folder_anchor_map(
     slug_counts: dict[str, int] = {}
     anchors: list[tuple[str, str, int]] = []
     for folder, entries in sorted(report.dated_by_folder.items()):
-        base = _folder_slug(folder)
+        base = folder_slug(folder)
         slug_counts[base] = slug_counts.get(base, 0) + 1
         count = slug_counts[base]
         section_id = _folder_section_id(folder) if count == 1 else f"folder-{base}-{count}"
@@ -189,8 +162,12 @@ def _folder_anchor_map(
     return anchors
 
 
-def _format_read_time(minutes: int) -> str:
+def format_read_time(minutes: int) -> str:
+    """Public read-time label for digest / addon renderers."""
     return f"🕐 {minutes} min"
+
+
+_format_read_time = format_read_time
 
 
 def _format_section_byline(entries: tuple[DigestItem, ...]) -> str:
@@ -248,7 +225,7 @@ def _inline_summary_markdown(text: str) -> str:
     return _INLINE_LINK_RE.sub(_replace_inline_link, text)
 
 
-def _render_summary_html(text: str) -> str:
+def render_summary_html(text: str) -> str:
     """Render a small subset of markdown used in LLM summaries."""
     lines = text.splitlines()
     parts: list[str] = []
@@ -300,6 +277,9 @@ def _render_summary_html(text: str) -> str:
             continue
         i += 1
     return "".join(parts)
+
+
+_render_summary_html = render_summary_html
 
 
 def render_stats_block(stats: DigestStats) -> str:
@@ -442,12 +422,15 @@ def _render_run_details_html(report: DigestReport) -> str:
 
 
 def _render_toc_html(
-    anchor_map: list[tuple[str, str, int]], *, include_undated: bool
+    anchor_map: list[tuple[str, str, int]],
+    *,
+    include_undated: bool,
+    folder_themes: FolderThemeMap | None = None,
 ) -> str:
     items = [
         "<li>"
         f"<a href='#{html_module.escape(section_id)}'>"
-        f"{html_module.escape(_folder_display_name(folder))} ({count})"
+        f"{html_module.escape(_folder_display_name(folder, folder_themes))} ({count})"
         "</a></li>"
         for folder, section_id, count in anchor_map
     ]
@@ -470,10 +453,13 @@ def _render_toc_html(
     )
 
 
-def _render_toc_md(report: DigestReport) -> list[str]:
+def _render_toc_md(
+    report: DigestReport,
+    folder_themes: FolderThemeMap | None = None,
+) -> list[str]:
     lines = ["## Contents", ""]
     for folder, _section_id, count in _folder_anchor_map(report):
-        lines.append(f"- {_folder_display_name(folder)} ({count})")
+        lines.append(f"- {_folder_display_name(folder, folder_themes)} ({count})")
     if report.undated:
         lines.append("- Undated / needs review")
     lines.append("")
@@ -631,10 +617,14 @@ def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
     return "\n".join(parts)
 
 
-def _render_item_md(item: DigestItem, max_display_links: int) -> str:
+def _render_item_md(
+    item: DigestItem,
+    max_display_links: int,
+    folder_themes: FolderThemeMap | None = None,
+) -> str:
     if isinstance(item, DigestGroup):
         return _render_group_md(item, max_display_links)
-    return _render_entry_md(item, max_display_links)
+    return _render_entry_md(item, max_display_links, folder_themes)
 
 
 def _render_item_html(item: DigestItem, max_display_links: int) -> str:
@@ -647,7 +637,11 @@ def _hidden_link_cue_text(hidden_count: int) -> str:
     return f"+{hidden_count} more links in original"
 
 
-def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
+def _render_entry_md(
+    entry: DigestEntry,
+    max_display_links: int,
+    folder_themes: FolderThemeMap | None = None,
+) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
     link_items = (
@@ -668,7 +662,7 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
         "",
         f"- **From:** {p.sender} · **Date:** {_format_date(p.date_parsed)} · "
         f"**Read:** {_format_read_time(p.read_time_minutes)} · **Type:** {ntype}",
-        f"- **Folder:** {_folder_display_name(p.folder_name)}",
+        f"- **Folder:** {_folder_display_name(p.folder_name, folder_themes)}",
         "",
     ]
     if entry.summary:
@@ -695,7 +689,11 @@ def _render_entry_md(entry: DigestEntry, max_display_links: int) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(report: DigestReport, max_display_links: int) -> str:
+def render_markdown(
+    report: DigestReport,
+    max_display_links: int,
+    folder_themes: FolderThemeMap | None = None,
+) -> str:
     gen_date = report.generated_at.strftime("%Y-%m-%d")
     ws = report.window_start.strftime("%Y-%m-%d")
     we = report.window_end.strftime("%Y-%m-%d")
@@ -708,17 +706,17 @@ def render_markdown(report: DigestReport, max_display_links: int) -> str:
         f"_Week of {ws} to {we} · {total} newsletters_",
         "",
     ]
-    lines.extend(_render_toc_md(report))
+    lines.extend(_render_toc_md(report, folder_themes))
     for folder, entries in sorted(report.dated_by_folder.items()):
-        lines.append(f"## {_folder_display_name(folder)}")
+        lines.append(f"## {_folder_display_name(folder, folder_themes)}")
         lines.append("")
         for item in _sort_entries_by_read_time(entries):
-            lines.append(_render_item_md(item, max_display_links))
+            lines.append(_render_item_md(item, max_display_links, folder_themes))
     if report.undated:
         lines.append("## Undated / needs review")
         lines.append("")
         for item in _sort_entries_by_read_time(report.undated):
-            lines.append(_render_item_md(item, max_display_links))
+            lines.append(_render_item_md(item, max_display_links, folder_themes))
     lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -797,10 +795,15 @@ document.getElementById('collapse-all-cards')?.addEventListener('click', functio
 </script>"""
 
 
-def render_html(report: DigestReport, max_display_links: int) -> str:
+def render_html(
+    report: DigestReport,
+    max_display_links: int,
+    folder_themes: FolderThemeMap | None = None,
+) -> str:
     window_label = _format_window_range(report.window_start, report.window_end)
     total = report.stats.dated_included + report.stats.undated_needing_review
     anchor_map = _folder_anchor_map(report)
+    folders = tuple(folder for folder, _, _ in anchor_map)
     body_parts = [
         "<!DOCTYPE html>",
         "<html lang='en'><head><meta charset='utf-8'>",
@@ -838,7 +841,7 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         ".digest-group{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ccc;border-radius:6px;}",
         ".group-chip{font-size:0.85rem;color:#555;margin:0.25rem 0 0.75rem;}",
         ".group-updates{margin:0.5rem 0;padding-left:1.25rem;}",
-        _folder_accent_css(),
+        folder_accent_css(folders, folder_themes),
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
         ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",
         "</style></head><body>",
@@ -846,7 +849,11 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         f"<img class='rollup-logo' src='{LOGO_FILENAME}' alt='{ROLLUP_TITLE} logo'>",
         "</header>",
         f"<p class='rollup-subhead'><em>{html_module.escape(window_label)} · {total} newsletters</em></p>",
-        _render_toc_html(anchor_map, include_undated=bool(report.undated)),
+        _render_toc_html(
+            anchor_map,
+            include_undated=bool(report.undated),
+            folder_themes=folder_themes,
+        ),
     ]
     section_ids = {folder: section_id for folder, section_id, _ in anchor_map}
     for folder, entries in sorted(report.dated_by_folder.items()):
@@ -856,7 +863,7 @@ def render_html(report: DigestReport, max_display_links: int) -> str:
         body_parts.append(
             f"<section id='{html_module.escape(section_id)}' "
             f"class='folder-section {accent_class}'>"
-            f"<h2>{html_module.escape(_folder_display_name(folder))}</h2>"
+            f"<h2>{html_module.escape(_folder_display_name(folder, folder_themes))}</h2>"
             f"{_render_section_byline_html(entries)}"
         )
         for item in sorted_entries:

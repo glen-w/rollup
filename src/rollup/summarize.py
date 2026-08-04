@@ -251,7 +251,7 @@ def build_ollama_generate_payload(
     options: dict[str, object] | None,
     temperature: float,
     num_ctx: int | None,
-    think: bool,
+    think: bool | str,
 ) -> dict[str, object]:
     """Build an Ollama /api/generate request body."""
     payload_options: dict[str, object] = dict(options or {})
@@ -278,7 +278,7 @@ def summarize_message(
     options: dict[str, object] | None = None,
     temperature: float = 0.2,
     num_ctx: int | None = None,
-    think: bool = False,
+    think: bool | str = False,
     quiet: bool = False,
 ) -> SummarizeMessageResult:
     import requests

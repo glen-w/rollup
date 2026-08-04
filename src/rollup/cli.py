@@ -11,6 +11,7 @@ from pathlib import Path
 
 from rollup import __version__
 from rollup.config import (
+    DEFAULT_EFFORT,
     DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
     DEFAULT_FINAL_REVIEW_MODE,
     DEFAULT_FINAL_REVIEW_PROFILE,
@@ -19,16 +20,23 @@ from rollup.config import (
     DEFAULT_LOG_DIR,
     DEFAULT_MAIL_ROOT,
     DEFAULT_MAX_BODY_CHARS,
-    DEFAULT_MAX_CHARS_FOR_LLM,
     DEFAULT_MAX_DISPLAY_LINKS,
     DEFAULT_NEWSLETTER_ROOT,
-    DEFAULT_OLLAMA_MODEL,
     DEFAULT_OLLAMA_URL,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_RUN_PROFILE,
     DEFAULT_STATE_DIR,
     Config,
 )
 from rollup.discovery import build_inventory
+from rollup.effort import (
+    EFFORT_NAMES,
+    get_effort_preset,
+    list_effort_presets,
+    resolve_effort_name,
+    resolve_profile_set,
+)
+from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
 from rollup.render import digest_output_stem, render_stats_block
 from rollup.run_options import (
@@ -36,12 +44,24 @@ from rollup.run_options import (
     default_manifest_config,
     resolve_run_options,
 )
+from rollup.run_profiles import (
+    UnknownRunProfileError,
+    list_run_profiles,
+    resolve_run_profile,
+)
 from rollup.safety import SafetyError, assert_safe_write_paths, validate_read_root
 from rollup.summary_profiles import (
     get_canonical_newsletter_types,
     list_summary_profiles as list_summary_profile_infos,
-    load_summary_profile_set,
     require_valid_summary_profile_set,
+)
+from rollup.user_config import (
+    LoadedUserConfig,
+    UserConfigError,
+    apply_sticky_to_namespace,
+    extract_config_path,
+    flag_present,
+    load_user_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,7 +127,22 @@ def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
     ]
 
 
-def _build_config(args: argparse.Namespace) -> Config:
+def _effort_profile_set_conflict_error(args: argparse.Namespace) -> str | None:
+    """Reject combining --effort with a custom --summary-profile-set."""
+    if getattr(args, "effort", None) and getattr(args, "summary_profile_set", None):
+        return (
+            "Cannot combine --effort with --summary-profile-set; "
+            "pick one (effort selects a built-in ladder; "
+            "profile-set loads a custom JSON ladder)."
+        )
+    return None
+
+
+def _build_config(
+    args: argparse.Namespace,
+    *,
+    folder_themes: dict | None = None,
+) -> Config:
     variants_raw = getattr(args, "summary_variants", "") or ""
     summary_variants = tuple(v.strip() for v in variants_raw.split(",") if v.strip())
     summary_type_routing = getattr(args, "summary_type_routing", None)
@@ -116,12 +151,27 @@ def _build_config(args: argparse.Namespace) -> Config:
             not getattr(args, "summary_profile", None) and not summary_variants
         )
 
+    effort = getattr(args, "effort", None)
+    preset = get_effort_preset(resolve_effort_name(effort))
+
+    ollama_model = getattr(args, "ollama_model", None)
+    if ollama_model is None:
+        ollama_model = preset.ollama_model
+
+    max_chars_for_llm = getattr(args, "max_chars_for_llm", None)
+    if max_chars_for_llm is None:
+        max_chars_for_llm = preset.max_chars_for_llm
+
+    final_review_model = getattr(args, "final_review_model", None)
+    if final_review_model is None:
+        final_review_model = preset.final_review_model
+
     return Config(
-        root=Path(args.root),
-        mail_root=Path(args.mail_root),
-        output_dir=Path(args.output_dir),
-        state_dir=Path(args.state_dir),
-        log_dir=Path(args.log_dir),
+        root=Path(args.root).expanduser(),
+        mail_root=Path(args.mail_root).expanduser(),
+        output_dir=Path(args.output_dir).expanduser(),
+        state_dir=Path(args.state_dir).expanduser(),
+        log_dir=Path(args.log_dir).expanduser(),
         lookback_days=getattr(args, "lookback_days", DEFAULT_LOOKBACK_DAYS),
         folders_include=tuple(getattr(args, "folder", None) or []),
         folders_exclude=tuple(getattr(args, "exclude_folder", None) or []),
@@ -129,10 +179,10 @@ def _build_config(args: argparse.Namespace) -> Config:
         include_seen_undated=getattr(args, "include_seen_undated", False),
         rebuild_summaries=getattr(args, "rebuild_summaries", False),
         max_body_chars=getattr(args, "max_body_chars", DEFAULT_MAX_BODY_CHARS),
-        max_chars_for_llm=getattr(args, "max_chars_for_llm", DEFAULT_MAX_CHARS_FOR_LLM),
+        max_chars_for_llm=max_chars_for_llm,
         max_display_links=getattr(args, "max_display_links", DEFAULT_MAX_DISPLAY_LINKS),
         ollama_url=getattr(args, "ollama_url", DEFAULT_OLLAMA_URL),
-        ollama_model=getattr(args, "ollama_model", DEFAULT_OLLAMA_MODEL),
+        ollama_model=ollama_model,
         allow_remote_ollama=getattr(args, "allow_remote_ollama", False),
         summary_profile=getattr(args, "summary_profile", None),
         summary_variants=summary_variants,
@@ -152,7 +202,7 @@ def _build_config(args: argparse.Namespace) -> Config:
         final_review_provider=getattr(
             args, "final_review_provider", DEFAULT_FINAL_REVIEW_PROVIDER
         ),
-        final_review_model=getattr(args, "final_review_model", None),
+        final_review_model=final_review_model,
         final_review_report_path=(
             Path(args.final_review_report)
             if getattr(args, "final_review_report", None)
@@ -184,7 +234,145 @@ def _build_config(args: argparse.Namespace) -> Config:
             args, "group_summary_variant_policy", "primary"
         ),
         min_usable_member_summaries=getattr(args, "min_usable_member_summaries", 2),
+        effort=effort,
+        list_efforts=getattr(args, "list_efforts", False),
+        run_profile=getattr(args, "profile", None),
+        list_profiles=getattr(args, "list_profiles", False),
+        folder_themes=dict(folder_themes or {}),
     )
+
+
+def _resolve_profile_name(
+    args: argparse.Namespace,
+    loaded: LoadedUserConfig,
+    argv: list[str],
+) -> str:
+    if flag_present(argv, "--profile"):
+        return getattr(args, "profile", None) or DEFAULT_RUN_PROFILE
+    if loaded.has("profile"):
+        return str(loaded.get("profile"))
+    return getattr(args, "profile", None) or DEFAULT_RUN_PROFILE
+
+
+def _apply_loaded_config(
+    args: argparse.Namespace,
+    loaded: LoadedUserConfig,
+    argv: list[str],
+) -> str:
+    """Merge TOML + run profile into args. Returns resolved profile name."""
+    profile_name = _resolve_profile_name(args, loaded, argv)
+    try:
+        profile = resolve_run_profile(
+            profile_name, toml_profiles=loaded.profiles
+        )
+    except UnknownRunProfileError as exc:
+        raise UserConfigError(str(exc)) from exc
+    args.profile = profile.name
+
+    sticky: dict = {}
+    sticky.update(loaded.values)
+    sticky.pop("profile", None)
+    sticky.update(profile.values)
+    sticky.pop("profile", None)
+    apply_sticky_to_namespace(args, sticky, argv)
+    return profile.name
+
+
+def _apply_path_discovery(
+    args: argparse.Namespace,
+    loaded: LoadedUserConfig,
+    argv: list[str],
+) -> None:
+    root_explicit = loaded.has("root") or flag_present(argv, "--root")
+    mail_explicit = loaded.has("mail_root") or flag_present(argv, "--mail-root")
+    resolved = resolve_mail_paths(
+        root=Path(args.root),
+        mail_root=Path(args.mail_root),
+        root_explicit=root_explicit,
+        mail_root_explicit=mail_explicit,
+    )
+    args.root = str(resolved.root)
+    args.mail_root = str(resolved.mail_root)
+    args._path_resolution = resolved  # noqa: SLF001
+
+
+def _print_run_profile_listing(loaded: LoadedUserConfig) -> None:
+    for profile in list_run_profiles(toml_profiles=loaded.profiles):
+        bits = []
+        if "lookback_days" in profile.values:
+            bits.append(f"lookback={profile.values['lookback_days']}")
+        if profile.values.get("no_grouping"):
+            bits.append("grouping=off")
+        else:
+            bits.append("grouping=on")
+        if "effort" in profile.values:
+            bits.append(f"effort={profile.values['effort']}")
+        detail = f" ({', '.join(bits)})" if bits else ""
+        print(f"{profile.name}: {profile.description}{detail}")
+
+
+def cmd_config_print(args: argparse.Namespace, loaded: LoadedUserConfig) -> int:
+    """Print effective merged settings for debugging."""
+    profile_name = getattr(args, "profile", None) or DEFAULT_RUN_PROFILE
+    try:
+        profile = resolve_run_profile(
+            profile_name, toml_profiles=loaded.profiles
+        )
+    except UnknownRunProfileError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    sticky: dict = {}
+    sticky.update(loaded.values)
+    sticky.pop("profile", None)
+    sticky.update(profile.values)
+
+    payload = {
+        "config_sources": [str(p) for p in loaded.sources],
+        "run_profile": profile.name,
+        "effort": getattr(args, "effort", None) or sticky.get("effort") or DEFAULT_EFFORT,
+        "lookback_days": getattr(args, "lookback_days", None)
+        or sticky.get("lookback_days")
+        or DEFAULT_LOOKBACK_DAYS,
+        "root": str(Path(args.root).expanduser()),
+        "mail_root": str(Path(args.mail_root).expanduser()),
+        "output_dir": str(Path(args.output_dir).expanduser()),
+        "state_dir": str(Path(args.state_dir).expanduser()),
+        "log_dir": str(Path(args.log_dir).expanduser()),
+        "output": list(getattr(args, "output", None) or sticky.get("output") or [])
+        or ["all"],
+        "folder": list(getattr(args, "folder", None) or sticky.get("folder") or []),
+        "exclude_folder": list(
+            getattr(args, "exclude_folder", None)
+            or sticky.get("exclude_folder")
+            or []
+        ),
+        "ollama": not _resolve_no_ollama(args)
+        if (
+            getattr(args, "ollama", False)
+            or getattr(args, "no_ollama", False)
+            or "ollama" in sticky
+        )
+        else sticky.get("ollama", False),
+        "no_grouping": bool(
+            getattr(args, "no_grouping", False)
+            or sticky.get("no_grouping", False)
+        ),
+        "folder_themes": {
+            slug: {"emoji": t.emoji, "accent": t.accent}
+            for slug, t in loaded.folder_themes.items()
+        },
+        "profiles_defined": sorted(
+            {p.name for p in list_run_profiles(toml_profiles=loaded.profiles)}
+        ),
+    }
+    path_res = getattr(args, "_path_resolution", None)
+    if path_res is not None:
+        payload["path_source"] = path_res.source
+        if path_res.message:
+            payload["path_message"] = path_res.message
+    print(json.dumps(payload, indent=2))
+    return 0
 
 
 def _build_run_options(args: argparse.Namespace):
@@ -279,7 +467,10 @@ def _validate_config(
 
 
 def _load_and_validate_profile_set(config: Config):
-    profile_set = load_summary_profile_set(config.summary_profile_set_path)
+    profile_set = resolve_profile_set(
+        effort=config.effort,
+        summary_profile_set_path=config.summary_profile_set_path,
+    )
     return require_valid_summary_profile_set(
         profile_set, get_canonical_newsletter_types()
     )
@@ -291,6 +482,18 @@ def _print_summary_profile_listing(profile_set) -> None:
             f"{info.name}: provider={info.provider} model={info.model} "
             f"prompt_style={info.prompt_style} temperature={info.temperature} "
             f"num_predict={info.num_predict} think={info.think}"
+        )
+
+
+def _print_effort_listing() -> None:
+    for preset in list_effort_presets():
+        models = ", ".join(preset.expected_models())
+        print(
+            f"{preset.name}: {preset.description} "
+            f"ollama_model={preset.ollama_model} "
+            f"final_review_model={preset.final_review_model} "
+            f"max_chars_for_llm={preset.max_chars_for_llm} "
+            f"models=[{models}]"
         )
 
 
@@ -393,7 +596,19 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
-    config = _build_config(args)
+    conflict = _effort_profile_set_conflict_error(args)
+    if conflict:
+        print(f"ERROR: {conflict}", file=sys.stderr)
+        return 1
+    if getattr(args, "list_efforts", False):
+        _print_effort_listing()
+        return 0
+    loaded: LoadedUserConfig = getattr(args, "_loaded_user_config", LoadedUserConfig())
+    if getattr(args, "list_profiles", False):
+        _print_run_profile_listing(loaded)
+        return 0
+
+    config = _build_config(args, folder_themes=loaded.folder_themes)
     run_options = _build_run_options(args)
     grouping = _build_grouping_config(args)
     generated_at = datetime.now().astimezone()
@@ -405,6 +620,9 @@ def cmd_digest(args: argparse.Namespace) -> int:
 
     for w in warnings:
         print(w, file=sys.stderr)
+    path_res = getattr(args, "_path_resolution", None)
+    if path_res is not None and path_res.message and path_res.source != "discovered":
+        print(f"WARNING: {path_res.message}", file=sys.stderr)
 
     _setup_logging(
         run_options.verbose,
@@ -429,6 +647,25 @@ def cmd_digest(args: argparse.Namespace) -> int:
         return 0
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
+
+    from rollup.output_writers import (
+        OutputWriterError,
+        WriteContext,
+        discover_writers,
+        run_enabled_writers,
+        validate_requested_writers,
+    )
+
+    try:
+        writers = discover_writers()
+    except OutputWriterError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    writer_err = validate_requested_writers(args, writers)
+    if writer_err:
+        logger.error("%s", writer_err)
+        return 1
 
     try:
         result = run_digest(
@@ -474,6 +711,33 @@ def cmd_digest(args: argparse.Namespace) -> int:
                 )
             )
         )
+
+    from rollup.output_writers import (
+        OutputWriterError,
+        WriteContext,
+        run_enabled_writers,
+    )
+
+    if result.report is not None:
+        try:
+            run_enabled_writers(
+                writers,
+                result.report,
+                WriteContext(
+                    output_dir=config.output_dir,
+                    generated_at=result.report.generated_at,
+                    max_display_links=config.max_display_links,
+                    dry_run=run_options.dry_run,
+                    run_id_short=result.context.run_id_short,
+                    logger=logger,
+                    folder_themes=config.folder_themes or None,
+                ),
+                args=args,
+                config=config,
+            )
+        except OutputWriterError as exc:
+            logger.error("%s", exc)
+            return 1
 
     if result.error_message:
         print(f"ERROR: {result.error_message}", file=sys.stderr)
@@ -575,6 +839,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
+    parser.add_argument(
+        "--config",
+        help="Load settings from this TOML file (skips default config search paths)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     inv = sub.add_parser(
@@ -590,6 +858,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common_args(dig)
     dig.add_argument("--lookback-days", type=int, default=DEFAULT_LOOKBACK_DAYS)
+    dig.add_argument(
+        "--profile",
+        default=DEFAULT_RUN_PROFILE,
+        help="Named run profile: weekly (default), daily, or a custom [profiles.*] name",
+    )
+    dig.add_argument(
+        "--list-profiles",
+        action="store_true",
+        default=False,
+        help="List built-in and config-defined run profiles and exit",
+    )
     dig.add_argument(
         "--dry-run",
         action="store_true",
@@ -670,11 +949,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ollama only: bypass summary cache",
     )
     dig.add_argument("--max-body-chars", type=int, default=DEFAULT_MAX_BODY_CHARS)
-    dig.add_argument("--max-chars-for-llm", type=int, default=DEFAULT_MAX_CHARS_FOR_LLM)
+    dig.add_argument(
+        "--max-chars-for-llm",
+        type=int,
+        default=None,
+        help="Max body chars sent to the LLM (default: from --effort)",
+    )
     dig.add_argument("--max-display-links", type=int, default=DEFAULT_MAX_DISPLAY_LINKS)
     dig.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
-    dig.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL)
+    dig.add_argument(
+        "--ollama-model",
+        default=None,
+        help="Ollama model for group summaries / fallback (default: from --effort)",
+    )
     dig.add_argument("--allow-remote-ollama", action="store_true", default=False)
+    dig.add_argument(
+        "--effort",
+        choices=list(EFFORT_NAMES),
+        default=None,
+        help=(
+            "Machine-power preset for summary models and related defaults "
+            f"(default: {DEFAULT_EFFORT}). Cannot combine with --summary-profile-set."
+        ),
+    )
+    dig.add_argument(
+        "--list-efforts",
+        action="store_true",
+        default=False,
+        help="List built-in effort presets and exit",
+    )
     dig.add_argument(
         "--summary-profile",
         help="Ollama only: force one profile for every message",
@@ -758,7 +1061,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dig.add_argument(
         "--final-review-model",
-        help="Override final review Ollama model",
+        default=None,
+        help="Override final review Ollama model (default: from --effort)",
     )
     dig.add_argument(
         "--final-review-provider",
@@ -775,6 +1079,32 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Bypass final review cache",
     )
+    dig.add_argument(
+        "--output",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "Output writer addon (repeatable). Default: all discovered writers "
+            "(xteink, txt, json, epub, …). Pass 'none' for Markdown/HTML only."
+        ),
+    )
+    dig.add_argument(
+        "--xteink",
+        "--x3",
+        dest="xteink",
+        action="store_true",
+        default=False,
+        help="Write XTEINK e-ink optimized Markdown (alias for --output xteink; "
+        "selecting any --output/--xteink replaces the default-all set; "
+        "--x3 remains as a compatibility alias)",
+    )
+    try:
+        from rollup.output_writers import OutputWriterError, register_writer_cli
+
+        register_writer_cli(dig)
+    except OutputWriterError:
+        pass
 
     doc = sub.add_parser(
         "doctor",
@@ -806,8 +1136,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Treat Ollama as enabled for network/loopback checks",
     )
     doc.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
-    doc.add_argument("--ollama-model", default=DEFAULT_OLLAMA_MODEL)
+    doc.add_argument(
+        "--ollama-model",
+        default=None,
+        help="Ollama model to probe (default: from --effort)",
+    )
     doc.add_argument("--allow-remote-ollama", action="store_true", default=False)
+    doc.add_argument(
+        "--effort",
+        choices=list(EFFORT_NAMES),
+        default=None,
+        help=(
+            "Machine-power preset used for expected model hints "
+            f"(default: {DEFAULT_EFFORT})"
+        ),
+    )
 
     cron = sub.add_parser(
         "cron",
@@ -860,6 +1203,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     register_web_parser(sub)
 
+    cfg = sub.add_parser(
+        "config",
+        help="Inspect effective configuration (TOML + profiles + defaults)",
+    )
+    cfg_sub = cfg.add_subparsers(dest="config_command", required=True)
+    cfg_print = cfg_sub.add_parser(
+        "print",
+        help="Print effective merged settings as JSON",
+    )
+    _add_common_args(cfg_print)
+    cfg_print.add_argument(
+        "--profile",
+        default=DEFAULT_RUN_PROFILE,
+        help="Run profile to resolve (default: weekly)",
+    )
+    cfg_print.add_argument("--lookback-days", type=int, default=DEFAULT_LOOKBACK_DAYS)
+    cfg_print.add_argument(
+        "--effort",
+        choices=list(EFFORT_NAMES),
+        default=None,
+        help=f"Machine-power preset (default: {DEFAULT_EFFORT})",
+    )
+    ollama_cfg = cfg_print.add_mutually_exclusive_group()
+    ollama_cfg.add_argument("--ollama", action="store_true")
+    ollama_cfg.add_argument("--no-ollama", action="store_true")
+    grouping_cfg = cfg_print.add_mutually_exclusive_group()
+    grouping_cfg.add_argument("--grouping", action="store_true")
+    grouping_cfg.add_argument("--no-grouping", action="store_true")
+
     return parser
 
 
@@ -885,8 +1257,29 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    try:
+        config_path, _ = extract_config_path(raw)
+        loaded = load_user_config(explicit_path=config_path)
+    except UserConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw)
+    args._loaded_user_config = loaded  # noqa: SLF001
+
+    try:
+        if args.command in {"digest", "inventory", "doctor", "config"}:
+            _apply_loaded_config(args, loaded, raw)
+            _apply_path_discovery(args, loaded, raw)
+        elif args.command == "cron":
+            _apply_loaded_config(args, loaded, raw)
+            _apply_path_discovery(args, loaded, raw)
+    except UserConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
+
     if args.command == "inventory":
         sys.exit(cmd_inventory(args))
     elif args.command == "digest":
@@ -895,6 +1288,11 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(cmd_doctor(args))
     elif args.command == "cron":
         sys.exit(cmd_cron(args))
+    elif args.command == "config":
+        if getattr(args, "config_command", None) == "print":
+            sys.exit(cmd_config_print(args, loaded))
+        parser.parse_args(["config", "--help"])
+        sys.exit(1)
     elif args.command == "sources":
         from rollup.sources_cmd import cmd_sources
 

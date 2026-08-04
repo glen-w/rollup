@@ -4,6 +4,34 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.6.0 — 2026-08-04
+
+### Added
+
+- **Optional TOML config** (`~/.config/rollup/config.toml`, `./rollup.toml`, or `--config`): sticky paths, lookback, folders, effort, ollama, grouping, and folder themes. CLI flags still win. See [docs/CONFIG.md](docs/CONFIG.md).
+- **`rollup config print`**: dump effective merged settings as JSON.
+- **Run profiles** (`--profile weekly|daily|…`, `--list-profiles`, TOML `[profiles.*]`): lookback/grouping habits, composed with existing `--effort`.
+- **`--effort {light,balanced,high}`**: machine-power presets that swap the summary model ladder plus companion defaults (`ollama-model`, `final-review-model`, `max_chars_for_llm`) in one flag. Default `balanced` preserves prior behavior. `--list-efforts` prints the bundles; doctor reports expected models per effort.
+- **Output writer plugin seam** (`rollup.output_writers`): post-digest addons discovered as builtins plus `rollup.output_writers` entry points. Enable with `--output NAME` (repeatable); default runs **all** discovered writers. Pass `--output none` for Markdown/HTML only. Sticky TOML `output` supported.
+- **Built-in writers `txt`, `json`, `epub`**: plain-text (link-free), structured digest JSON (`schema_version` 1, no raw bodies), and rich EPUB (link-free offline summaries; optional `pip install 'rollup[epub]'`). See [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md).
+- **Thunderbird path discovery**: when defaults are missing, locate a single `Newsletters.sbd` under macOS Thunderbird profiles; doctor reports candidates.
+- **Folder themes**: deterministic accents from folder names; optional emoji/accent overrides via TOML `[folders.*]`.
+- Product contract doc: [docs/CONTRACT.md](docs/CONTRACT.md).
+
+### Changed
+
+- Personal hardcoded folder emoji/accent maps removed from package defaults (restore via TOML if desired).
+- README / examples / cron docs favor config.toml over one-off personal paths.
+- **Default `--output-dir`** is now `~/Documents/rollup-outputs` (outside the repo / mail root). Override with `--output-dir` or sticky `output_dir` in config.toml.
+- **Output root hygiene**: each digest run moves prior dated digest artifacts into `output_dir/archive/` so only the latest batch (plus `latest.*` and branding) remains visible in the root.
+- **XTEINK** (formerly X3) lives in `rollup.addons.xteink` and runs through the output-writer seam. Writes Markdown only (`…-newsletter-digest.xteink.md`); no XTEINK HTML (use `epub` for a rich offline ebook). `--xteink` / `--output xteink` are the canonical names; `--x3` and `--output x3` remain as compatibility aliases. Shared URL-strip / wrap helpers live in `rollup.addons.offline_text` for XTEINK, TXT, and EPUB.
+- **GPT-OSS empty summaries**: profile `think` now accepts `"low"` / `"medium"` / `"high"` (GPT-OSS ignores bools). Built-in `deep` and `--effort high` `standard` use `think: "low"` with `num_predict: 2048` so reasoning cannot consume the whole token budget and leave `response` empty.
+
+### Compatibility
+
+- Zero-config still works when `~/email/gmail/Newsletters.sbd` exists.
+- Existing CLI flags and source registry behavior unchanged.
+
 ## 0.5.2 — 2026-07-30
 
 ### Improved

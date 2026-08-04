@@ -113,11 +113,11 @@ def _report() -> DigestReport:
 def test_render_markdown_contains_subject() -> None:
     md = render_markdown(_report(), 8)
     assert "Test Subject" in md
-    assert "## 💻 tech" in md
+    assert "## tech" in md
     assert "## Digest generation details" in md
     assert "### Summary routing" in md
-    assert md.index("## Contents") < md.index("## 💻 tech")
-    assert md.index("## 💻 tech") < md.index("## Digest generation details")
+    assert md.index("## Contents") < md.index("## tech")
+    assert md.index("## tech") < md.index("## Digest generation details")
     assert "# Rollup —" in md
     assert "![Rollup](rollup_logo.png)" in md
 
@@ -151,7 +151,7 @@ def test_render_uses_folder_and_read_time_emojis() -> None:
     html = render_html(_report(), 8)
     assert "🕐 2 min" in md
     assert "🕐 2 min" in html
-    assert "**Folder:** 💻 tech" in md
+    assert "**Folder:** tech" in md
 
 
 def test_render_html_escapes_content() -> None:
@@ -576,11 +576,18 @@ def test_format_newsletter_type() -> None:
 
 
 def test_render_html_folder_accent_classes() -> None:
+    from rollup.folder_theme import accent_for_slug, folder_slug
+
     html = render_html(_report(), 8)
+    tech_accent = accent_for_slug(folder_slug("tech"))
     assert "class='folder-section folder-accent-tech'" in html
-    assert ".folder-accent-tech>h2{border-left:4px solid #4a7fd4" in html
-    assert ".folder-accent-tech .newsletter-card{border-color:#4a7fd4" in html
-    assert ".folder-accent-tech .digest-group{border-color:#4a7fd4" in html
+    assert f".folder-accent-tech>h2{{border-left:4px solid {tech_accent}" in html
+    assert (
+        f".folder-accent-tech .newsletter-card{{border-color:{tech_accent}" in html
+    )
+    assert (
+        f".folder-accent-tech .digest-group{{border-color:{tech_accent}" in html
+    )
 
 
 def test_sort_entries_puts_groups_first() -> None:
@@ -640,8 +647,13 @@ def test_sort_entries_puts_groups_first() -> None:
         stats=_report().stats,
     )
     html = render_html(report, 8)
+    from rollup.folder_theme import accent_for_slug, folder_slug
+
     assert html.index("class='digest-group'") < html.index("Quick standalone")
-    assert "folder-accent-hoops .digest-group{border-color:#e8923a" in html
+    hoops_accent = accent_for_slug(folder_slug("hoops"))
+    assert (
+        f"folder-accent-hoops .digest-group{{border-color:{hoops_accent}" in html
+    )
 
 
 def test_render_html_sorts_entries_by_read_time() -> None:
@@ -1002,8 +1014,8 @@ def test_render_toc_lists_folders_with_counts() -> None:
     report = _multi_folder_report()
     html = render_html(report, 8)
     assert "class='rollup-toc'" in html
-    assert "href='#folder-enviro'>🌲 enviro (3)" in html
-    assert "href='#folder-tech'>💻 tech (2)" in html
+    assert "href='#folder-enviro'>enviro (3)" in html
+    assert "href='#folder-tech'>tech (2)" in html
 
 
 def test_render_html_section_byline() -> None:
@@ -1074,11 +1086,11 @@ def test_all_newsletter_cards_closed_by_default() -> None:
 def test_render_markdown_minimal_toc_and_deferred_run_details() -> None:
     md = render_markdown(_report(), 8)
     assert "## Contents" in md
-    assert "- 💻 tech (1)" in md
+    assert "- tech (1)" in md
     assert "## Digest generation details" in md
     assert "Folders scanned:" in md
-    assert md.index("## Contents") < md.index("## 💻 tech")
-    assert md.index("## 💻 tech") < md.index("## Digest generation details")
+    assert md.index("## Contents") < md.index("## tech")
+    assert md.index("## tech") < md.index("## Digest generation details")
 
 
 def test_hidden_link_count_cue_when_trimmed() -> None:

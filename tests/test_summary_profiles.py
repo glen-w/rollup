@@ -55,6 +55,34 @@ def test_builtin_summary_profile_set_loads() -> None:
     assert "rough" in profile_set.profiles
     assert profile_set.profiles["max"].think is False
     assert profile_set.profiles["max"].num_predict == 2048
+    assert profile_set.profiles["deep"].think == "low"
+    assert profile_set.profiles["deep"].num_predict == 2048
+
+
+def test_parse_think_levels() -> None:
+    from rollup.summary_profiles import parse_think_value
+
+    assert parse_think_value(False) is False
+    assert parse_think_value(True) is True
+    assert parse_think_value("low") == "low"
+    assert parse_think_value("MEDIUM") == "medium"
+    profile = summary_profile_set_from_dict(
+        {
+            "schema_version": 1,
+            "default_profile": "standard",
+            "profiles": {
+                "custom": {
+                    "provider": "ollama",
+                    "model": "gpt-oss:20b",
+                    "temperature": 0.2,
+                    "think": "low",
+                    "num_predict": 2048,
+                }
+            },
+            "type_routes": {},
+        }
+    ).profiles["custom"]
+    assert profile.think == "low"
 
 
 def test_profile_from_dict_migrates_generation_fields_from_options() -> None:

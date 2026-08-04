@@ -11,7 +11,10 @@ import pytest
 from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
 from rollup.group_summarize import (
     GROUP_SUMMARY_MAX_OUTPUT_CHARS,
+    _format_group_prompt,
+    _group_cache_key,
     _is_eligible,
+    _map_stream_stop_to_error,
     apply_group_summaries,
 )
 from rollup.models import (
@@ -321,3 +324,88 @@ def test_group_summary_generations_no_runtime_dml(tmp_path: Path) -> None:
 def test_max_output_chars_constant_is_group_specific() -> None:
     assert GROUP_SUMMARY_MAX_OUTPUT_CHARS == 1200
     assert GROUP_SUMMARY_MAX_OUTPUT_CHARS < 16_000
+
+
+def test_group_cache_key_stability() -> None:
+    g = _group("g1", n=3)
+    cfg = _config()
+    k1 = _group_cache_key(g, cfg)
+    k2 = _group_cache_key(g, cfg)
+    assert k1 == k2
+    assert len(k1) == 64
+    g2 = _group("g1", n=3)
+    # Same structure → same key
+    assert _group_cache_key(g2, cfg) == k1
+    cfg_other = _config(ollama_model="other-model")
+    assert _group_cache_key(g, cfg_other) != k1
+    # Content hash change flips the key.
+    from dataclasses import replace
+
+    entry = g.entries[0]
+    parsed = replace(entry.classified.parsed, content_hash="changed-hash")
+    classified = replace(entry.classified, parsed=parsed)
+    new_entry = replace(entry, classified=classified)
+    g_changed = replace(g, entries=(new_entry,) + g.entries[1:])
+    assert _group_cache_key(g_changed, cfg) != k1
+
+
+def test_format_group_prompt_budget_and_truncation() -> None:
+    long_summary = "word " * 200
+    g = DigestGroup(
+        group_id="g1",
+        group_type="notification_stream",
+        display_name="Stream",
+        sender_normalized="sender",
+        folder_name="tech",
+        entries=tuple(
+            _entry(f"g1:{i}", summary=long_summary) for i in range(5)
+        ),
+    )
+    prompt = _format_group_prompt(g, max_input_chars=2_000)
+    assert "Stream" in prompt
+    assert "…" in prompt
+    # Tiny budget should include the template + fewer members.
+    tiny = _format_group_prompt(g, max_input_chars=800)
+    assert tiny.count("summary:") < prompt.count("summary:")
+
+
+def test_map_stream_stop_to_error() -> None:
+    assert _map_stream_stop_to_error("local_char_cap") == "response_oversized"
+    assert _map_stream_stop_to_error("provider_length") == "response_oversized"
+    assert _map_stream_stop_to_error("local_wall_timeout") == "stream_timeout"
+    assert _map_stream_stop_to_error("parse_error") == "stream_malformed"
+    assert _map_stream_stop_to_error("http_error") == "ollama_http_error"
+    assert _map_stream_stop_to_error("other") == "stream_truncated"
+
+
+def test_real_sqlite_cache_hit_no_ollama(tmp_path: Path) -> None:
+    g = _group("cache-real", n=3)
+    cfg = _config()
+    cache_key = _group_cache_key(g, cfg)
+    conn = init_db_with_summaries(tmp_path / "rollup.db")
+    store_group_summary_generation(
+        conn,
+        cache_key=cache_key,
+        summary="Persisted group blurb from SQLite.",
+        created_at=datetime.now(timezone.utc),
+    )
+    with patch("rollup.group_summarize._call_ollama_for_group") as mock_call:
+        new_dated, _, meta = apply_group_summaries(
+            {"tech": (g,)}, (), cfg, conn, max_calls=8
+        )
+        mock_call.assert_not_called()
+    assert new_dated["tech"][0].group_summary == "Persisted group blurb from SQLite."
+    assert meta.cache_hits == 1
+    assert meta.ollama_calls == 0
+    conn.close()
+
+
+def test_ineligible_groups_counted(tmp_path: Path) -> None:
+    g = _group("solo", n=3, gtype="standalone")
+    with patch("rollup.group_summarize._call_ollama_for_group") as mock_call:
+        new_dated, _, meta = apply_group_summaries(
+            {"tech": (g,)}, (), _config(), None, max_calls=8
+        )
+        mock_call.assert_not_called()
+    assert new_dated["tech"][0].group_summary is None
+    assert dict(meta.error_counts).get("ineligible", 0) >= 1

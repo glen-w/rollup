@@ -20,3 +20,33 @@ def test_web_cli_lazy_loads_flask():
     # Top-level of cli_web should not import flask at module import for create_app path
     # cmd_web calls _ensure_flask before importing app
     assert "def _ensure_flask" in text
+
+
+def test_cmd_web_reindex_zero(tmp_path: Path) -> None:
+    from argparse import Namespace
+
+    from rollup.web.cli_web import cmd_web_reindex
+
+    state = tmp_path / "state"
+    out = tmp_path / "out"
+    mail = tmp_path / "mail"
+    state.mkdir()
+    out.mkdir()
+    mail.mkdir()
+    args = Namespace(
+        state_dir=str(state),
+        output_dir=str(out),
+        mail_root=str(mail),
+    )
+    assert cmd_web_reindex(args) == 0
+
+
+def test_cmd_web_missing_flask(monkeypatch, capsys) -> None:
+    from argparse import Namespace
+
+    from rollup.web import cli_web
+
+    monkeypatch.setattr(cli_web, "_ensure_flask", lambda: "Flask is required")
+    args = Namespace(web_command=None)
+    assert cli_web.cmd_web(args) == 1
+    assert "Flask is required" in capsys.readouterr().err

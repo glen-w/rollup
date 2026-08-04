@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rollup.folder_theme import FolderThemeOverride
 
 DEFAULT_MAIL_ROOT = Path.home() / "email" / "gmail"
 DEFAULT_NEWSLETTER_ROOT = DEFAULT_MAIL_ROOT / "Newsletters.sbd"
-DEFAULT_OUTPUT_DIR = Path("./output")
+# Digests live outside the repo by default (override via --output-dir / config.toml).
+DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "rollup-outputs"
 DEFAULT_STATE_DIR = Path("./state")
 DEFAULT_LOG_DIR = Path("./logs")
 DEFAULT_LOOKBACK_DAYS = 7
@@ -21,6 +26,8 @@ DEFAULT_FINAL_REVIEW_PROFILE = "strict"
 DEFAULT_FINAL_REVIEW_PROVIDER = "ollama"
 DEFAULT_FINAL_REVIEW_MODE = "report"
 DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO = 0.08
+DEFAULT_EFFORT = "balanced"
+DEFAULT_RUN_PROFILE = "weekly"
 
 
 @dataclass(frozen=True)
@@ -70,6 +77,11 @@ class Config:
     max_group_summary_calls: int = 8
     group_summary_variant_policy: str = "primary"  # only "primary" accepted
     min_usable_member_summaries: int = 2
+    effort: str | None = None
+    list_efforts: bool = False
+    run_profile: str | None = None
+    list_profiles: bool = False
+    folder_themes: dict[str, FolderThemeOverride] = field(default_factory=dict)
 
     @property
     def db_path(self) -> Path:

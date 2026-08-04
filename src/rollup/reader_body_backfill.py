@@ -79,7 +79,7 @@ def run_backfill(
         for parsed, err in iter_parsed_messages(
             folder.mbox_path,
             folder.folder_name,
-            folder.relative_folder_path,
+            folder.relative_path,
             max_body_chars=200_000,
             max_display_links=8,
         ):

@@ -152,3 +152,37 @@ def test_resolve_python_warns_without_explicit() -> None:
     path, warnings = resolve_python(None)
     assert path.exists()
     assert warnings
+
+
+def test_format_doctor_human_and_remote_ollama_fail(tmp_path: Path) -> None:
+    from rollup.doctor import DoctorCheck, DoctorReport, format_doctor_human
+
+    report = DoctorReport(
+        schema_version=1,
+        ok=False,
+        error_count=1,
+        warning_count=1,
+        checks=(
+            DoctorCheck(id="a", status="pass", message="ok path"),
+            DoctorCheck(id="b", status="warn", message="soft", fix="tweak"),
+            DoctorCheck(id="c", status="fail", message="hard", fix="fix it"),
+        ),
+    )
+    text = format_doctor_human(report)
+    assert "✓" in text and "⚠" in text and "✗" in text
+    assert "1 error(s), 1 warning(s)" in text
+    assert "fix: fix it" in text
+
+    cfg = _config(tmp_path)
+    from dataclasses import replace
+
+    cfg = replace(
+        cfg,
+        no_ollama=False,
+        ollama_url="http://evil.example:11434/api/generate",
+        allow_remote_ollama=False,
+    )
+    live = run_doctor(cfg, RunOptions())
+    assert live.ok is False
+    loopback = next(c for c in live.checks if c.id == "ollama_loopback")
+    assert loopback.status == "fail"

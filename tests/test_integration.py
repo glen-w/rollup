@@ -28,8 +28,10 @@ def _mock_summarize_message(classified, *args, **kwargs):
 
 
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    # Isolate from the developer's ~/.config/rollup/config.toml and cwd rollup.toml.
+    empty = Path(__file__).parent / "fixtures" / "empty_config.toml"
     return subprocess.run(
-        [sys.executable, "-m", "rollup", *args],
+        [sys.executable, "-m", "rollup", "--config", str(empty), *args],
         cwd=cwd or PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -68,6 +70,116 @@ def test_digest_default_fixture(tmp_path: Path) -> None:
     assert len(html_files) == 1
     assert md_files[0].stat().st_size > 0
     assert html_files[0].stat().st_size > 0
+
+
+def test_digest_archives_previous_batch(tmp_path: Path) -> None:
+    """Second digest moves the prior dated batch into output/archive/."""
+    output = tmp_path / "output"
+    state = tmp_path / "state"
+    common = [
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--no-ollama",
+        "--folder",
+        "tech",
+        "--output",
+        "none",
+        "--output-dir",
+        str(output),
+        "--state-dir",
+        str(state),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    ]
+    first = _run(*common)
+    assert first.returncode == 0, first.stderr
+    first_mds = list(output.glob("*-newsletter-digest.md"))
+    assert len(first_mds) == 1
+    first_name = first_mds[0].name
+
+    second = _run(*common)
+    assert second.returncode == 0, second.stderr
+    root_mds = list(output.glob("*-newsletter-digest.md"))
+    assert len(root_mds) == 1
+    assert root_mds[0].name != first_name
+    archived = output / "archive" / first_name
+    assert archived.is_file()
+    assert not (output / first_name).exists()
+
+
+def test_digest_default_writers_write_artifacts(tmp_path: Path) -> None:
+    """Default digest enables all discovered writers beside md/html."""
+    output = tmp_path / "output"
+    state = tmp_path / "state"
+    result = _run(
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--no-ollama",
+        "--folder",
+        "tech",
+        "--output-dir",
+        str(output),
+        "--state-dir",
+        str(state),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0, result.stderr
+    md_files = list(output.glob("*-newsletter-digest.md"))
+    html_files = list(output.glob("*-newsletter-digest.html"))
+    assert len(md_files) == 1
+    assert len(html_files) == 1
+    # Core and writers share the timestamp+run_id stem (writers add .xteink / ext only).
+    core_stem = md_files[0].name.removesuffix(".md")
+    xteink_md = list(output.glob("*-newsletter-digest.xteink.md"))
+    assert xteink_md
+    assert xteink_md[0].name == f"{core_stem}.xteink.md"
+    json_files = list(output.glob("*-newsletter-digest.json"))
+    assert json_files
+    assert json_files[0].name == f"{core_stem}.json"
+    txt_files = list(output.glob("*-newsletter-digest.txt"))
+    assert txt_files
+    assert txt_files[0].name == f"{core_stem}.txt"
+    assert not list(output.glob("*-newsletter-digest.xteink.html"))
+    # EPUB may be skipped with a warning when ebooklib is absent.
+    if "ebooklib" in (result.stderr or "").lower() and "skipping epub" in (
+        result.stderr or ""
+    ).lower():
+        assert not list(output.glob("*-newsletter-digest.epub"))
+    else:
+        epub_files = list(output.glob("*-newsletter-digest.epub"))
+        assert epub_files
+        assert epub_files[0].name == f"{core_stem}.epub"
+
+
+def test_digest_output_none_skips_addon_writers(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    state = tmp_path / "state"
+    result = _run(
+        "digest",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--no-ollama",
+        "--folder",
+        "tech",
+        "--output",
+        "none",
+        "--output-dir",
+        str(output),
+        "--state-dir",
+        str(state),
+        "--mail-root",
+        str(tmp_path / "mail"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert list(output.glob("*-newsletter-digest.md"))
+    assert list(output.glob("*-newsletter-digest.html"))
+    assert not list(output.glob("*-newsletter-digest.xteink.md"))
+    assert not list(output.glob("*-newsletter-digest.json"))
+    assert not list(output.glob("*-newsletter-digest.txt"))
+    assert not list(output.glob("*-newsletter-digest.epub"))
 
 
 def test_digest_no_ollama_fixture(tmp_path: Path) -> None:
@@ -481,11 +593,14 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("rollup.summarize.apply_summaries", tracking_apply)
 
     parser = cli.build_parser()
-    args = parser.parse_args(
-        _digest_args(
-            tmp_path, "--ollama", "--folder", "tech", "--lookback-days", "36500"
-        )
+    ollama_args = (
+        "--ollama",
+        "--folder",
+        "tech",
+        "--lookback-days",
+        "36500",
     )
+    args = parser.parse_args(_digest_args(tmp_path, *ollama_args))
 
     import io
     import sys
@@ -526,11 +641,7 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
     sys.stdout = buf2
     try:
         rc2 = cli.cmd_digest(
-            parser.parse_args(
-                _digest_args(
-                    tmp_path, "--ollama", "--folder", "tech", "--lookback-days", "36500"
-                )
-            )
+            parser.parse_args(_digest_args(tmp_path, *ollama_args))
         )
     finally:
         sys.stdout = old_stdout

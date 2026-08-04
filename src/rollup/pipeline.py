@@ -36,9 +36,9 @@ from rollup.render import (
 from rollup.run_context import RunContext, RunStatus
 from rollup.run_options import GroupingConfig, ManifestConfig, RunOptions
 from rollup.summary_plan import SummaryCliOptions, resolve_summary_plan
+from rollup.effort import resolve_profile_set
 from rollup.summary_profiles import (
     get_canonical_newsletter_types,
-    load_summary_profile_set,
     require_valid_summary_profile_set,
 )
 
@@ -653,7 +653,10 @@ def run_digest(
                 )
 
         profile_set = require_valid_summary_profile_set(
-            load_summary_profile_set(config.summary_profile_set_path),
+            resolve_profile_set(
+                effort=config.effort,
+                summary_profile_set_path=config.summary_profile_set_path,
+            ),
             get_canonical_newsletter_types(),
         )
 
@@ -875,6 +878,11 @@ def run_digest(
                 aggregated=aggregated,
             )
 
+        # Keep only the new batch in output_dir root; prior digests → archive/.
+        from rollup.output_archive import archive_previous_outputs
+
+        archive_previous_outputs(config.output_dir, db_path=config.db_path)
+
         # Write outputs (variants or default).
         rendered_variants = summarize_result.rendered_variants
         execution = summarize_result.execution
@@ -932,8 +940,16 @@ def run_digest(
                 stem = digest_output_stem(
                     generated_at, variant_name, run_id_short=ctx.run_id_short
                 )
-                md = render_markdown(variant_report, config.max_display_links)
-                html_content = render_html(variant_report, config.max_display_links)
+                md = render_markdown(
+                    variant_report,
+                    config.max_display_links,
+                    folder_themes=config.folder_themes or None,
+                )
+                html_content = render_html(
+                    variant_report,
+                    config.max_display_links,
+                    folder_themes=config.folder_themes or None,
+                )
                 v_md, v_html = _write_digest_outputs(
                     config.output_dir,
                     generated_at,
@@ -971,8 +987,16 @@ def run_digest(
                 dry_run=run_options.dry_run,
                 quiet=run_options.quiet,
             )
-            md = render_markdown(report, config.max_display_links)
-            html_content = render_html(report, config.max_display_links)
+            md = render_markdown(
+                report,
+                config.max_display_links,
+                folder_themes=config.folder_themes or None,
+            )
+            html_content = render_html(
+                report,
+                config.max_display_links,
+                folder_themes=config.folder_themes or None,
+            )
             md_path, html_path = _write_digest_outputs(
                 config.output_dir,
                 generated_at,

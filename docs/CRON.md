@@ -15,12 +15,13 @@ Crontab remains a portable alternative.
 
 Do not confuse preview summaries with dry-run.
 
-## Recommended personal setup
+## Recommended setup
 
 1. Install Rollup in a project venv with a stable absolute Python path.
-2. Run `rollup doctor` and fix any errors.
-3. Run a manual digest once, then inspect `output/` and `state/manifests/`.
-4. Schedule a weekly job with `rollup cron print-launchd` (macOS) or `print-crontab`.
+2. Put sticky paths in `~/.config/rollup/config.toml` (see [CONFIG.md](CONFIG.md)).
+3. Run `rollup doctor` and fix any errors.
+4. Run a manual digest once, then inspect `output/` and `state/manifests/`.
+5. Schedule a weekly job with `rollup cron print-launchd` (macOS) or `print-crontab`.
 
 ## Single-run lock
 
@@ -61,15 +62,13 @@ Unattended apply uses conservative whole-set caps (`final_review_max_patches_una
 
 ## launchd (preferred on macOS)
 
-Generate a LaunchAgent plist with explicit paths:
+Generate a LaunchAgent plist with explicit paths (or rely on config.toml and omit `--root` / `--mail-root`):
 
 ```bash
 rollup cron print-launchd \
   --python /Users/you/rollup/.venv/bin/python \
   --workdir /Users/you/rollup \
-  --root /Users/you/email/gmail/Newsletters.sbd \
-  --mail-root /Users/you/email/gmail \
-  --output-dir /Users/you/rollup/output \
+  --output-dir /Users/you/Documents/rollup-outputs \
   --state-dir /Users/you/rollup/state \
   --log-dir /Users/you/rollup/logs \
   --weekday 0 --hour 8 --minute 0 \
@@ -77,6 +76,8 @@ rollup cron print-launchd \
 
 launchctl load ~/Library/LaunchAgents/com.rollup.digest.plist
 ```
+
+If paths are not in TOML yet, pass `--root` / `--mail-root` pointing at your Thunderbird `Newsletters.sbd` and its parent mail account directory.
 
 The plist sets `WorkingDirectory`, `StandardOutPath`, and `StandardErrorPath`.
 
@@ -86,20 +87,16 @@ The plist sets `WorkingDirectory`, `StandardOutPath`, and `StandardErrorPath`.
 rollup cron print-crontab \
   --python /Users/you/rollup/.venv/bin/python \
   --workdir /Users/you/rollup \
-  --root /Users/you/email/gmail/Newsletters.sbd \
-  --mail-root /Users/you/email/gmail \
-  --output-dir /Users/you/rollup/output \
+  --output-dir /Users/you/Documents/rollup-outputs \
   --state-dir /Users/you/rollup/state \
   --log-dir /Users/you/rollup/logs
 ```
 
-Example weekly non-AI digest (Sundays 08:00):
+Example weekly non-AI digest (Sundays 08:00), assuming `~/.config/rollup/config.toml` sets `root` / `mail_root`:
 
 ```cron
 0 8 * * 0 cd /Users/you/rollup && /Users/you/rollup/.venv/bin/python -m rollup digest --cron \
-  --root /Users/you/email/gmail/Newsletters.sbd \
-  --mail-root /Users/you/email/gmail \
-  --output-dir /Users/you/rollup/output \
+  --output-dir /Users/you/Documents/rollup-outputs \
   --state-dir /Users/you/rollup/state \
   --log-dir /Users/you/rollup/logs >> /Users/you/rollup/logs/cron.log 2>&1
 ```

@@ -6,7 +6,10 @@
 
 Runnable examples for inventory, digest generation, summary routing, the local web UI, and local tooling.
 
-**The rollup** is the weekly Markdown + HTML digest Rollup writes to `--output-dir` (default `./output`). Each run also copies `rollup_logo.png` and `favicon.ico` beside the HTML file.
+**The rollup** is the weekly Markdown + HTML digest Rollup writes to `--output-dir`
+(default `~/Documents/rollup-outputs`). Each run also copies `rollup_logo.png` and
+`favicon.ico` beside the HTML file, and by default runs every output writer
+(xteink / txt / json / epub). See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
 
 Run from the project root with the virtualenv active:
 
@@ -16,6 +19,7 @@ source .venv/bin/activate
 ```
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
+Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
 
 **Default digest mode** needs no Ollama server and makes no network calls. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
@@ -35,7 +39,8 @@ Discover mbox folders and message counts (read-only; no body parsing):
 python -m rollup inventory
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
 python -m rollup inventory --json-out ./output/inventory.json
-python -m rollup inventory --root ~/email/gmail/Newsletters.sbd
+# After setting root in ~/.config/rollup/config.toml, bare inventory uses that path:
+python -m rollup inventory
 ```
 
 ## Digest without Ollama (default)
@@ -141,6 +146,45 @@ python -m rollup digest --ollama --rebuild-summaries --summary-routing-report
 
 Re-run without `--rebuild-summaries` to confirm cache hits in the stats block.
 
+### Effort presets (machine power)
+
+Swap the whole summary ladder and companion defaults in one flag:
+
+```bash
+python -m rollup digest --list-efforts
+python -m rollup digest --ollama --effort light --lookback-days 7
+python -m rollup digest --ollama --effort high --lookback-days 7 --summary-routing-report
+python -m rollup doctor --ollama --effort high --network
+```
+
+`balanced` matches today's built-in defaults. Explicit `--ollama-model` / `--final-review-model` / `--max-chars-for-llm` still win over the preset. Do not combine `--effort` with `--summary-profile-set`.
+
+### XTEINK e-ink output
+
+Write a second, device-optimized digest (short lines, no URLs) beside the normal files via the **xteink** output writer:
+
+```bash
+python -m rollup digest --xteink --lookback-days 7
+python -m rollup digest --output xteink --lookback-days 7
+python -m rollup digest --xteink --ollama --effort high --lookback-days 7
+```
+
+Outputs look like `…-newsletter-digest.xteink.md`. Skipped under `--dry-run`. See [XTEINK_USAGE.md](XTEINK_USAGE.md).
+
+### JSON, TXT, and EPUB outputs
+
+By default these run automatically with every digest. To write only a subset
+(or Markdown/HTML alone):
+
+```bash
+python -m rollup digest --output json --output txt --lookback-days 7
+python -m rollup digest --output none --lookback-days 7
+# EPUB needs: pip install 'rollup[epub]'
+python -m rollup digest --output epub --lookback-days 7
+```
+
+Same run stem as the core digest with `.json` / `.txt` / `.epub` extensions. See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+
 ### Custom profile sets
 
 Export built-in profiles, edit model names to match your local Ollama library, then run:
@@ -155,7 +199,7 @@ Each profile supports Ollama generation fields:
 | Field | Default | Notes |
 |-------|---------|-------|
 | `num_predict` | `2048` | Max generated tokens (`options.num_predict` in the Ollama request) |
-| `think` | `false` | Top-level Ollama `think` flag; keep `false` for Qwen3 summarisation |
+| `think` | `false` | Top-level Ollama `think` flag: `false`/`true` for Qwen3; GPT-OSS needs `"low"`/`"medium"`/`"high"` (booleans are ignored) |
 | `options` | `{}` | Additional Ollama model options (temperature is set separately via `temperature`) |
 
 Example fragment after export — adjust model names and generation settings:
@@ -185,7 +229,7 @@ Example fragment after export — adjust model names and generation settings:
 }
 ```
 
-Do **not** put `think` or `num_predict` inside `options` — Ollama ignores `think` there on `/api/generate`, which causes empty summaries on thinking models.
+Do **not** put `think` or `num_predict` inside `options` — Ollama ignores `think` there on `/api/generate`, which causes empty summaries on thinking models. For GPT-OSS, set `"think": "low"` (not `false`) and keep enough `num_predict` headroom for reasoning + the visible summary.
 
 Inspect loaded profiles:
 
@@ -209,12 +253,31 @@ Incremental checks before a full live digest:
 ```bash
 python -m rollup inventory --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --root tests/fixtures/Newsletters.sbd
-python -m rollup inventory --root ~/email/gmail/Newsletters.sbd
-python -m rollup digest --folder hoops
+# Prefer sticky paths in ~/.config/rollup/config.toml, then:
+python -m rollup inventory
 python -m rollup digest --folder tech
+python -m rollup digest --profile weekly
 python -m rollup digest
-python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
+python -m rollup digest --ollama --folder tech --summary-routing-report
 python -m rollup digest --ollama --summary-routing-report
+```
+
+### Migrate from hardcoded paths
+
+```toml
+# ~/.config/rollup/config.toml
+root = "~/email/gmail/Newsletters.sbd"
+mail_root = "~/email/gmail"
+
+[folders.tech]
+emoji = "💻"
+accent = "#4a7fd4"
+```
+
+```bash
+rollup config print
+rollup doctor
+rollup digest
 ```
 
 Explicit `--no-ollama` is equivalent to omitting both `--ollama` and `--no-ollama`.
@@ -222,7 +285,7 @@ Explicit `--no-ollama` is equivalent to omitting both `--ollama` and `--no-ollam
 Optional gitignored local mail copy:
 
 ```bash
-cp -R ~/email/gmail/Newsletters.sbd ./fixtures/Newsletters.sbd
+cp -R "$HOME/email/gmail/Newsletters.sbd" ./fixtures/Newsletters.sbd
 python -m rollup digest --root ./fixtures/Newsletters.sbd
 ```
 

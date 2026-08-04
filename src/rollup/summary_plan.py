@@ -12,6 +12,7 @@ from rollup.summary_profiles import (
     DisabledSummaryProfileError,
     SummaryProfile,
     SummaryProfileSet,
+    ThinkValue,
     UnknownSummaryProfileError,
     resolve_profile_ollama_options,
 )
@@ -50,7 +51,7 @@ class SummaryJob:
     provider: str
     model: str
     options: dict[str, object]
-    think: bool
+    think: ThinkValue
     temperature: float
     num_ctx: int | None
     timeout_seconds: int | None

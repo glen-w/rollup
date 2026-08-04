@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from rollup import __version__
 from rollup.config import Config
 from rollup.discovery import iter_mbox_files
+from rollup.effort import get_effort_preset, resolve_effort_name
 from rollup.manifest import read_latest_manifest
 from rollup.run_options import RunOptions
 from rollup.safety import SafetyError, assert_safe_write_paths, is_inside, validate_read_root
@@ -272,8 +273,10 @@ def _check_web_index(config: Config) -> list[DoctorCheck]:
             )
         ]
     if md_rel:
-        path = (config.output_dir / md_rel).resolve()
-        if not path.is_file():
+        from rollup.output_archive import resolve_output_artifact
+
+        path = resolve_output_artifact(config.output_dir, md_rel)
+        if path is None:
             return [
                 DoctorCheck(
                     id="web_index",
@@ -351,6 +354,30 @@ def _check_live_mail(config: Config) -> DoctorCheck | None:
     return None
 
 
+def _check_effort_preset(config: Config) -> DoctorCheck:
+    preset = get_effort_preset(resolve_effort_name(config.effort))
+    models = ", ".join(preset.expected_models())
+    return DoctorCheck(
+        id="effort_preset",
+        status="info",
+        message=(
+            f"Effort {preset.name}: ollama_model={preset.ollama_model}, "
+            f"final_review_model={preset.final_review_model}, "
+            f"max_chars_for_llm={preset.max_chars_for_llm}, "
+            f"models=[{models}]"
+        ),
+    )
+
+
+def _model_appears_available(wanted: str, models: list[str]) -> bool:
+    if any(
+        wanted == m or m.startswith(wanted + ":") or wanted.startswith(m.split(":")[0])
+        for m in models
+    ):
+        return True
+    return any(wanted in m for m in models)
+
+
 def _check_ollama_loopback(config: Config, run_options: RunOptions) -> DoctorCheck | None:
     if config.no_ollama:
         return None
@@ -403,35 +430,37 @@ def _check_ollama_network(config: Config) -> list[DoctorCheck]:
                 message=f"Ollama reachable ({len(models)} model(s))",
             )
         )
-        wanted = config.ollama_model
-        if wanted and not any(
-            wanted == m or m.startswith(wanted + ":") or wanted.startswith(m.split(":")[0])
-            for m in models
-        ):
-            # Soft match: exact or prefix.
-            if not any(wanted in m for m in models):
-                checks.append(
-                    DoctorCheck(
-                        id="ollama_models",
-                        status="warn",
-                        message=f"Configured model not listed in /api/tags: {wanted}",
-                        fix=f"ollama pull {wanted}",
-                    )
+        wanted_models = list(
+            get_effort_preset(resolve_effort_name(config.effort)).expected_models()
+        )
+        if config.ollama_model and config.ollama_model not in wanted_models:
+            wanted_models.append(config.ollama_model)
+        if config.final_review_model and config.final_review_model not in wanted_models:
+            wanted_models.append(config.final_review_model)
+
+        missing = [m for m in wanted_models if not _model_appears_available(m, models)]
+        effort_name = resolve_effort_name(config.effort)
+        if missing:
+            checks.append(
+                DoctorCheck(
+                    id="ollama_models",
+                    status="warn",
+                    message=(
+                        f"Effort {effort_name} models missing from /api/tags: "
+                        + ", ".join(missing)
+                    ),
+                    fix="; ".join(f"ollama pull {m}" for m in missing),
                 )
-            else:
-                checks.append(
-                    DoctorCheck(
-                        id="ollama_models",
-                        status="pass",
-                        message=f"Configured model appears available: {wanted}",
-                    )
-                )
+            )
         else:
             checks.append(
                 DoctorCheck(
                     id="ollama_models",
                     status="pass",
-                    message=f"Configured model appears available: {wanted}",
+                    message=(
+                        f"Effort {effort_name} models appear available: "
+                        + ", ".join(wanted_models)
+                    ),
                 )
             )
     except Exception as exc:
@@ -501,6 +530,46 @@ def _check_full_sample(config: Config) -> list[DoctorCheck]:
     return checks
 
 
+def _check_mail_path_discovery(config: Config) -> DoctorCheck:
+    """Advise when defaults are missing and Thunderbird discovery finds candidates."""
+    from rollup.config import DEFAULT_NEWSLETTER_ROOT
+    from rollup.paths import discover_newsletters_sbd
+
+    root = config.root.expanduser()
+    if root.is_dir():
+        return DoctorCheck(
+            id="mail_path_discovery",
+            status="pass",
+            message=f"Newsletter root exists: {root}",
+        )
+
+    candidates = discover_newsletters_sbd()
+    default_root = DEFAULT_NEWSLETTER_ROOT.expanduser()
+    if candidates:
+        listed = ", ".join(str(p) for p in candidates)
+        return DoctorCheck(
+            id="mail_path_discovery",
+            status="warn",
+            message=(
+                f"Newsletter root missing ({root}); "
+                f"Thunderbird candidates: {listed}"
+            ),
+            fix=(
+                "Set root/mail_root in ~/.config/rollup/config.toml "
+                "or pass --root / --mail-root"
+            ),
+        )
+    return DoctorCheck(
+        id="mail_path_discovery",
+        status="fail" if root == default_root or not root.exists() else "warn",
+        message=f"Newsletter root missing and no Newsletters.sbd discovered: {root}",
+        fix=(
+            "Point --root at your Thunderbird Newsletters.sbd, or set root in "
+            "~/.config/rollup/config.toml"
+        ),
+    )
+
+
 def run_doctor(
     config: Config,
     run_options: RunOptions,
@@ -511,8 +580,10 @@ def run_doctor(
     checks: list[DoctorCheck] = [
         _check_python(),
         _check_package(),
+        _check_effort_preset(config),
         _check_path_exists("root_exists", config.root, "Newsletter root"),
         _check_path_exists("mail_root_exists", config.mail_root, "Mail root"),
+        _check_mail_path_discovery(config),
         _check_safe_paths(config),
         _check_writable("output_writable", config.output_dir, "output_dir"),
         _check_writable("state_writable", config.state_dir, "state_dir"),
