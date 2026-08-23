@@ -96,13 +96,26 @@ def _format_group_prompt(group: DigestGroup, *, max_input_chars: int) -> str:
     return f"{base_prompt}\n\nGroup: {group.display_name!r}\nMembers:\n\n{members_text}"
 
 
+def _resolved_group_model(config: Config) -> str:
+    if config.llm_provider == "litellm":
+        return config.llm_model or ""
+    return config.ollama_model
+
+
 def _group_cache_key(group: DigestGroup, config: Config) -> str:
+    model = _resolved_group_model(config)
+    endpoint = (
+        str(config.llm_api_base or "")
+        if config.llm_provider == "litellm"
+        else str(config.ollama_url)
+    )
     parts = [
         GROUPING_VERSION,
         str(GROUP_SUMMARY_PROMPT_VERSION),
+        config.llm_provider,
+        model,
+        endpoint,
         group.group_id,
-        config.ollama_model,
-        str(config.ollama_url),
     ]
     for entry in group.entries:
         parts.append(entry.classified.parsed.message_key)
@@ -148,47 +161,38 @@ def _call_ollama_for_group(
     *,
     stats: dict,
 ) -> tuple[str | None, GroupSummaryErrorCode | None]:
-    """One HTTP attempt. Caller increments ollama_calls before invoking."""
-    import requests
+    """One LLM attempt. Caller increments llm_calls before invoking."""
+    from rollup.llm_client import CompletionRequest, get_llm_client
+    from rollup.stream_result import is_stop_reason_cacheable
 
-    from rollup.ollama_stream import consume_ollama_stream, is_stop_reason_cacheable
-
-    payload = {
-        "model": config.ollama_model,
-        "prompt": prompt,
-        "stream": True,
-        "options": {"temperature": 0.1},
-    }
+    provider = config.llm_provider
+    model = _resolved_group_model(config)
+    client = get_llm_client(
+        provider,
+        ollama_url=config.ollama_url,
+        allow_remote=config.allow_remote_ollama,
+        llm_api_base=config.llm_api_base,
+    )
     started = perf_counter()
     try:
-        resp = requests.post(
-            config.ollama_url,
-            json=payload,
-            timeout=GROUP_SUMMARY_HTTP_TIMEOUT,
-            stream=True,
+        stream_result = client.complete(
+            CompletionRequest(
+                model=model,
+                prompt=prompt,
+                stream=True,
+                timeout_seconds=float(GROUP_SUMMARY_HTTP_TIMEOUT),
+                temperature=0.1,
+            ),
+            max_output_chars=GROUP_SUMMARY_MAX_OUTPUT_CHARS,
+            max_wall_seconds=GROUP_SUMMARY_TIMEOUT_SECONDS,
+            show_progress=False,
         )
-        resp.raise_for_status()
     except Exception as exc:
         if not is_provider_call_error(exc):
             raise
         logger.warning("group_summarize HTTP error: %s", exc)
         stats["stream_failures"] += 1
         return None, "ollama_http_error"
-
-    try:
-        stream_result = consume_ollama_stream(
-            resp,
-            max_output_chars=GROUP_SUMMARY_MAX_OUTPUT_CHARS,
-            max_wall_seconds=GROUP_SUMMARY_TIMEOUT_SECONDS,
-            show_progress=False,
-            started_at=started,
-        )
-    except Exception as exc:
-        if not is_provider_call_error(exc):
-            raise
-        logger.warning("group_summarize stream consumer failed: %s", exc)
-        stats["stream_failures"] += 1
-        return None, "stream_malformed"
 
     if not is_stop_reason_cacheable(stream_result.stop_reason):
         code = _map_stream_stop_to_error(stream_result.stop_reason)
@@ -204,9 +208,8 @@ def _call_ollama_for_group(
     if not text:
         stats["stream_failures"] += 1
         return None, "stream_malformed"
+    _ = started
     return text, None
-
-
 def _get_cached(
     conn: sqlite3.Connection | None,
     cache_key: str,
@@ -371,7 +374,12 @@ def _apply_group_summaries_to_items(
         )
         if summary is not None:
             stats["groups_succeeded"] += 1
-            item = replace(item, group_summary=summary, group_summary_source="ollama")
+            fresh_source = (
+                "litellm" if config.llm_provider == "litellm" else "ollama"
+            )
+            item = replace(
+                item, group_summary=summary, group_summary_source=fresh_source
+            )
         else:
             stats["groups_failed"] += 1
             stats["degraded"] = True

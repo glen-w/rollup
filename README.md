@@ -71,7 +71,7 @@ pip install -e ".[dev]"
 
 No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls**.
 
-Optional entry-level LLM summarisation uses a local Ollama server and requires `--ollama` on the CLI. Final review is separate: `--final-review` can call Ollama for whole-digest QA even when digest summarisation is still in preview mode. The `requests` library ships with Rollup for those paths but is not loaded during default digest runs.
+Optional entry-level LLM summarisation requires `--ollama` on the CLI. By default that uses a local Ollama server; with `pip install 'rollup[llm]'` you can set `--llm-provider litellm` and a LiteLLM model string. Final review (`--final-review`) also requires `--ollama` (LLM enablement) and uses `--final-review-provider` independently. The `requests` library ships with Rollup for the Ollama path but is not loaded during default digest runs.
 
 Optional web UI (requires Flask):
 
@@ -84,9 +84,14 @@ See [docs/WEB.md](docs/WEB.md).
 
 ## Network policy
 
-**Default digest performs no network calls.** Ollama is off unless you pass `--ollama`.
+**Default digest performs no network calls.** LLM summarisation is off unless you pass `--ollama` (enablement flag; not Ollama-only).
 
-When `--ollama` or `--final-review` needs a model, Rollup calls the local Ollama HTTP API on loopback only, unless `--allow-remote-ollama` is explicitly passed.
+When `--ollama` is set, Rollup uses the configured provider (`--llm-provider`, default `ollama`):
+
+- **ollama** — local Ollama HTTP API on loopback only, unless `--allow-remote-ollama` is passed
+- **litellm** — optional `[llm]` extra; credentials come from the environment (never TOML/web). Newsletter text may leave the machine when using non-loopback endpoints
+
+`--no-ollama` and `--dry-run` suppress every LLM call (message summaries, group summaries, final review, availability probes).
 
 Summary-related flags (`--summary-profile`, `--rebuild-summaries`, and similar) are ignored on default runs; Rollup prints a warning if you pass them without `--ollama`.
 

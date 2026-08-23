@@ -12,18 +12,31 @@ from time import perf_counter
 from urllib.parse import urlparse
 
 from rollup.cache_keys import canonicalize_provider_options
-from rollup.models import ClassifiedMessage, DigestEntry
+from rollup.error_sanitize import sanitize_provider_message
+from rollup.llm_client import (
+    CompletionRequest,
+    OllamaError,
+    ProviderAvailabilityCache,
+    check_ollama_available,
+    is_local_ollama,
+    validate_ollama_url,
+)
+from rollup.models import ClassifiedMessage, DigestEntry, SummarySource
 from rollup.models import DigestSummaryAnomalyRow, DigestSummaryMetadata, DigestSummaryRouteStat
 from rollup.ollama_stream import (
     StreamStopReason,
-    consume_ollama_stream,
     is_stop_reason_cacheable,
 )
 from rollup.provider_errors import is_provider_call_error
+from rollup.provider_options import (
+    normalize_litellm_cache_options,
+    normalize_ollama_cache_options,
+)
 from rollup.summary_plan import (
     SummaryExecutionCollector,
     SummaryJob,
     SummaryPlan,
+    SummaryResultStatus,
     timed_result,
 )
 from rollup.summary_profiles import summary_job_options_for_cache
@@ -156,31 +169,6 @@ class SummarizeMessageResult:
     link_count: int
 
 
-class OllamaError(Exception):
-    pass
-
-
-def validate_ollama_url(url: str, allow_remote: bool) -> None:
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise OllamaError(
-            f"Ollama URL scheme {parsed.scheme!r} is not supported; use http or https."
-        )
-    host = parsed.hostname
-    if not host:
-        raise OllamaError("Ollama URL must include a hostname.")
-    if host not in LOCAL_HOSTS and not allow_remote:
-        raise OllamaError(
-            f"Ollama URL host {host!r} is not local. "
-            "Pass --allow-remote-ollama to permit non-loopback endpoints."
-        )
-
-
-def is_local_ollama(url: str) -> bool:
-    host = urlparse(url).hostname or ""
-    return host in LOCAL_HOSTS
-
-
 def _load_prompt(newsletter_type: str) -> str:
     common_path = PROMPTS_DIR / "_common.txt"
     type_path = PROMPTS_DIR / f"{newsletter_type}.txt"
@@ -208,39 +196,6 @@ def build_prompt(
         newsletter_type=classified.newsletter_type,
         body_excerpt=body_excerpt,
     )
-
-
-def _ollama_model_matches(requested: str, available: str) -> bool:
-    if not requested or not available:
-        return False
-    if available == requested:
-        return True
-    if ":" not in requested and available.startswith(f"{requested}:"):
-        return True
-    return False
-
-
-def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
-    """Check Ollama tags endpoint. Returns (ok, message)."""
-    import requests
-
-    parsed = urlparse(base_url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False, "Ollama URL must use http/https with a hostname."
-    tags_url = f"{parsed.scheme}://{parsed.netloc}/api/tags"
-    try:
-        resp = requests.get(tags_url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        models = [m.get("name", "") for m in data.get("models", [])]
-        if not any(_ollama_model_matches(model, m) for m in models):
-            return (
-                False,
-                f"Model {model!r} not found in Ollama. Available: {models[:5]}",
-            )
-        return True, "ok"
-    except Exception as exc:
-        return False, str(exc)
 
 
 def build_ollama_generate_payload(
@@ -280,8 +235,9 @@ def summarize_message(
     num_ctx: int | None = None,
     think: bool | str = False,
     quiet: bool = False,
+    allow_remote: bool = False,
 ) -> SummarizeMessageResult:
-    import requests
+    from rollup.llm_client import OllamaClient
 
     parsed = classified.parsed
     excerpt = parsed.body_text[:max_chars]
@@ -290,68 +246,32 @@ def summarize_message(
     prompt_chars = len(prompt)
     link_count = _link_count(parsed)
     max_output_chars = max_output_chars_for_style(prompt_style)
-    started = perf_counter()
-    use_stream = not quiet
-    payload = build_ollama_generate_payload(
-        model=model,
-        prompt=prompt,
-        stream=use_stream,
-        options=options,
-        temperature=temperature,
-        num_ctx=num_ctx,
-        think=think,
+    num_predict = None
+    if options and "num_predict" in options:
+        num_predict = int(options["num_predict"])  # type: ignore[arg-type]
+    client = OllamaClient(ollama_url=ollama_url, allow_remote=allow_remote)
+    stream_result = client.complete(
+        CompletionRequest(
+            model=model,
+            prompt=prompt,
+            stream=not quiet,
+            timeout_seconds=float(timeout),
+            temperature=temperature,
+            max_tokens=num_predict,
+            num_ctx=num_ctx,
+            think=think,
+            options=options,
+        ),
+        max_output_chars=max_output_chars,
+        max_wall_seconds=float(timeout),
+        show_progress=not quiet,
     )
-    try:
-        resp = requests.post(
-            ollama_url,
-            json=payload,
-            timeout=timeout,
-            stream=use_stream,
-        )
-        resp.raise_for_status()
-    except Exception:
-        raise
-    if use_stream:
-        stream_result = consume_ollama_stream(
-            resp,
-            max_output_chars=max_output_chars,
-            max_wall_seconds=float(timeout),
-            show_progress=not quiet,
-            started_at=started,
-        )
-        text = finalize_summary_output(stream_result.text, prompt_style=prompt_style)
-        return SummarizeMessageResult(
-            text=text,
-            stop_reason=stream_result.stop_reason,
-            output_chars=len(text),
-            elapsed_seconds=stream_result.elapsed_seconds,
-            body_chars=body_chars,
-            prompt_chars=prompt_chars,
-            link_count=link_count,
-        )
-    data = resp.json()
-    if data.get("error"):
-        return SummarizeMessageResult(
-            text="",
-            stop_reason="http_error",
-            output_chars=0,
-            elapsed_seconds=perf_counter() - started,
-            body_chars=body_chars,
-            prompt_chars=prompt_chars,
-            link_count=link_count,
-        )
-    done_reason = str(data.get("done_reason", "") or "")
-    stop_reason: StreamStopReason = (
-        "provider_length" if done_reason == "length" else "done"
-    )
-    text = finalize_summary_output(
-        str(data.get("response", "")), prompt_style=prompt_style
-    )
+    text = finalize_summary_output(stream_result.text, prompt_style=prompt_style)
     return SummarizeMessageResult(
         text=text,
-        stop_reason=stop_reason,
+        stop_reason=stream_result.stop_reason,
         output_chars=len(text),
-        elapsed_seconds=perf_counter() - started,
+        elapsed_seconds=stream_result.elapsed_seconds,
         body_chars=body_chars,
         prompt_chars=prompt_chars,
         link_count=link_count,
@@ -381,16 +301,93 @@ def legacy_cache_compatible(job: SummaryJob) -> bool:
 
 
 class OllamaAvailabilityCache:
-    """Cache Ollama /api/tags availability checks for one execution."""
+    """Backward-compatible Ollama-only availability cache."""
 
-    def __init__(self, base_url: str) -> None:
-        self.base_url = base_url
-        self._results: dict[str, tuple[bool, str]] = {}
+    def __init__(self, base_url: str, *, allow_remote: bool = False) -> None:
+        self._cache = ProviderAvailabilityCache(
+            ollama_url=base_url,
+            allow_remote=allow_remote,
+            llm_api_base=None,
+        )
 
     def check(self, model: str) -> tuple[bool, str]:
-        if model not in self._results:
-            self._results[model] = check_ollama_available(self.base_url, model)
-        return self._results[model]
+        return self._cache.check("ollama", model)
+
+
+def _fresh_result_status(provider: str) -> SummaryResultStatus:
+    return "litellm" if provider == "litellm" else "ollama"
+
+
+def _fresh_summary_source(provider: str) -> SummarySource:
+    return "litellm" if provider == "litellm" else "ollama"
+
+
+def _cache_options_for_job(
+    job: SummaryJob,
+    *,
+    llm_api_base: str | None,
+) -> dict[str, object]:
+    if job.provider == "litellm":
+        max_tokens = None
+        if job.options and "num_predict" in job.options:
+            max_tokens = int(job.options["num_predict"])  # type: ignore[arg-type]
+        return normalize_litellm_cache_options(
+            temperature=job.temperature,
+            max_tokens=max_tokens,
+            timeout_seconds=job.timeout_seconds,
+            api_base=llm_api_base,
+        )
+    return summary_job_options_for_cache(job.options, think=job.think)
+
+
+def _max_tokens_from_job(job: SummaryJob) -> int | None:
+    if job.options and "num_predict" in job.options:
+        return int(job.options["num_predict"])  # type: ignore[arg-type]
+    return None
+
+
+def _complete_summary_job(
+    classified: ClassifiedMessage,
+    job: SummaryJob,
+    *,
+    availability: ProviderAvailabilityCache,
+    max_chars: int,
+    quiet: bool,
+) -> SummarizeMessageResult:
+    parsed = classified.parsed
+    excerpt = parsed.body_text[:max_chars]
+    prompt = build_prompt(classified, excerpt, prompt_style=job.prompt_style)
+    body_chars = len(excerpt)
+    prompt_chars = len(prompt)
+    link_count = _link_count(parsed)
+    max_output_chars = max_output_chars_for_style(job.prompt_style)
+    client = availability.get_client(job.provider)
+    stream_result = client.complete(
+        CompletionRequest(
+            model=job.model,
+            prompt=prompt,
+            stream=not quiet,
+            timeout_seconds=float(job.timeout_seconds or 120),
+            temperature=job.temperature,
+            max_tokens=_max_tokens_from_job(job),
+            num_ctx=job.num_ctx if job.provider == "ollama" else None,
+            think=job.think if job.provider == "ollama" else False,
+            options=job.options if job.provider == "ollama" else None,
+        ),
+        max_output_chars=max_output_chars,
+        max_wall_seconds=float(job.timeout_seconds or 120),
+        show_progress=not quiet,
+    )
+    text = finalize_summary_output(stream_result.text, prompt_style=job.prompt_style)
+    return SummarizeMessageResult(
+        text=text,
+        stop_reason=stream_result.stop_reason,
+        output_chars=len(text),
+        elapsed_seconds=stream_result.elapsed_seconds,
+        body_chars=body_chars,
+        prompt_chars=prompt_chars,
+        link_count=link_count,
+    )
 
 
 def build_summary_cache_key_parts(
@@ -555,16 +552,21 @@ def execute_summary_plan(
     conn=None,
     rebuild: bool = False,
     quiet: bool = False,
+    llm_api_base: str | None = None,
 ) -> SummaryExecutionOutput:
     """Execute a summary plan without re-running parse/classify/filter."""
     validate_ollama_url(ollama_url, allow_remote)
     target = "local" if is_local_ollama(ollama_url) else "remote"
-    logger.info("Ollama summarisation target: %s", target)
+    logger.info("LLM summarisation target (Ollama transport): %s", target)
 
     entries_by_key = {entry.classified.parsed.message_key: entry for entry in entries}
     rendered_by_variant: dict[str, list[DigestEntry]] = {}
     metadata_by_variant: dict[str, DigestSummaryMetadata] = {}
-    availability = OllamaAvailabilityCache(ollama_url)
+    availability = ProviderAvailabilityCache(
+        ollama_url=ollama_url,
+        allow_remote=allow_remote,
+        llm_api_base=llm_api_base,
+    )
     for variant_name in plan.output_variants:
         jobs = list(plan.jobs_by_variant.get(variant_name, ()))
         collector = SummaryExecutionCollector()
@@ -625,8 +627,8 @@ def execute_summary_plan(
                         get_cached_summary_generation,
                     )
 
-                    cache_options = summary_job_options_for_cache(
-                        job.options, think=job.think
+                    cache_options = _cache_options_for_job(
+                        job, llm_api_base=llm_api_base
                     )
                     cached = get_cached_summary_generation(
                         conn,
@@ -727,9 +729,17 @@ def execute_summary_plan(
                             continue
                 except Exception as exc:
                     logger.warning("Cache read failed for %s: %s", parsed.subject, exc)
-            ok, msg = availability.check(model)
+            ok, msg = availability.check(job.provider, model)
             if not ok:
-                error_message = f"Model unavailable for profile {job.profile_name!r}: {msg}. Try: ollama pull {model}"
+                hint = (
+                    f"Try: ollama pull {model}"
+                    if job.provider == "ollama"
+                    else "check LiteLLM credentials and model string"
+                )
+                error_message = (
+                    f"Model unavailable for profile {job.profile_name!r} "
+                    f"({job.provider}): {msg}. {hint}"
+                )
                 logger.warning("%s", error_message)
                 fallback = _fallback_entry(entry)
                 rendered_entries.append(fallback)
@@ -756,11 +766,12 @@ def execute_summary_plan(
                 )
                 continue
             logger.info(
-                "Ollama [%d/%d] summarising: %r (model=%s, profile=%s, "
+                "LLM [%d/%d] summarising: %r (provider=%s model=%s, profile=%s, "
                 "body_chars=%d, prompt_chars=%d, link_count=%d)",
                 job_index,
                 total_jobs,
                 parsed.subject,
+                job.provider,
                 model,
                 job.profile_name,
                 body_chars,
@@ -768,23 +779,36 @@ def execute_summary_plan(
                 link_count,
             )
             try:
-                generation = summarize_message(
+                generation = _complete_summary_job(
                     classified,
-                    ollama_url,
-                    model,
-                    max_chars,
-                    timeout=job.timeout_seconds or 120,
-                    prompt_style=job.prompt_style,
-                    options=job.options,
-                    temperature=job.temperature,
-                    num_ctx=job.num_ctx,
-                    think=job.think,
+                    SummaryJob(
+                        message_key=job.message_key,
+                        content_hash=job.content_hash,
+                        canonical_newsletter_type=job.canonical_newsletter_type,
+                        summary_input_hash=job.summary_input_hash,
+                        profile_name=job.profile_name,
+                        prompt_style=job.prompt_style,
+                        provider=job.provider,
+                        model=model,
+                        options=job.options,
+                        think=job.think,
+                        temperature=job.temperature,
+                        num_ctx=job.num_ctx,
+                        timeout_seconds=job.timeout_seconds,
+                        variant_name=job.variant_name,
+                    ),
+                    availability=availability,
+                    max_chars=max_chars,
                     quiet=quiet,
                 )
             except Exception as exc:
                 if not is_provider_call_error(exc):
                     raise
-                logger.warning("Summary failed for %s: %s", parsed.subject, exc)
+                logger.warning(
+                    "Summary failed for %s: %s",
+                    parsed.subject,
+                    sanitize_provider_message(str(exc)),
+                )
                 fallback = _fallback_entry(entry)
                 rendered_entries.append(fallback)
                 collector.record(
@@ -866,8 +890,8 @@ def execute_summary_plan(
                         prompt_version=PROMPT_VERSION,
                         temperature=job.temperature,
                         num_ctx=job.num_ctx,
-                        options=summary_job_options_for_cache(
-                            job.options, think=job.think
+                        options=_cache_options_for_job(
+                            job, llm_api_base=llm_api_base
                         ),
                         summary_input_hash=summary_input_hash,
                         summary=summary,
@@ -877,9 +901,13 @@ def execute_summary_plan(
                     logger.warning(
                         "Failed to cache summary for %s: %s", parsed.subject, exc
                     )
+            fresh_status = _fresh_result_status(job.provider)
+            fresh_source = _fresh_summary_source(job.provider)
             rendered_entries.append(
                 DigestEntry(
-                    classified=classified, summary=summary, summary_source="ollama"
+                    classified=classified,
+                    summary=summary,
+                    summary_source=fresh_source,
                 )
             )
             collector.record(
@@ -892,7 +920,7 @@ def execute_summary_plan(
                     provider=job.provider,
                     model=model,
                     prompt_style=job.prompt_style,
-                    status="ollama",
+                    status=fresh_status,
                     summary_text=summary,
                     error_message=None,
                     input_char_count=input_char_count,
@@ -910,6 +938,7 @@ def execute_summary_plan(
             profiles_used=report.profiles_used,
             models_used=report.models_used,
             summaries_ollama=report.summaries_ollama,
+            summaries_litellm=report.summaries_litellm,
             summaries_cache=report.summaries_cache,
             summaries_fallback=report.summaries_fallback,
             summaries_errors=report.summaries_errors,
@@ -919,6 +948,7 @@ def execute_summary_plan(
                 DigestSummaryRouteStat(
                     newsletter_type=row.newsletter_type,
                     profile_name=row.profile_name,
+                    provider=row.provider,
                     model=row.model,
                     count=row.count,
                 )

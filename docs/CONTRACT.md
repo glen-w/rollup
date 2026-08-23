@@ -9,7 +9,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders.
 | Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
 | Window & folders | Rollup run profile / CLI / TOML | Which calendar days and which folders enter the digest |
 | Noisy senders | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface |
-| Summaries | Optional local Ollama + `--effort` | Preview excerpts by default; LLM only with `--ollama` |
+| Summaries | Optional local Ollama or LiteLLM via `--ollama` + `--effort` | Preview excerpts by default; LLM only with `--ollama` |
 
 ## Non-goals (for now)
 

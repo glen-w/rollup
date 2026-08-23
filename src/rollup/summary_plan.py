@@ -15,13 +15,14 @@ from rollup.summary_profiles import (
     ThinkValue,
     UnknownSummaryProfileError,
     resolve_profile_ollama_options,
+    resolve_profile_transport_options,
 )
 
 SummaryRoutingMode = Literal[
     "fallback_no_llm", "single_profile", "type_routed", "variants"
 ]
 SummaryResultStatus = Literal[
-    "cache", "legacy_cache", "ollama", "fallback", "error", "skipped"
+    "cache", "legacy_cache", "ollama", "litellm", "fallback", "error", "skipped"
 ]
 
 
@@ -118,6 +119,7 @@ class SummaryPerformanceRow:
 class SummaryRoutingCount:
     newsletter_type: str
     profile_name: str
+    provider: str
     model: str
     count: int
 
@@ -136,6 +138,7 @@ class SummaryExecutionReport:
     routing_counts: tuple[SummaryRoutingCount, ...]
     performance_rows: tuple[SummaryPerformanceRow, ...] = ()
     anomaly_rows: tuple[SummaryAnomalyRow, ...] = ()
+    summaries_litellm: int = 0
 
 
 @dataclass
@@ -167,9 +170,14 @@ class SummaryExecutionCollector:
             {result.profile_name for result in self.results if result.profile_name}
         )
         models_used = sorted({result.model for result in self.results if result.model})
-        routing: dict[tuple[str, str, str], int] = {}
+        routing: dict[tuple[str, str, str, str], int] = {}
         for result in self.results:
-            key = (result.newsletter_type, result.profile_name, result.model)
+            key = (
+                result.newsletter_type,
+                result.profile_name,
+                result.provider,
+                result.model,
+            )
             routing[key] = routing.get(key, 0) + 1
         return SummaryExecutionReport(
             mode=plan.mode,
@@ -179,6 +187,9 @@ class SummaryExecutionCollector:
             models_used=tuple(models_used),
             summaries_ollama=sum(
                 1 for result in self.results if result.status == "ollama"
+            ),
+            summaries_litellm=sum(
+                1 for result in self.results if result.status == "litellm"
             ),
             summaries_cache=sum(
                 1
@@ -195,10 +206,11 @@ class SummaryExecutionCollector:
                 SummaryRoutingCount(
                     newsletter_type=newsletter_type,
                     profile_name=profile_name,
+                    provider=provider,
                     model=model,
                     count=count,
                 )
-                for (newsletter_type, profile_name, model), count in sorted(
+                for (newsletter_type, profile_name, provider, model), count in sorted(
                     routing.items()
                 )
             ),
@@ -267,7 +279,7 @@ def _build_job(
         prompt_style=profile.prompt_style,
         provider=profile.provider,
         model=profile.model,
-        options=resolve_profile_ollama_options(profile),
+        options=resolve_profile_transport_options(profile),
         think=profile.think,
         temperature=profile.temperature,
         num_ctx=profile.num_ctx,

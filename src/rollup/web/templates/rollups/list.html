@@ -22,7 +22,7 @@
             <li>Sources: {{ r.sources_included if r.sources_included is not none else "—" }}</li>
             <li>Groups: {{ r.groups_created if r.groups_created is not none else "—" }}</li>
             <li>Skipped: {{ r.skipped if r.skipped is not none else "—" }}</li>
-            <li>AI / cache: {{ r.summaries_ollama if r.summaries_ollama is not none else "—" }} / {{ r.summaries_cache if r.summaries_cache is not none else "—" }}</li>
+            <li>AI / cache: {{ r.summaries_ollama if r.summaries_ollama is not none else "—" }}{% if r.summaries_litellm %} · LiteLLM {{ r.summaries_litellm }}{% endif %} / {{ r.summaries_cache if r.summaries_cache is not none else "—" }}</li>
             {% if r.entry_index_version == 0 %}<li>Metadata only</li>{% endif %}
           </ul>
         </div>

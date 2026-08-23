@@ -375,7 +375,18 @@ def test_epub_builds_zip_with_chapters_without_links(tmp_path: Path) -> None:
         assert any(n.endswith("book.css") or "style/" in n for n in names)
         assert any("cover" in n for n in names)
         assert any("folder-" in n for n in names)
-        assert any(LOGO in n for n in names for LOGO in ("rollup_logo", "images/"))
+        assert any("rollup_cover_epub" in n or "images/" in n for n in names)
+        opf_names = [n for n in names if n.endswith(".opf")]
+        assert opf_names
+        opf = zf.read(opf_names[0]).decode("utf-8")
+        assert 'properties="cover-image"' in opf
+        assert 'name="cover"' in opf and 'content="cover-img"' in opf
+        assert "rollup_cover_epub.png" in opf
+        assert 'type="cover"' in opf and "cover.xhtml" in opf
+        cover_xhtml = next(n for n in names if n.endswith("cover.xhtml"))
+        cover_html = zf.read(cover_xhtml).decode("utf-8")
+        assert "rollup_cover_epub.png" in cover_html
+        assert "Week of" in cover_html
         folder_files = [n for n in names if "folder-" in n and n.endswith(".xhtml")]
         assert folder_files
         content = zf.read(folder_files[0]).decode("utf-8")

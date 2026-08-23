@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-FINAL_REVIEW_PROVIDERS = frozenset({"ollama"})
+FINAL_REVIEW_PROVIDERS = frozenset({"ollama", "litellm"})
 FINAL_REVIEW_PROMPT_STYLES = frozenset({"strict", "concise", "editorial"})
 FINAL_REVIEW_MAX_OUTPUT_CHARS = 16_000
 FINAL_REVIEW_DEFAULT_NUM_CTX = 32_768

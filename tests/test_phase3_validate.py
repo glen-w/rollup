@@ -47,7 +47,7 @@ def _config(**kwargs) -> Config:
 
 
 def test_group_summaries_requires_ollama() -> None:
-    with pytest.raises(FinalReviewConfigError, match="requires Ollama"):
+    with pytest.raises(FinalReviewConfigError, match="requires LLM summarisation"):
         validate_phase3_runtime_config(
             _config(group_summaries_enabled=True, no_ollama=True),
             grouping=GroupingConfig(enabled=True),

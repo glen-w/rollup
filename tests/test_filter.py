@@ -100,7 +100,7 @@ def test_dated_not_seen_suppressed() -> None:
             parsed, _, _ = parse_mbox_folder(folder, 200_000, 8)
             msgs.extend(parsed)
     dated, undated, skipped, deduped = build_digest_entries(
-        msgs, now, 7, no_ollama=True
+        msgs, now, 3650, no_ollama=True
     )
     assert len(dated) >= 1
 

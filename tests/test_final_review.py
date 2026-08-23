@@ -445,13 +445,10 @@ def test_fr_cache_isolation_dimensions(tmp_path: Path, override) -> None:
     conn.close()
 
 
-@patch("rollup.ollama_stream.consume_ollama_stream")
-@patch("requests.post")
+@patch("rollup.llm_client.OllamaClient.complete")
 def test_final_review_uses_shared_stream_with_own_caps(
-    mock_post, mock_consume
+    mock_complete,
 ) -> None:
-    from unittest.mock import MagicMock
-
     from rollup.final_review import call_final_review_model
     from rollup.final_review_profiles import (
         FINAL_REVIEW_MAX_OUTPUT_CHARS,
@@ -459,8 +456,7 @@ def test_final_review_uses_shared_stream_with_own_caps(
     )
     from rollup.ollama_stream import StreamResult
 
-    mock_post.return_value.raise_for_status = MagicMock()
-    mock_consume.return_value = StreamResult(
+    mock_complete.return_value = StreamResult(
         text='{"overall_status":"pass"}',
         stop_reason="done",
         output_chars=24,
@@ -470,16 +466,19 @@ def test_final_review_uses_shared_stream_with_own_caps(
     profile = resolve_final_review_profile("strict")
     result = call_final_review_model(
         "review prompt",
+        provider="ollama",
         ollama_url="http://localhost:11434/api/generate",
+        allow_remote=False,
+        llm_api_base=None,
         profile=profile,
         quiet=False,
     )
     assert result == '{"overall_status":"pass"}'
-    mock_consume.assert_called_once()
+    mock_complete.assert_called_once()
     assert (
-        mock_consume.call_args.kwargs["max_output_chars"]
+        mock_complete.call_args.kwargs["max_output_chars"]
         == FINAL_REVIEW_MAX_OUTPUT_CHARS
     )
-    assert mock_consume.call_args.kwargs["max_wall_seconds"] == float(
+    assert mock_complete.call_args.kwargs["max_wall_seconds"] == float(
         profile.timeout_seconds
     )

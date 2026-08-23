@@ -150,8 +150,8 @@ def test_malformed_cached_payload_error_source() -> None:
 
 def test_provider_type_error_hard_fails_smoke(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "rollup.final_review.OllamaAvailabilityCache.check",
-        lambda self, model: (True, "ok"),
+        "rollup.llm_client.ProviderAvailabilityCache.check",
+        lambda self, provider, model: (True, "ok"),
     )
     monkeypatch.setattr(
         "rollup.final_review.call_final_review_model",

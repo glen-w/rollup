@@ -296,6 +296,7 @@ def render_stats_block(stats: DigestStats) -> str:
         f"Deduped messages: {stats.deduped_messages}\n"
         f"Parse errors: {stats.parse_errors}\n"
         f"Summaries: Ollama {stats.summaries_ollama} · "
+        f"LiteLLM {stats.summaries_litellm} · "
         f"cache {stats.summaries_cache} · fallback {stats.summaries_fallback} · "
         f"errors {stats.summaries_errors}"
     )
@@ -311,7 +312,7 @@ def _render_summary_metadata_md(report: DigestReport) -> list[str]:
             "",
             f"- **Profile:** {metadata.variant_name}",
             f"- **Models used:** {', '.join(metadata.models_used) or 'none'}",
-            f"- **Summaries:** Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
+            f"- **Summaries:** Ollama {metadata.summaries_ollama} · LiteLLM {metadata.summaries_litellm} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
             "",
         ]
     else:
@@ -321,7 +322,7 @@ def _render_summary_metadata_md(report: DigestReport) -> list[str]:
             f"- **Mode:** {metadata.mode}",
             f"- **Profiles used:** {', '.join(metadata.profiles_used) or 'none'}",
             f"- **Models used:** {', '.join(metadata.models_used) or 'none'}",
-            f"- **Summaries:** Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
+            f"- **Summaries:** Ollama {metadata.summaries_ollama} · LiteLLM {metadata.summaries_litellm} · cache {metadata.summaries_cache} · fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}",
             "",
         ]
     if metadata.routing_counts:
@@ -356,7 +357,7 @@ def _render_summary_metadata_html(report: DigestReport) -> str:
     )
     items.append(
         "<li><strong>Summaries:</strong> "
-        f"Ollama {metadata.summaries_ollama} · cache {metadata.summaries_cache} · "
+        f"Ollama {metadata.summaries_ollama} · LiteLLM {metadata.summaries_litellm} · cache {metadata.summaries_cache} · "
         f"fallback {metadata.summaries_fallback} · errors {metadata.summaries_errors}</li>"
     )
     table = ""

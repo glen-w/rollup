@@ -38,7 +38,7 @@ def test_stops_at_wall_timeout() -> None:
         [json.dumps({"response": "x", "done": False})] * 100
     )
     times = iter([0.0, 0.0, 3.0])
-    with patch("rollup.ollama_stream.monotonic", side_effect=lambda: next(times)):
+    with patch("rollup.llm_client.monotonic", side_effect=lambda: next(times)):
         result = consume_ollama_stream(
             resp,
             max_output_chars=10_000,
@@ -108,7 +108,7 @@ def test_progress_throttled_by_chars_and_time(capsys) -> None:
         {"response": "", "done": True, "eval_count": 1},
     )
     tick = iter([0.0] + [float(i) for i in range(1, 2000)])
-    with patch("rollup.ollama_stream.monotonic", side_effect=lambda: next(tick)):
+    with patch("rollup.llm_client.monotonic", side_effect=lambda: next(tick)):
         consume_ollama_stream(
             resp,
             max_output_chars=10_000,
@@ -134,7 +134,7 @@ def test_progress_completion_clears_generating_line(capsys) -> None:
         {"response": "", "done": True, "eval_count": 90},
     )
     tick = iter([0.0] + [float(i) for i in range(1, 2000)])
-    with patch("rollup.ollama_stream.monotonic", side_effect=lambda: next(tick)):
+    with patch("rollup.llm_client.monotonic", side_effect=lambda: next(tick)):
         consume_ollama_stream(
             resp,
             max_output_chars=10_000,

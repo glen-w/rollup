@@ -398,9 +398,45 @@ def _check_ollama_loopback(config: Config, run_options: RunOptions) -> DoctorChe
     )
 
 
+def _check_litellm_config(config: Config) -> DoctorCheck | None:
+    """Import/config readiness only — never issues a completion."""
+    if config.no_ollama:
+        return None
+    uses_litellm = config.llm_provider == "litellm" or (
+        config.final_review_enabled and config.final_review_provider == "litellm"
+    )
+    if not uses_litellm:
+        return None
+    try:
+        import litellm  # noqa: F401
+    except ImportError:
+        return DoctorCheck(
+            id="litellm_extra",
+            status="fail",
+            message="LiteLLM is not installed",
+            fix="pip install 'rollup[llm]'",
+        )
+    model = config.llm_model or config.final_review_model
+    msg = "LiteLLM extra installed; credentials appear configured / could not verify locally"
+    if model:
+        msg = f"{msg} (model={model})"
+    return DoctorCheck(
+        id="litellm_config",
+        status="pass",
+        message=msg,
+    )
+
+
 def _check_ollama_network(config: Config) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     if config.no_ollama:
+        return checks
+    # Skip Ollama tags probe when the effective default provider is LiteLLM-only
+    # and final review is also not on Ollama.
+    ollama_needed = config.llm_provider == "ollama" or (
+        config.final_review_enabled and config.final_review_provider == "ollama"
+    )
+    if not ollama_needed:
         return checks
     try:
         import requests
@@ -606,6 +642,10 @@ def run_doctor(
     loopback = _check_ollama_loopback(config, run_options)
     if loopback:
         checks.append(loopback)
+
+    litellm_check = _check_litellm_config(config)
+    if litellm_check:
+        checks.append(litellm_check)
 
     do_network = network or (not config.no_ollama)
     if do_network:

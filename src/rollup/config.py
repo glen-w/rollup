@@ -24,6 +24,7 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 DEFAULT_FINAL_REVIEW_PROFILE = "strict"
 DEFAULT_FINAL_REVIEW_PROVIDER = "ollama"
+DEFAULT_LLM_PROVIDER = "ollama"
 DEFAULT_FINAL_REVIEW_MODE = "report"
 DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO = 0.08
 DEFAULT_EFFORT = "balanced"
@@ -82,10 +83,18 @@ class Config:
     run_profile: str | None = None
     list_profiles: bool = False
     folder_themes: dict[str, FolderThemeOverride] = field(default_factory=dict)
+    llm_provider: str = DEFAULT_LLM_PROVIDER
+    llm_model: str | None = None
+    llm_api_base: str | None = None
 
     @property
     def db_path(self) -> Path:
         return self.state_dir / "rollup.db"
+
+    @property
+    def llm_enabled(self) -> bool:
+        """True when LLM summarisation/review is enabled (--ollama / sticky ollama)."""
+        return not self.no_ollama
 
 
 def compute_date_window(

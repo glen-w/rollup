@@ -179,6 +179,10 @@ class AggregatedResults:
     hard_failure_reason: str | None = None
     final_review_failed: bool = False
     ollama_enabled: bool = False
+
+    @property
+    def llm_enabled(self) -> bool:
+        return self.ollama_enabled
     publication_failed: bool = False
     seen_state_failed: bool = False
     seen_state_updated: bool = False
@@ -261,11 +265,12 @@ def derive_run_status(
         elif fatals > policy.parse_fatal_absolute:
             return "partial"
 
-    if aggregated.ollama_enabled and aggregated.summarize:
+    if aggregated.llm_enabled and aggregated.summarize:
         meta = aggregated.summarize.summary_metadata
         if meta is not None:
             total = (
                 meta.summaries_ollama
+                + meta.summaries_litellm
                 + meta.summaries_cache
                 + meta.summaries_fallback
                 + meta.summaries_errors
@@ -582,6 +587,12 @@ def stage_summarize(
     )
     for msg in plan_warnings:
         logger.warning("%s", msg)
+    from rollup.llm_validate import LlmJobValidationError, validate_executable_llm_jobs
+
+    try:
+        validate_executable_llm_jobs(config, plan)
+    except LlmJobValidationError as exc:
+        raise RuntimeError(str(exc)) from exc
     execution = execute_summary_plan(
         entries=all_entries,
         plan=plan,
@@ -592,6 +603,7 @@ def stage_summarize(
         conn=conn,
         rebuild=config.rebuild_summaries,
         quiet=quiet,
+        llm_api_base=config.llm_api_base,
     )
     dated_count = len(dated_entries)
     rendered_variants: dict[str, tuple[list[DigestEntry], list[DigestEntry]]] = {}
@@ -806,22 +818,17 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             )
         return _failure_result(session)
 
-    if effective_run.allow_summary_network:
+    if effective_run.allow_summary_network or effective_run.allow_final_review_network:
+        from rollup.llm_client import validate_llm_api_base
+        from rollup.llm_validate import LlmJobValidationError, validate_executable_llm_jobs
         from rollup.summarize import OllamaError, validate_ollama_url
 
         try:
-            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-        except OllamaError as exc:
-            aggregated.hard_failure = True
-            session.error_message = str(exc)
-            raise
-
-    if effective_run.allow_final_review_network:
-        from rollup.summarize import OllamaError, validate_ollama_url
-
-        try:
-            validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-        except OllamaError as exc:
+            validate_llm_api_base(config.llm_api_base)
+            if effective_run.allow_summary_network:
+                validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+            validate_executable_llm_jobs(config, None)
+        except (OllamaError, LlmJobValidationError) as exc:
             aggregated.hard_failure = True
             session.error_message = str(exc)
             raise
@@ -915,7 +922,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     all_rendered = list(summarize_result.dated_entries) + list(
         summarize_result.undated_entries
     )
-    ollama_c, cache_c, fallback_c = count_summary_sources(all_rendered)
+    ollama_c, litellm_c, cache_c, fallback_c = count_summary_sources(all_rendered)
     meta = summarize_result.summary_metadata
     session.stats = DigestStats(
         folders_scanned=len(discovery.folders),
@@ -927,6 +934,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         deduped_messages=filter_result.counts.deduped_messages,
         parse_errors=parse_result.counts.parse_fatal_errors,
         summaries_ollama=ollama_c,
+        summaries_litellm=litellm_c,
         summaries_cache=cache_c,
         summaries_fallback=fallback_c,
         summaries_errors=meta.summaries_errors if meta else 0,
@@ -1405,7 +1413,7 @@ def run_digest(
     )
     ctx = RunContext.create(mode=run_options.mode, clock=clock)
     generated_at = ctx.run_start_time
-    aggregated = AggregatedResults(ollama_enabled=not config.no_ollama)
+    aggregated = AggregatedResults(ollama_enabled=config.llm_enabled)
     window_start, window_end = compute_date_window(
         generated_at, config.lookback_days
     )

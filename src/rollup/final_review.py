@@ -32,7 +32,7 @@ from rollup.models import (
     FinalReviewSource,
     FinalReviewStatus,
 )
-from rollup.summarize import OllamaAvailabilityCache, validate_ollama_url
+from rollup.llm_client import ProviderAvailabilityCache, validate_ollama_url
 
 logger = logging.getLogger(__name__)
 
@@ -551,44 +551,42 @@ def parse_final_review_response(
 def call_final_review_model(
     prompt: str,
     *,
+    provider: str,
     ollama_url: str,
+    allow_remote: bool,
+    llm_api_base: str | None,
     profile: FinalReviewProfile,
     quiet: bool = False,
 ) -> str:
-    import requests
-
     from rollup.final_review_profiles import FINAL_REVIEW_MAX_OUTPUT_CHARS
-    from rollup.ollama_stream import consume_ollama_stream
+    from rollup.llm_client import CompletionRequest, get_llm_client
 
-    payload_options = dict(profile.options)
-    payload_options.setdefault("temperature", profile.temperature)
-    if profile.num_ctx is not None:
-        payload_options.setdefault("num_ctx", profile.num_ctx)
-    use_stream = not quiet
-    resp = requests.post(
-        ollama_url,
-        json={
-            "model": profile.model,
-            "prompt": prompt,
-            "stream": use_stream,
-            "options": payload_options,
-        },
-        timeout=profile.timeout_seconds,
-        stream=use_stream,
+    client = get_llm_client(
+        provider,
+        ollama_url=ollama_url,
+        allow_remote=allow_remote,
+        llm_api_base=llm_api_base,
     )
-    resp.raise_for_status()
-    if use_stream:
-        stream_result = consume_ollama_stream(
-            resp,
-            max_output_chars=FINAL_REVIEW_MAX_OUTPUT_CHARS,
-            max_wall_seconds=float(profile.timeout_seconds),
-            show_progress=not quiet,
-        )
-        return stream_result.text.strip()
-    data = resp.json()
-    if data.get("error"):
-        return ""
-    return str(data.get("response", "")).strip()
+    max_tokens = None
+    if profile.options and "num_predict" in profile.options:
+        max_tokens = int(profile.options["num_predict"])  # type: ignore[arg-type]
+    stream_result = client.complete(
+        CompletionRequest(
+            model=profile.model,
+            prompt=prompt,
+            stream=not quiet,
+            timeout_seconds=float(profile.timeout_seconds),
+            temperature=profile.temperature,
+            max_tokens=max_tokens,
+            num_ctx=profile.num_ctx if provider == "ollama" else None,
+            options=profile.options if provider == "ollama" else None,
+            response_format_json=True,
+        ),
+        max_output_chars=FINAL_REVIEW_MAX_OUTPUT_CHARS,
+        max_wall_seconds=float(profile.timeout_seconds),
+        show_progress=not quiet,
+    )
+    return stream_result.text.strip()
 
 
 def _result_from_dict(data: dict) -> FinalReviewResult:
@@ -729,6 +727,7 @@ def execute_final_review(
             review_input_hash=review_input_hash,
         )
 
+    provider = config.final_review_provider
     if not config.rebuild_final_review and conn is not None:
         from rollup.state import get_final_review_generation
 
@@ -736,7 +735,7 @@ def execute_final_review(
             conn,
             digest_fingerprint=digest_fingerprint,
             review_input_hash=review_input_hash,
-            provider=profile.provider,
+            provider=provider,
             profile_name=profile.name,
             model=profile.model,
             prompt_version=prompt_version,
@@ -756,12 +755,17 @@ def execute_final_review(
             )
             return replace(cached_result, review_mode=mode)
 
-    validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
-    availability = OllamaAvailabilityCache(config.ollama_url)
-    ok, message = availability.check(profile.model)
+    if provider == "ollama":
+        validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
+    availability = ProviderAvailabilityCache(
+        ollama_url=config.ollama_url,
+        allow_remote=config.allow_remote_ollama,
+        llm_api_base=config.llm_api_base,
+    )
+    ok, message = availability.check(provider, profile.model)
     if not ok:
         return _error_result(
-            message=f"Ollama model unavailable: {message}",
+            message=f"LLM model unavailable ({provider}): {message}",
             profile_name=profile.name,
             model=profile.model,
             generated_at=generated_at,
@@ -772,7 +776,10 @@ def execute_final_review(
     try:
         raw = call_final_review_model(
             prompt,
+            provider=provider,
             ollama_url=config.ollama_url,
+            allow_remote=config.allow_remote_ollama,
+            llm_api_base=config.llm_api_base,
             profile=profile,
             quiet=quiet,
         )
@@ -789,6 +796,9 @@ def execute_final_review(
             review_input_hash=review_input_hash,
         )
 
+    fresh_source: FinalReviewSource = (
+        "litellm" if provider == "litellm" else "ollama"
+    )
     result = parse_final_review_response(
         raw,
         profile_name=profile.name,
@@ -796,7 +806,7 @@ def execute_final_review(
         generated_at=generated_at,
         digest_fingerprint=digest_fingerprint,
         review_input_hash=review_input_hash,
-        review_source="ollama",
+        review_source=fresh_source,
         prompt_chars=len(prompt),
         num_ctx=profile.num_ctx,
     )

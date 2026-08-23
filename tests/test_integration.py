@@ -10,6 +10,8 @@ import pytest
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "Newsletters.sbd"
 PROJECT_ROOT = Path(__file__).parent.parent
+# Fixture mail is dated early Aug 2026; keep a wide window so tests stay green as "today" moves.
+FIXTURE_LOOKBACK = ("--lookback-days", "3650")
 
 
 def _mock_summarize_message(classified, *args, **kwargs):
@@ -30,8 +32,11 @@ def _mock_summarize_message(classified, *args, **kwargs):
 def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     # Isolate from the developer's ~/.config/rollup/config.toml and cwd rollup.toml.
     empty = Path(__file__).parent / "fixtures" / "empty_config.toml"
+    argv = list(args)
+    if argv and argv[0] == "digest" and "--lookback-days" not in argv:
+        argv = [argv[0], *FIXTURE_LOOKBACK, *argv[1:]]
     return subprocess.run(
-        [sys.executable, "-m", "rollup", "--config", str(empty), *args],
+        [sys.executable, "-m", "rollup", "--config", str(empty), *argv],
         cwd=cwd or PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -541,6 +546,7 @@ def _digest_args(tmp_path: Path, *extra: str) -> list[str]:
         "digest",
         "--root",
         str(FIXTURE_ROOT),
+        *FIXTURE_LOOKBACK,
         *extra,
         "--output-dir",
         str(tmp_path / "output"),
@@ -555,9 +561,10 @@ def _parse_summary_stats(stdout: str) -> tuple[int, int, int]:
     for line in stdout.splitlines():
         if line.startswith("Summaries:"):
             parts = line.replace("Summaries:", "").strip().split("·")
+            # Ollama · LiteLLM · cache · fallback · errors
             ollama = int(parts[0].strip().split()[-1])
-            cache = int(parts[1].strip().split()[-1])
-            fallback = int(parts[2].strip().split()[-1])
+            cache = int(parts[2].strip().split()[-1])
+            fallback = int(parts[3].strip().split()[-1])
             return ollama, cache, fallback
     raise AssertionError("Summaries line not found in stdout")
 
@@ -565,9 +572,9 @@ def _parse_summary_stats(stdout: str) -> tuple[int, int, int]:
 def _assert_summary_source_consistency(entries: list) -> None:
     from rollup.filter import count_summary_sources
 
-    ollama, cache, fallback = count_summary_sources(entries)
+    ollama, litellm, cache, fallback = count_summary_sources(entries)
     none_count = sum(1 for e in entries if e.summary_source == "none")
-    assert ollama + cache + fallback + none_count == len(entries)
+    assert ollama + litellm + cache + fallback + none_count == len(entries)
 
 
 def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
@@ -587,9 +594,9 @@ def test_digest_ollama_mocked_fixture(tmp_path: Path, monkeypatch) -> None:
         return result
 
     monkeypatch.setattr(
-        "rollup.summarize.check_ollama_available", lambda *a, **k: (True, "ok")
+        "rollup.llm_client.check_ollama_available", lambda *a, **k: (True, "ok")
     )
-    monkeypatch.setattr("rollup.summarize.summarize_message", mock_summarize)
+    monkeypatch.setattr("rollup.summarize._complete_summary_job", mock_summarize)
     monkeypatch.setattr("rollup.summarize.apply_summaries", tracking_apply)
 
     parser = cli.build_parser()
@@ -658,8 +665,8 @@ def test_digest_ollama_dry_run_no_network(tmp_path: Path, monkeypatch) -> None:
     def fail_if_called(*args, **kwargs):
         raise AssertionError("Ollama path should not run during dry-run")
 
-    monkeypatch.setattr("rollup.summarize.check_ollama_available", fail_if_called)
-    monkeypatch.setattr("rollup.summarize.summarize_message", fail_if_called)
+    monkeypatch.setattr("rollup.llm_client.check_ollama_available", fail_if_called)
+    monkeypatch.setattr("rollup.summarize._complete_summary_job", fail_if_called)
 
     parser = cli.build_parser()
     args = parser.parse_args(_digest_args(tmp_path, "--ollama", "--dry-run"))
@@ -677,8 +684,8 @@ def test_digest_ollama_rejects_remote_url(tmp_path: Path, monkeypatch, capsys) -
             "Should not reach Ollama network/cache after URL validation"
         )
 
-    monkeypatch.setattr("rollup.summarize.check_ollama_available", fail_if_called)
-    monkeypatch.setattr("rollup.summarize.summarize_message", fail_if_called)
+    monkeypatch.setattr("rollup.llm_client.check_ollama_available", fail_if_called)
+    monkeypatch.setattr("rollup.summarize._complete_summary_job", fail_if_called)
     monkeypatch.setattr("rollup.state.store_summary", fail_if_called)
 
     parser = cli.build_parser()
@@ -710,8 +717,8 @@ def test_digest_default_path_skips_ollama(
         raise AssertionError("Ollama helpers must not run without --ollama")
 
     monkeypatch.setattr("rollup.summarize.validate_ollama_url", fail_if_called)
-    monkeypatch.setattr("rollup.summarize.check_ollama_available", fail_if_called)
-    monkeypatch.setattr("rollup.summarize.summarize_message", fail_if_called)
+    monkeypatch.setattr("rollup.llm_client.check_ollama_available", fail_if_called)
+    monkeypatch.setattr("rollup.summarize._complete_summary_job", fail_if_called)
 
     parser = cli.build_parser()
     extra = list(ollama_flag) + ["--dry-run"]
@@ -758,10 +765,10 @@ def test_digest_summary_variants_writes_multiple_outputs(
     from rollup import cli
 
     monkeypatch.setattr(
-        "rollup.summarize.check_ollama_available", lambda *a, **k: (True, "ok")
+        "rollup.llm_client.check_ollama_available", lambda *a, **k: (True, "ok")
     )
     monkeypatch.setattr(
-        "rollup.summarize.summarize_message",
+        "rollup.summarize._complete_summary_job",
         _mock_summarize_message,
     )
     parser = cli.build_parser()
@@ -942,7 +949,7 @@ def test_group_summaries_without_ollama_rejected(tmp_path: Path, capsys) -> None
     )
     rc = cli.cmd_digest(args)
     assert rc == 1
-    assert "requires Ollama" in capsys.readouterr().err
+    assert "requires LLM summarisation" in capsys.readouterr().err
 
 
 def test_group_summaries_with_no_grouping_rejected(tmp_path: Path, capsys) -> None:
@@ -1057,7 +1064,7 @@ def test_group_summaries_degraded_partial_exit(tmp_path: Path, monkeypatch) -> N
         return dated, undated, meta
 
     monkeypatch.setattr(
-        "rollup.summarize.summarize_message", _mock_summarize_message
+        "rollup.summarize._complete_summary_job", _mock_summarize_message
     )
     monkeypatch.setattr(
         "rollup.group_summarize.apply_group_summaries", fake_group_summaries

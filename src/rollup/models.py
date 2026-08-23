@@ -14,7 +14,9 @@ NewsletterType = Literal[
     "link_roundup",
     "unclassified",
 ]
-SummarySource = Literal["ollama", "cache", "preview_fallback", "none", "final_review_applied"]
+SummarySource = Literal[
+    "ollama", "litellm", "cache", "preview_fallback", "none", "final_review_applied"
+]
 GroupType = Literal[
     "standalone",
     "notification_stream",
@@ -35,7 +37,7 @@ FinalReviewIssueType = Literal[
 ]
 FinalReviewSeverity = Literal["minor", "major", "critical"]
 FinalReviewStatus = Literal["pass", "pass_with_warnings", "fail"]
-FinalReviewSource = Literal["cache", "ollama", "error", "skipped"]
+FinalReviewSource = Literal["cache", "ollama", "litellm", "error", "skipped"]
 LinkCategory = Literal[
     "primary_content",
     "content",
@@ -177,6 +179,7 @@ class DigestSummaryRouteStat:
     profile_name: str
     model: str
     count: int
+    provider: str = ""
 
 
 @dataclass(frozen=True)
@@ -204,6 +207,7 @@ class DigestSummaryMetadata:
     routing_counts: tuple[DigestSummaryRouteStat, ...] = ()
     anomaly_rows: tuple[DigestSummaryAnomalyRow, ...] = ()
     variant_name: str | None = None
+    summaries_litellm: int = 0
 
 
 @dataclass(frozen=True)
@@ -220,6 +224,7 @@ class DigestStats:
     summaries_cache: int
     summaries_fallback: int
     summaries_errors: int = 0
+    summaries_litellm: int = 0
 
 
 @dataclass(frozen=True)

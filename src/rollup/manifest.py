@@ -119,7 +119,10 @@ def config_fingerprint(
         "folders_include": list(config.folders_include),
         "folders_exclude": list(config.folders_exclude),
         "ollama_enabled": not config.no_ollama,
+        "llm_enabled": not config.no_ollama,
         "ollama_model": config.ollama_model if not config.no_ollama else None,
+        "llm_provider": config.llm_provider if not config.no_ollama else None,
+        "llm_model": config.llm_model if not config.no_ollama else None,
         "summary_profile": config.summary_profile,
         "summary_profile_set_path": config.summary_profile_set_path,
         "grouping_enabled": grouping.enabled,
@@ -457,6 +460,10 @@ class ManifestBuilder:
             ),
             "source_registry": source_registry,
             "ollama_enabled": not self.config.no_ollama,
+            "llm_enabled": not self.config.no_ollama,
+            "llm_provider": (
+                self.config.llm_provider if not self.config.no_ollama else None
+            ),
             "models_used": models_used,
             "outputs": {
                 "markdown": _relative_path(self.md_path, self.config.output_dir),

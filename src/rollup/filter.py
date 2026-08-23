@@ -289,13 +289,15 @@ def empty_stats() -> DigestStats:
     )
 
 
-def count_summary_sources(entries: list[DigestEntry]) -> tuple[int, int, int]:
-    ollama = cache = fallback = 0
+def count_summary_sources(entries: list[DigestEntry]) -> tuple[int, int, int, int]:
+    ollama = litellm = cache = fallback = 0
     for e in entries:
         if e.summary_source == "ollama":
             ollama += 1
+        elif e.summary_source == "litellm":
+            litellm += 1
         elif e.summary_source == "cache":
             cache += 1
         elif e.summary_source == "preview_fallback":
             fallback += 1
-    return ollama, cache, fallback
+    return ollama, litellm, cache, fallback

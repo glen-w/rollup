@@ -338,7 +338,7 @@ def test_programmatic_run_options_dry_run(tmp_path: Path, monkeypatch) -> None:
     def fail_network(*_args, **_kwargs):
         raise AssertionError("network should not be reached during dry-run")
 
-    monkeypatch.setattr("rollup.summarize.check_ollama_available", fail_network)
+    monkeypatch.setattr("rollup.llm_client.check_ollama_available", fail_network)
     monkeypatch.setattr("rollup.final_review.call_final_review_model", fail_network)
     monkeypatch.setattr("rollup.group_summarize._call_ollama_for_group", fail_network)
 

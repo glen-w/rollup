@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS rollup_runs (
     groups_created INTEGER,
     sources_included INTEGER,
     summaries_ollama INTEGER,
+    summaries_litellm INTEGER,
     summaries_cache INTEGER,
     summaries_fallback INTEGER,
     summaries_errors INTEGER,
@@ -937,6 +938,39 @@ def ensure_message_reader_bodies_v9(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_summaries_litellm_v11(conn: sqlite3.Connection) -> None:
+    """Schema v11: rollup_runs.summaries_litellm column."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='rollup_runs'"
+    ).fetchone()
+    cols = _table_columns(conn, "rollup_runs") if row is not None else set()
+    if ver >= 11 and "summaries_litellm" in cols:
+        return
+    if ver < 10:
+        ensure_message_reader_bodies_v10(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='rollup_runs'"
+        ).fetchone()
+        if exists is None:
+            _exec_ddl_statements(conn, WEB_SCHEMA_V8)
+        cols = _table_columns(conn, "rollup_runs")
+        if "summaries_litellm" not in cols:
+            conn.execute(
+                "ALTER TABLE rollup_runs ADD COLUMN summaries_litellm INTEGER"
+            )
+        _bump_schema_version_in_txn(conn, 11)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
     """Schema v10: reader provenance columns."""
     apply_connection_pragmas(conn)
@@ -1017,6 +1051,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_web_schema(conn)
     ensure_message_reader_bodies_v9(conn)
     ensure_message_reader_bodies_v10(conn)
+    ensure_summaries_litellm_v11(conn)
     validate_canonical_schema(conn)
 
 

@@ -202,6 +202,8 @@ def _patch_from_request() -> ConfigPatch:
         effort=request.form.get("effort") or None,
         ollama=ollama,
         ollama_model=request.form.get("ollama_model"),
+        llm_provider=request.form.get("llm_provider") or None,
+        llm_model=request.form.get("llm_model"),
         summary_profile=request.form.get("summary_profile") or None,
         no_grouping=no_grouping,
         grouping_min_size=gmin,
@@ -256,7 +258,7 @@ def _onboarding_steps(doc, effective) -> list[tuple[str, bool, str]]:
         (
             "Summary mode chosen",
             summary_ok,
-            "Pick local preview or Ollama under Summaries.",
+            "Pick local preview or enable LLM summaries under Summaries.",
         ),
         (
             "Output writers chosen",

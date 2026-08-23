@@ -37,13 +37,13 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 ## Configuration Centre (`/settings`)
 
-Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, Ollama + effort + summary profile, output writers, folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation.
+Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + summary profile, output writers, folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky.
 
 Saves are previewed as an effective-config diff, confirmed with a one-time maintenance token, validated, backed up, and persisted atomically with optimistic concurrency (revision mismatch → re-preview). Digest settings are **not** stored in SQLite.
 
 ## Run Studio (`/run`)
 
-Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, writers, Ollama contact), dry-run discovery, then run a real digest as a **synchronous subprocess** (browser waits; single in-memory active-run slot — not a scheduler). Progress/logs via `/run/status`; results show status (`success` / `partial` / `failure` / `dry_run`) and artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`). The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
+Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, writers, LLM enablement / provider privacy hints), dry-run discovery, then run a real digest as a **synchronous subprocess** (browser waits; single in-memory active-run slot — not a scheduler). Progress/logs via `/run/status`; results show status (`success` / `partial` / `failure` / `dry_run`) and artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`). The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
 
 ## Read-only GET contract
 

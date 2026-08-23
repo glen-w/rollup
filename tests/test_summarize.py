@@ -649,7 +649,7 @@ def test_apply_summaries_cache_read_failure_continues(
     mock_summarize.assert_called_once()
 
 
-@patch("rollup.summarize.summarize_message")
+@patch("rollup.summarize._complete_summary_job")
 def test_execute_summary_plan_legacy_cache_reused(
     mock_summarize: MagicMock, tmp_path
 ) -> None:
@@ -685,7 +685,7 @@ def test_execute_summary_plan_legacy_cache_reused(
     mock_summarize.assert_not_called()
 
 
-@patch("rollup.summarize.check_ollama_available")
+@patch("rollup.llm_client.check_ollama_available")
 def test_execute_summary_plan_missing_model_falls_back(mock_check: MagicMock) -> None:
     mock_check.return_value = (False, "missing")
     entry = _entry()

@@ -15,6 +15,7 @@ from rollup.config import (
     DEFAULT_FINAL_REVIEW_MODE,
     DEFAULT_FINAL_REVIEW_PROFILE,
     DEFAULT_FINAL_REVIEW_PROVIDER,
+    DEFAULT_LLM_PROVIDER,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_MAX_BODY_CHARS,
     DEFAULT_MAX_DISPLAY_LINKS,
@@ -92,7 +93,7 @@ def _resolve_no_ollama(args: argparse.Namespace) -> bool:
 
 
 def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
-    """Warn when Ollama-only flags are passed but summarisation is disabled."""
+    """Warn when LLM-only flags are passed but summarisation is disabled."""
     if not config.no_ollama:
         return []
 
@@ -115,7 +116,7 @@ def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
         return []
     flag_list = ", ".join(ignored)
     return [
-        f"Ignoring {flag_list} because Ollama summarisation is disabled "
+        f"Ignoring {flag_list} because LLM summarisation is disabled "
         f"(default; pass --ollama to enable)."
     ]
 
@@ -177,6 +178,9 @@ def _build_config(
         ollama_url=getattr(args, "ollama_url", DEFAULT_OLLAMA_URL),
         ollama_model=ollama_model,
         allow_remote_ollama=getattr(args, "allow_remote_ollama", False),
+        llm_provider=getattr(args, "llm_provider", DEFAULT_LLM_PROVIDER),
+        llm_model=getattr(args, "llm_model", None),
+        llm_api_base=getattr(args, "llm_api_base", None),
         summary_profile=getattr(args, "summary_profile", None),
         summary_variants=summary_variants,
         summary_type_routing=summary_type_routing,
@@ -306,6 +310,7 @@ def _print_run_profile_listing(loaded: LoadedUserConfig) -> None:
 
 def cmd_config_print(args: argparse.Namespace, loaded: LoadedUserConfig) -> int:
     """Print effective merged settings for debugging."""
+    config = _build_config(args, folder_themes=loaded.folder_themes)
     profile_name = getattr(args, "profile", None) or DEFAULT_RUN_PROFILE
     try:
         profile = resolve_run_profile(
@@ -340,13 +345,16 @@ def cmd_config_print(args: argparse.Namespace, loaded: LoadedUserConfig) -> int:
             or sticky.get("exclude_folder")
             or []
         ),
-        "ollama": not _resolve_no_ollama(args)
+        "ollama": config.llm_enabled
         if (
             getattr(args, "ollama", False)
             or getattr(args, "no_ollama", False)
             or "ollama" in sticky
         )
         else sticky.get("ollama", False),
+        "llm_enabled": config.llm_enabled,
+        "llm_provider": config.llm_provider,
+        "llm_model": config.llm_model,
         "no_grouping": bool(
             getattr(args, "no_grouping", False)
             or sticky.get("no_grouping", False)
@@ -802,6 +810,12 @@ def cmd_cron(args: argparse.Namespace) -> int:
     extra = []
     if getattr(args, "ollama", False):
         extra.append("--ollama")
+    llm_provider = getattr(args, "llm_provider", None)
+    if llm_provider:
+        extra.extend(["--llm-provider", str(llm_provider)])
+    llm_model = getattr(args, "llm_model", None)
+    if llm_model:
+        extra.extend(["--llm-model", str(llm_model)])
 
     if sub == "print-crontab":
         schedule = getattr(args, "cron_schedule", "0 8 * * 0")

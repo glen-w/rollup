@@ -11,6 +11,7 @@ from rollup.config import (
     DEFAULT_FINAL_REVIEW_MODE,
     DEFAULT_FINAL_REVIEW_PROFILE,
     DEFAULT_FINAL_REVIEW_PROVIDER,
+    DEFAULT_LLM_PROVIDER,
     DEFAULT_LOOKBACK_DAYS,
     DEFAULT_LOG_DIR,
     DEFAULT_MAIL_ROOT,
@@ -127,19 +128,19 @@ def build_parser() -> argparse.ArgumentParser:
     ollama_group.add_argument(
         "--ollama",
         action="store_true",
-        help="Enable local Ollama summarisation (explicit opt-in; local loopback only by default)",
+        help="Enable LLM summarisation (explicit opt-in; uses local Ollama by default)",
     )
     ollama_group.add_argument(
         "--no-ollama",
         action="store_true",
-        help="Skip Ollama summarisation (default when neither flag is passed)",
+        help="Disable all LLM calls (default when neither flag is passed)",
     )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",
         action="store_true",
         default=False,
-        help="Ollama only: bypass summary cache",
+        help="LLM only: bypass summary cache",
     )
     dig.add_argument("--max-body-chars", type=int, default=DEFAULT_MAX_BODY_CHARS)
     dig.add_argument(
@@ -157,6 +158,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dig.add_argument("--allow-remote-ollama", action="store_true", default=False)
     dig.add_argument(
+        "--llm-provider",
+        choices=["ollama", "litellm"],
+        default=DEFAULT_LLM_PROVIDER,
+        help="Default/fallback/group-summary LLM provider (default: ollama)",
+    )
+    dig.add_argument(
+        "--llm-model",
+        default=None,
+        help="LiteLLM model for fallback/group summaries (e.g. openai/gpt-4o)",
+    )
+    dig.add_argument(
+        "--llm-api-base",
+        default=None,
+        help="Optional LiteLLM api_base (CLI only; not sticky)",
+    )
+    dig.add_argument(
         "--effort",
         choices=list(EFFORT_NAMES),
         default=None,
@@ -173,11 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dig.add_argument(
         "--summary-profile",
-        help="Ollama only: force one profile for every message",
+        help="LLM only: force one profile for every message",
     )
     dig.add_argument(
         "--summary-variants",
-        help="Ollama only: comma-separated profiles; one digest per profile",
+        help="LLM only: comma-separated profiles; one digest per profile",
     )
     dig.add_argument(
         "--summary-profile-set",
@@ -190,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary-routing-report",
         action="store_true",
         default=False,
-        help="Ollama only: print profile/model usage after the run",
+        help="LLM only: print profile/model usage after the run",
     )
     type_routing_group = dig.add_mutually_exclusive_group()
     type_routing_group.add_argument(
@@ -244,7 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-group-summary-calls",
         type=int,
         default=8,
-        help="Max Ollama group-summary calls per run",
+        help="Max group-summary LLM calls per run",
     )
     dig.add_argument(
         "--final-review-profile",
@@ -255,12 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
     dig.add_argument(
         "--final-review-model",
         default=None,
-        help="Override final review Ollama model (default: from --effort)",
+        help="Override final review model (default: from --effort)",
     )
     dig.add_argument(
         "--final-review-provider",
+        choices=["ollama", "litellm"],
         default=DEFAULT_FINAL_REVIEW_PROVIDER,
-        help="Final review provider (ollama only)",
+        help="Final review provider",
     )
     dig.add_argument(
         "--final-review-report",
@@ -320,13 +338,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--network",
         action="store_true",
         default=False,
-        help="Probe Ollama even when --ollama is not set",
+        help="Probe LLM transports even when --ollama is not set",
     )
     doc.add_argument(
         "--ollama",
         action="store_true",
         default=False,
-        help="Treat Ollama as enabled for network/loopback checks",
+        help="Treat LLM as enabled for network/loopback checks",
     )
     doc.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     doc.add_argument(
@@ -372,6 +390,17 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 default=False,
                 help="Include --ollama in the generated command",
+            )
+            p.add_argument(
+                "--llm-provider",
+                choices=["ollama", "litellm"],
+                default=None,
+                help="Include --llm-provider in the generated command",
+            )
+            p.add_argument(
+                "--llm-model",
+                default=None,
+                help="Include --llm-model in the generated command",
             )
         if name == "print-crontab":
             p.add_argument(

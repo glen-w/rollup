@@ -106,6 +106,7 @@ class RunIndexPayload:
     reader_bodies: list[ReaderBodyWrite] = field(default_factory=list)
     expected_entry_count: int | None = None
     indexed_at: str | None = None
+    summaries_litellm: int | None = None
 
 
 def _prefer_source_key(a: str, b: str) -> str:
@@ -377,6 +378,7 @@ def build_pipeline_payload(
         reader_bodies=reader_bodies,
         expected_entry_count=len(entries),
         indexed_at=format_utc(now_utc()),
+        summaries_litellm=stats.summaries_litellm,
     )
 
 
@@ -390,9 +392,9 @@ INSERT INTO rollup_runs (
     summaries_ollama, summaries_cache, summaries_fallback, summaries_errors,
     summaries_final_review_applied, group_summaries_succeeded, warning_count,
     index_warning_count, degraded, manifest_relpath, markdown_relpath, html_relpath,
-    index_source, indexed_at
+    index_source, indexed_at, summaries_litellm
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(run_id) DO UPDATE SET
     started_at=excluded.started_at,
@@ -428,7 +430,8 @@ ON CONFLICT(run_id) DO UPDATE SET
     markdown_relpath=excluded.markdown_relpath,
     html_relpath=excluded.html_relpath,
     index_source=excluded.index_source,
-    indexed_at=excluded.indexed_at
+    indexed_at=excluded.indexed_at,
+    summaries_litellm=excluded.summaries_litellm
 """
 
 
@@ -528,6 +531,7 @@ def index_rollup_run(db_path: Path, payload: RunIndexPayload) -> None:
                 payload.html_relpath,
                 payload.index_source,
                 indexed_at,
+                payload.summaries_litellm,
             ),
         )
         conn.execute("DELETE FROM rollup_entries WHERE run_id = ?", (payload.run_id,))
@@ -690,6 +694,7 @@ def backfill_run_from_manifest(
         index_source="manifest_backfill",
         entries=[],
         expected_entry_count=0,
+        summaries_litellm=summary_counts.get("litellm"),
     )
     # Skip if already indexed (full entry index or prior metadata backfill).
     conn = init_db(db_path)

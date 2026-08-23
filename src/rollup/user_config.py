@@ -33,6 +33,8 @@ STICKY_KEYS = frozenset(
         "effort",
         "ollama",
         "ollama_model",
+        "llm_provider",
+        "llm_model",
         "summary_profile",
         "no_grouping",
         "grouping_min_size",
@@ -205,6 +207,19 @@ def _normalize_sticky(
                 raise UserConfigError(
                     f"{path}: ollama_model must be a non-empty string"
                 )
+            out[key] = value.strip()
+        elif key == "llm_provider":
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(f"{path}: llm_provider must be a non-empty string")
+            provider = value.strip().lower()
+            if provider not in {"ollama", "litellm"}:
+                raise UserConfigError(
+                    f"{path}: llm_provider must be 'ollama' or 'litellm'"
+                )
+            out[key] = provider
+        elif key == "llm_model":
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(f"{path}: llm_model must be a non-empty string")
             out[key] = value.strip()
         elif key == "summary_profile":
             if not isinstance(value, str) or not value.strip():

@@ -98,11 +98,17 @@ order = 20
 ## Summaries (sticky)
 
 ```toml
-ollama = true
-ollama_model = "llama3.2"   # optional; otherwise effort defaults apply
+ollama = true                  # enable LLM calls (not Ollama-only)
+ollama_model = "llama3.2"      # Ollama default/fallback/group model
+llm_provider = "ollama"        # ollama | litellm (fallback/group path)
+llm_model = "openai/gpt-4o"    # LiteLLM model when llm_provider = litellm
 summary_profile = "standard"
 effort = "balanced"
 ```
+
+API keys and `--llm-api-base` are **not** sticky (CLI/env only). Custom summary
+profile JSON may set `"provider": "litellm"` per profile; that overrides the
+global `llm_provider` for those jobs only.
 
 ## UI preferences
 

@@ -16,6 +16,7 @@
           <li>Sources: {{ run.sources_included if run.sources_included is not none else "—" }}</li>
           <li>Groups: {{ run.groups_created if run.groups_created is not none else "—" }}</li>
           <li>Ollama: {{ run.summaries_ollama if run.summaries_ollama is not none else "—" }}</li>
+          <li>LiteLLM: {{ run.summaries_litellm if run.summaries_litellm is not none else "—" }}</li>
           <li>Cache: {{ run.summaries_cache if run.summaries_cache is not none else "—" }}</li>
         </ul>
       </div>

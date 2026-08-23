@@ -34,7 +34,7 @@ From [CONTRACT.md](CONTRACT.md) — not planned unless the contract changes:
 ## Open product questions (parked)
 
 - Richer onboarding when mail paths are undiscoverable
-- Optional remote Ollama remains explicit (`--allow-remote-ollama`); no hosted LLM path
+- Optional remote Ollama remains explicit (`--allow-remote-ollama`); optional LiteLLM via `rollup[llm]` + `--llm-provider litellm` (API keys from env only)
 - Deeper Admin failure history when manifests are missing (incomplete-history disclaimer stays)
 
 ## Related docs

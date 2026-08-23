@@ -41,6 +41,9 @@ class EffectiveRun:
     ollama_url: str
     ollama_model: str
     allow_remote_ollama: bool
+    llm_provider: str
+    llm_model: str | None
+    llm_api_base: str | None
     summary_profile: str | None
     summary_variants: tuple[str, ...]
     summary_type_routing: bool | None
@@ -99,14 +102,14 @@ def resolve_effective_run(
         config, run_options=run_options, grouping=grouping
     )
 
-    allow_summary_network = not run_options.dry_run and not config.no_ollama
+    allow_summary_network = not run_options.dry_run and config.llm_enabled
     allow_final_review_network = (
-        not run_options.dry_run and config.final_review_enabled
+        not run_options.dry_run and not config.no_ollama and config.final_review_enabled
     )
     allow_group_summary_network = (
         not run_options.dry_run
         and config.group_summaries_enabled
-        and not config.no_ollama
+        and config.llm_enabled
         and grouping.enabled
     )
 
@@ -128,6 +131,9 @@ def resolve_effective_run(
         ollama_url=config.ollama_url,
         ollama_model=config.ollama_model,
         allow_remote_ollama=config.allow_remote_ollama,
+        llm_provider=config.llm_provider,
+        llm_model=config.llm_model,
+        llm_api_base=config.llm_api_base,
         summary_profile=config.summary_profile,
         summary_variants=config.summary_variants,
         summary_type_routing=config.summary_type_routing,
@@ -200,7 +206,7 @@ def _validate_and_resolve_apply_policy(
     if config.group_summaries_enabled:
         if config.no_ollama:
             raise FinalReviewConfigError(
-                "--group-summaries requires Ollama (--ollama / no_ollama=False)"
+                "--group-summaries requires LLM summarisation (--ollama)"
             )
         if not grouping_enabled:
             raise FinalReviewConfigError(

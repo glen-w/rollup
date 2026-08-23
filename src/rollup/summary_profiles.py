@@ -10,7 +10,7 @@ from typing import Any, Literal, get_args
 from rollup.models import NewsletterType
 
 SUMMARY_PROFILE_SCHEMA_VERSION = 1
-SUMMARY_PROVIDERS = frozenset({"ollama"})
+SUMMARY_PROVIDERS = frozenset({"ollama", "litellm"})
 PROMPT_STYLES = frozenset({"rough", "standard", "deep"})
 ROUTING_RESERVED_KEYS = frozenset({"default"})
 DEFAULT_NUM_PREDICT = 2048
@@ -170,6 +170,13 @@ def _make_profile(
         created_by="builtin",
         version=1,
     )
+
+
+def resolve_profile_transport_options(profile: SummaryProfile) -> dict[str, Any]:
+    """Build generation options for cache identity and transport dispatch."""
+    if profile.provider == "litellm":
+        return {"num_predict": profile.num_predict}
+    return resolve_profile_ollama_options(profile)
 
 
 def resolve_profile_ollama_options(profile: SummaryProfile) -> dict[str, Any]:
@@ -427,6 +434,51 @@ def validate_summary_profile_set(
                     path=f"profiles.{name}.provider",
                 )
             )
+        if profile.provider == "litellm":
+            if profile.think not in (False,):
+                issues.append(
+                    ValidationIssue(
+                        code="litellm_incompatible_option",
+                        message=(
+                            f"LiteLLM profile {name!r} cannot set think; "
+                            "use provider 'ollama' for thinking models."
+                        ),
+                        path=f"profiles.{name}.think",
+                    )
+                )
+            if profile.num_ctx is not None:
+                issues.append(
+                    ValidationIssue(
+                        code="litellm_incompatible_option",
+                        message=(
+                            f"LiteLLM profile {name!r} cannot set num_ctx."
+                        ),
+                        path=f"profiles.{name}.num_ctx",
+                    )
+                )
+            if profile.options:
+                issues.append(
+                    ValidationIssue(
+                        code="litellm_incompatible_option",
+                        message=(
+                            f"LiteLLM profile {name!r} cannot set raw Ollama options: "
+                            f"{sorted(profile.options)}"
+                        ),
+                        path=f"profiles.{name}.options",
+                    )
+                )
+            lowered = profile.model.strip().lower()
+            if lowered.startswith("ollama/") or lowered.startswith("ollama_chat/"):
+                issues.append(
+                    ValidationIssue(
+                        code="litellm_native_ollama_model",
+                        message=(
+                            f"LiteLLM profile {name!r} cannot use model {profile.model!r}; "
+                            "use provider 'ollama' instead."
+                        ),
+                        path=f"profiles.{name}.model",
+                    )
+                )
         if profile.prompt_style not in PROMPT_STYLES:
             issues.append(
                 ValidationIssue(

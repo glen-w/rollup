@@ -74,14 +74,15 @@ def test_idempotent_repeated_init(tmp_path: Path) -> None:
 
 
 def test_refuse_future_version_no_mutate(tmp_path: Path) -> None:
+    future = SCHEMA_VERSION + 1
     db = tmp_path / "rollup.db"
     conn = connect_db(db)
     conn.executescript(
-        """
+        f"""
         CREATE TABLE schema_version (
             id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL
         );
-        INSERT INTO schema_version (id, version) VALUES (1, 11);
+        INSERT INTO schema_version (id, version) VALUES (1, {future});
         CREATE TABLE seen_messages (
             message_key TEXT PRIMARY KEY, last_seen_at TEXT NOT NULL
         );
@@ -91,11 +92,13 @@ def test_refuse_future_version_no_mutate(tmp_path: Path) -> None:
     conn.commit()
     conn.close()
 
-    with pytest.raises(sqlite3.DatabaseError, match="unsupported schema version 11"):
+    with pytest.raises(
+        sqlite3.DatabaseError, match=f"unsupported schema version {future}"
+    ):
         init_db(db)
 
     conn = connect_db(db)
-    assert get_schema_version(conn) == 11
+    assert get_schema_version(conn) == future
     row = conn.execute(
         "SELECT message_key FROM seen_messages WHERE message_key = 'keep'"
     ).fetchone()
@@ -111,26 +114,31 @@ def test_refuse_future_version_no_mutate(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_reproduced_version_11_to_10_downgrade_refused(tmp_path: Path) -> None:
-    """Former bug: singleton repair wrote SCHEMA_VERSION and lowered 11→10."""
+def test_reproduced_future_to_current_downgrade_refused(tmp_path: Path) -> None:
+    """Former bug: singleton repair wrote SCHEMA_VERSION and lowered a future DB."""
+    future = SCHEMA_VERSION + 1
     db = tmp_path / "rollup.db"
     conn = connect_db(db)
     conn.executescript(
-        """
+        f"""
         CREATE TABLE schema_version (
             id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL
         );
-        INSERT INTO schema_version (id, version) VALUES (1, 11);
+        INSERT INTO schema_version (id, version) VALUES (1, {future});
         """
     )
     conn.commit()
-    with pytest.raises(sqlite3.DatabaseError, match="unsupported schema version 11"):
+    with pytest.raises(
+        sqlite3.DatabaseError, match=f"unsupported schema version {future}"
+    ):
         refuse_unsupported_schema_version(conn)
-    assert get_schema_version(conn) == 11
-    with pytest.raises(sqlite3.DatabaseError, match="unsupported schema version 11"):
+    assert get_schema_version(conn) == future
+    with pytest.raises(
+        sqlite3.DatabaseError, match=f"unsupported schema version {future}"
+    ):
         init_db(db)
     conn2 = connect_db(db)
-    assert get_schema_version(conn2) == 11
+    assert get_schema_version(conn2) == future
     conn2.close()
     conn.close()
 

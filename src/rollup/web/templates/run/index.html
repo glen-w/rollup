@@ -15,8 +15,8 @@
   <dl class="kv">
     <dt>Profile</dt><dd>{{ effective.profile_name }}</dd>
     <dt>Lookback</dt><dd>{{ sticky.get('lookback_days', '—') }} days</dd>
-    <dt>Ollama</dt>
-    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">will contact Ollama</span>{% else %}<span class="hint-badge local">local-only previews</span>{% endif %}</dd>
+    <dt>LLM</dt>
+    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">LLM enabled ({{ sticky.get('llm_provider', 'ollama') }})</span>{% if sticky.get('llm_provider') == 'litellm' %} <span class="hint-badge writes">newsletter text may leave this machine</span>{% endif %}{% else %}<span class="hint-badge local">local-only previews</span>{% endif %}</dd>
     <dt>Writers</dt><dd>{{ effective.writers | join(', ') }} (+ Markdown/HTML)</dd>
     <dt>Newsletter root</dt><dd><code>{{ sticky.get('root', '—') }}</code></dd>
     <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
@@ -52,10 +52,10 @@
         {% endfor %}
       </select>
     </label>
-    <label>Ollama
+    <label>LLM summaries
       <select name="ollama">
         <option value="">(profile default)</option>
-        <option value="1">on — uses Ollama</option>
+        <option value="1">on — call configured provider</option>
         <option value="0">off — local-only</option>
       </select>
     </label>

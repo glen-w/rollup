@@ -95,6 +95,33 @@ python -m rollup digest --ollama --summary-routing-report
 
 `--ollama` alone enables type routing by default. Use `--summary-routing-report` to print which profiles and models were used.
 
+### LiteLLM / external providers
+
+Requires `pip install 'rollup[llm]'` and provider credentials in the environment
+(for example `OPENAI_API_KEY`). `--ollama` still enables LLM calls; choose the
+transport with `--llm-provider`:
+
+```bash
+python -m rollup digest --ollama \
+  --llm-provider litellm \
+  --llm-model openai/gpt-4o \
+  --summary-routing-report
+```
+
+Optional OpenAI-compatible / proxy base (CLI only, never sticky):
+
+```bash
+python -m rollup digest --ollama \
+  --llm-provider litellm \
+  --llm-model openai/gpt-4o \
+  --llm-api-base http://127.0.0.1:4000
+```
+
+Do not use LiteLLM model strings that route native Ollama (`ollama/…`); use
+`--llm-provider ollama` instead. Cron/launchd snippets may include
+`--llm-provider` / `--llm-model`; secrets must be present in the scheduler
+environment.
+
 ### Inspect profiles and routes
 
 ```bash

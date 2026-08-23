@@ -493,6 +493,8 @@ def patch_from_form_values(
     effort: str | None = None,
     ollama: bool | None = None,
     ollama_model: str | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
     summary_profile: str | None = None,
     no_grouping: bool | None = None,
     grouping_min_size: int | None = None,
@@ -523,6 +525,8 @@ def patch_from_form_values(
     _set_str("log_dir", log_dir)
     _set_str("effort", effort)
     _set_str("ollama_model", ollama_model)
+    _set_str("llm_provider", llm_provider)
+    _set_str("llm_model", llm_model)
     _set_str("summary_profile", summary_profile)
     _set_str("profile", profile)
 

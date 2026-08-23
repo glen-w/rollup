@@ -23,6 +23,8 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("synthetic fixtures root", "tests/fixtures/Newsletters.sbd"),
     ("no-ollama mode", "--no-ollama"),
     ("ollama mode", "--ollama"),
+    ("llm provider", "--llm-provider"),
+    ("llm model", "--llm-model"),
     ("dry-run", "--dry-run"),
     ("folder filter", "--folder"),
     ("exclude folder", "--exclude-folder"),

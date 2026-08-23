@@ -21,7 +21,7 @@ from rollup.state import (
 def test_fresh_db_schema_version(tmp_path: Path):
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 10
+    assert get_schema_version(conn) == SCHEMA_VERSION == 11
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()
@@ -43,6 +43,15 @@ def test_v8_to_v9_migration(tmp_path: Path):
     assert get_schema_version(conn) == 9
     ensure_message_reader_bodies_v10(conn)
     assert get_schema_version(conn) == 10
+    from rollup.state import ensure_summaries_litellm_v11
+
+    ensure_summaries_litellm_v11(conn)
+    assert get_schema_version(conn) == 11
+    cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
+    }
+    assert "summaries_litellm" in cols
     conn.close()
 
 
@@ -53,13 +62,13 @@ def test_repair_schema_version_without_reader_bodies_table(tmp_path: Path):
     conn.executescript(
         """
         CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
-        INSERT INTO schema_version (id, version) VALUES (1, 10);
+        INSERT INTO schema_version (id, version) VALUES (1, 11);
         """
     )
     conn.commit()
     conn.close()
     conn = init_db(db)
-    assert get_schema_version(conn) == 10
+    assert get_schema_version(conn) == 11
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()

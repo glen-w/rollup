@@ -162,7 +162,7 @@ def test_legacy_cache_only_for_standard_profile(tmp_path: Path) -> None:
         SummaryCliOptions(summary_profile="deep"),
     )
     with patch(
-        "rollup.summarize.summarize_message",
+        "rollup.summarize._complete_summary_job",
         return_value=SummarizeMessageResult(
             text="Fresh deep summary",
             stop_reason="done",
@@ -174,7 +174,7 @@ def test_legacy_cache_only_for_standard_profile(tmp_path: Path) -> None:
         ),
     ) as mock_summarize:
         with patch(
-            "rollup.summarize.check_ollama_available", return_value=(True, "ok")
+            "rollup.llm_client.check_ollama_available", return_value=(True, "ok")
         ):
             deep_execution = execute_summary_plan(
                 entries=[entry],
@@ -195,7 +195,7 @@ def test_legacy_cache_only_for_standard_profile(tmp_path: Path) -> None:
         get_builtin_summary_profile_set(),
         SummaryCliOptions(summary_profile="standard"),
     )
-    with patch("rollup.summarize.summarize_message") as mock_summarize:
+    with patch("rollup.summarize._complete_summary_job") as mock_summarize:
         standard_execution = execute_summary_plan(
             entries=[entry],
             plan=standard_plan,
@@ -286,7 +286,7 @@ def test_strict_profile_set_loading_uses_exact_file(tmp_path: Path) -> None:
     assert loaded.profiles["rough"].model == "llama3.2:3b"
 
 
-@patch("rollup.summarize.check_ollama_available")
+@patch("rollup.llm_client.check_ollama_available")
 def test_ollama_availability_cached_per_run(mock_check: MagicMock) -> None:
     mock_check.return_value = (True, "ok")
     cache = OllamaAvailabilityCache("http://localhost:11434/api/generate")
@@ -296,8 +296,8 @@ def test_ollama_availability_cached_per_run(mock_check: MagicMock) -> None:
     assert mock_check.call_count == 2
 
 
-@patch("rollup.summarize.summarize_message")
-@patch("rollup.summarize.check_ollama_available")
+@patch("rollup.summarize._complete_summary_job")
+@patch("rollup.llm_client.check_ollama_available")
 def test_execute_summary_plan_checks_each_model_once(
     mock_check: MagicMock, mock_summarize: MagicMock, tmp_path: Path
 ) -> None:
@@ -403,8 +403,8 @@ def test_canonical_provider_options_stable_for_nested_dicts() -> None:
 
 
 @patch("rollup.state.store_summary_generation")
-@patch("rollup.summarize.summarize_message")
-@patch("rollup.summarize.check_ollama_available")
+@patch("rollup.summarize._complete_summary_job")
+@patch("rollup.llm_client.check_ollama_available")
 def test_overlong_stream_fallback_not_cached_reported(
     mock_check: MagicMock,
     mock_summarize: MagicMock,

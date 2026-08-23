@@ -90,9 +90,19 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
     <label>
       <input type="hidden" name="ollama" value="0">
       <input type="checkbox" name="ollama" value="1" {% if sticky.get('ollama') %}checked{% endif %}>
-      Enable Ollama <span class="hint-badge ollama">uses Ollama</span>
+      Enable LLM summaries <span class="hint-badge ollama">calls a model</span>
     </label>
-    <p class="note">When off, Rollup stays local-only and uses preview excerpts.</p>
+    <p class="note">When off, Rollup stays local-only (preview excerpts; no Ollama or LiteLLM calls). API keys are never stored in TOML — set them in the environment for LiteLLM.</p>
+    <label>LLM provider (fallback / group path)
+      <select name="llm_provider">
+        <option value="ollama" {% if sticky.get('llm_provider', 'ollama') == 'ollama' %}selected{% endif %}>ollama (native local)</option>
+        <option value="litellm" {% if sticky.get('llm_provider') == 'litellm' %}selected{% endif %}>litellm (optional extra)</option>
+      </select>
+    </label>
+    <label>LLM model (fallback / group; optional)
+      <input type="text" name="llm_model" value="{{ sticky.get('llm_model', '') }}" placeholder="provider model string; blank uses Ollama effort default when provider is ollama">
+    </label>
+    <p class="note">LiteLLM may send newsletter text to a remote endpoint unless you point it at a loopback <code>api_base</code> via CLI. Do not route <code>ollama/…</code> models through LiteLLM — use provider <code>ollama</code>.</p>
     <label>Effort
       <select name="effort">
         {% for e in ['light', 'balanced', 'high'] %}
@@ -170,9 +180,9 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       <input type="text" name="profile_folder" placeholder="folders" value="{{ (p.values.get('folder') or []) | join(', ') }}">
       <input type="text" name="profile_effort" placeholder="effort" value="{{ p.values.get('effort', '') }}">
       <select name="profile_ollama">
-        <option value="">ollama: default</option>
-        <option value="1" {% if p.values.get('ollama') is sameas true %}selected{% endif %}>ollama on</option>
-        <option value="0" {% if p.values.get('ollama') is sameas false %}selected{% endif %}>ollama off</option>
+        <option value="">LLM: default</option>
+        <option value="1" {% if p.values.get('ollama') is sameas true %}selected{% endif %}>LLM on</option>
+        <option value="0" {% if p.values.get('ollama') is sameas false %}selected{% endif %}>LLM off</option>
       </select>
       <label class="inline"><input type="checkbox" name="remove_profile" value="{{ p.name }}"> Remove</label>
     </div>
@@ -183,9 +193,9 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       <input type="text" name="profile_folder" placeholder="e.g. tech">
       <input type="text" name="profile_effort" placeholder="light">
       <select name="profile_ollama">
-        <option value="">ollama: default</option>
-        <option value="1">ollama on</option>
-        <option value="0">ollama off</option>
+        <option value="">LLM: default</option>
+        <option value="1">LLM on</option>
+        <option value="0">LLM off</option>
       </select>
     </div>
   </section>

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from rollup.addons.artifact_write import atomic_write_digest_artifact
 from rollup.addons.offline_text import strip_urls_for_offline
-from rollup.assets import LOGO_FILENAME, digest_logo_bytes
+from rollup.assets import EPUB_COVER_FILENAME, epub_cover_bytes
 from rollup.final_review import format_final_review_digest_summary
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
 from rollup.render import (
@@ -48,8 +48,8 @@ h2 { font-size: 1.3em; margin-top: 1.4em; }
 h3 { font-size: 1.1em; margin-top: 1.1em; }
 .chapter { page-break-before: always; }
 .chapter.first { page-break-before: auto; }
-.cover { text-align: center; margin-top: 2em; }
-.cover img { max-width: 40%; height: auto; }
+.cover { text-align: center; margin-top: 1em; }
+.cover img { max-width: 72%; height: auto; }
 .meta { color: #333; font-size: 0.95em; margin: 0.4em 0 1em; }
 .meta dt { font-weight: 700; display: inline; }
 .meta dd { display: inline; margin: 0 1em 0 0.25em; }
@@ -178,21 +178,22 @@ def _wrap_chapter(title: str, body: str, *, first: bool = False) -> str:
 
 
 def _cover_xhtml(
-    report: DigestReport, *, include_logo: bool
+    report: DigestReport, *, include_cover: bool
 ) -> str:
     ws = report.window_start.strftime("%Y-%m-%d")
     we = report.window_end.strftime("%Y-%m-%d")
     total = report.stats.dated_included + report.stats.undated_needing_review
     gen = report.generated_at.strftime("%Y-%m-%d")
-    logo = (
-        f'<p><img src="images/{LOGO_FILENAME}" alt="{html_module.escape(ROLLUP_TITLE)} logo"/></p>'
-        if include_logo
+    cover_img = (
+        f'<p><img src="images/{EPUB_COVER_FILENAME}" '
+        f'alt="{html_module.escape(ROLLUP_TITLE)} cover"/></p>'
+        if include_cover
         else ""
     )
     return (
         f"<div class='cover'>"
-        f"{logo}"
-        f"<h1>{html_module.escape(ROLLUP_TITLE)}</h1>"
+        f"{cover_img}"
+        f"{'' if include_cover else f'<h1>{html_module.escape(ROLLUP_TITLE)}</h1>'}"
         f"<p><strong>Week of {ws} to {we}</strong></p>"
         f"<p>{total} newsletters · generated {gen}</p>"
         "</div>"
@@ -260,28 +261,31 @@ def render_epub_bytes(
     )
     book.add_item(style)
 
-    include_logo = True
+    include_cover = True
     try:
-        logo_data = digest_logo_bytes()
-        logo_item = epub.EpubItem(
-            uid="logo",
-            file_name=f"images/{LOGO_FILENAME}",
-            media_type="image/png",
-            content=logo_data,
+        # Declare a real cover-image (OPF meta + properties="cover-image") so
+        # e-readers can use it for library thumbnails and screensavers. Keep our
+        # custom cover.xhtml for in-book title metadata (create_page=False).
+        book.set_cover(
+            f"images/{EPUB_COVER_FILENAME}",
+            epub_cover_bytes(),
+            create_page=False,
         )
-        book.add_item(logo_item)
     except Exception as exc:  # pragma: no cover - asset always present in package
-        logger.warning("Could not embed logo in EPUB: %s", exc)
-        include_logo = False
+        logger.warning("Could not embed cover image in EPUB: %s", exc)
+        include_cover = False
 
     cover = epub.EpubHtml(
         title="Cover",
         file_name="cover.xhtml",
         lang="en",
     )
-    cover.content = _cover_xhtml(report, include_logo=include_logo)
+    cover.content = _cover_xhtml(report, include_cover=include_cover)
     cover.add_item(style)
     book.add_item(cover)
+    book.guide.append(
+        {"type": "cover", "href": "cover.xhtml", "title": "Cover"}
+    )
 
     chapters: list = []
     toc_chapters: list = []
