@@ -780,6 +780,9 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         resolve_profile_set(
             effort=config.effort,
             summary_profile_set_path=config.summary_profile_set_path,
+            effort_overrides=config.effort_overrides,
+            single_model=config.single_model,
+            llm_provider=config.llm_provider,
         ),
         get_canonical_newsletter_types(),
     )

@@ -183,6 +183,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     dig.add_argument(
+        "--single-model",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Use this model for every summary profile, group/fallback, and "
+            "final review (this run only). Effort still controls budgets."
+        ),
+    )
+    dig.add_argument(
         "--list-efforts",
         action="store_true",
         default=False,
@@ -360,6 +369,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Machine-power preset used for expected model hints "
             f"(default: {DEFAULT_EFFORT})"
+        ),
+    )
+    doc.add_argument(
+        "--single-model",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Expect this one model for every summary profile and companion "
+            "(same as digest --single-model)"
         ),
     )
 

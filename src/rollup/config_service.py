@@ -14,6 +14,7 @@ from typing import Any, Mapping
 import tomlkit
 from tomlkit.items import Table
 
+from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
@@ -33,6 +34,7 @@ from rollup.user_config import (
     default_config_search_paths,
     load_user_config,
     parse_toml_dict,
+    efforts_to_raw,
 )
 
 
@@ -74,6 +76,7 @@ class EffectiveConfigView:
     sources: tuple[Path, ...]
     ollama_contacted: bool
     writers: list[str]
+    effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
 
 
 @dataclass
@@ -86,6 +89,7 @@ class ConfigPatch:
     profiles: dict[str, dict[str, Any]] | None = None
     remove_profiles: set[str] = field(default_factory=set)
     ui: UiPreferences | None = None
+    effort_overrides: dict[str, EffortModelOverride] | None = None
 
 
 def compute_revision(path: Path) -> str:
@@ -169,6 +173,7 @@ def resolve_effective(
         sources=loaded.sources,
         ollama_contacted=ollama_on,
         writers=writers,
+        effort_overrides=dict(loaded.efforts),
     )
 
 
@@ -227,6 +232,11 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 ),
                 "profiles": _profiles_after_patch(base.profiles, patch),
                 "ui": _ui_to_raw(patch.ui if patch.ui is not None else base.ui),
+                "efforts": efforts_to_raw(
+                    patch.effort_overrides
+                    if patch.effort_overrides is not None
+                    else base.efforts
+                ),
             },
             path=Path("<patch>"),
         )
@@ -299,7 +309,32 @@ def effective_diff(
             new = _fmt(after.sticky.get(key))
         if old != new:
             rows.append((key, old, new))
+    effort_keys = sorted(
+        set(_flatten_effort_overrides(before.effort_overrides))
+        | set(_flatten_effort_overrides(after.effort_overrides))
+    )
+    before_eff = _flatten_effort_overrides(before.effort_overrides)
+    after_eff = _flatten_effort_overrides(after.effort_overrides)
+    for key in effort_keys:
+        old = before_eff.get(key, "(unset)")
+        new = after_eff.get(key, "(unset)")
+        if old != new:
+            rows.append((key, old, new))
     return rows
+
+
+def _flatten_effort_overrides(
+    overrides: Mapping[str, EffortModelOverride],
+) -> dict[str, str]:
+    flat: dict[str, str] = {}
+    for name, override in overrides.items():
+        for slot, model in override.profiles.items():
+            flat[f"efforts.{name}.{slot}"] = model
+        if override.ollama_model:
+            flat[f"efforts.{name}.ollama_model"] = override.ollama_model
+        if override.final_review_model:
+            flat[f"efforts.{name}.final_review_model"] = override.final_review_model
+    return flat
 
 
 def _fmt(value: Any) -> str:
@@ -435,6 +470,22 @@ def _apply_patch_to_doc(
         ui_table["onboarding_complete"] = patch.ui.onboarding_complete
         doc["ui"] = ui_table
 
+    if patch.effort_overrides is not None:
+        raw = efforts_to_raw(patch.effort_overrides)
+        if raw:
+            efforts_table = tomlkit.table()
+            for name in EFFORT_NAMES:
+                body_raw = raw.get(name)
+                if not body_raw:
+                    continue
+                body = tomlkit.table()
+                for key, value in body_raw.items():
+                    body[key] = value
+                efforts_table[name] = body
+            doc["efforts"] = efforts_table
+        elif "efforts" in doc:
+            del doc["efforts"]
+
 
 def _to_toml_value(value: Any) -> Any:
     if isinstance(value, list):
@@ -504,6 +555,7 @@ def patch_from_form_values(
     profiles: dict[str, dict[str, Any]] | None = None,
     remove_profiles: set[str] | None = None,
     ui: UiPreferences | None = None,
+    effort_overrides: dict[str, EffortModelOverride] | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
     values: dict[str, Any] = {}
@@ -558,6 +610,7 @@ def patch_from_form_values(
         profiles=profiles,
         remove_profiles=remove_profiles or set(),
         ui=ui,
+        effort_overrides=effort_overrides,
     )
 
 

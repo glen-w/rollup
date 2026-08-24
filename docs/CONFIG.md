@@ -110,6 +110,42 @@ API keys and `--llm-api-base` are **not** sticky (CLI/env only). Custom summary
 profile JSON may set `"provider": "litellm"` per profile; that overrides the
 global `llm_provider` for those jobs only.
 
+## Effort model overrides
+
+Built-in `light` / `balanced` / `high` ladders keep the same profile names and
+type routes. Override **models** per effort in TOML (or the Configuration Centre):
+
+```toml
+[efforts.high]
+rough = "qwen2.5:14b"
+standard = "gpt-oss:20b"
+deep = "qwen3:32b"
+max = "qwen3:32b"
+ollama_model = "qwen2.5:14b"
+final_review_model = "gpt-oss:20b"
+```
+
+Omitted keys keep the built-in default. A sticky `ollama_model` or CLI
+`--ollama-model` / `--final-review-model` still wins for the group/fallback and
+review companions. `--list-efforts` and doctor show the effective models after
+overrides. Custom `--summary-profile-set` JSON is unchanged (and still cannot
+combine with `--effort`).
+
+### Single-model override (run only)
+
+`--single-model NAME` points every summary profile, group/fallback, and final
+review at one model for **this run only** (not sticky). Effort still controls
+`max_chars_for_llm`, timeouts, and routing. Useful when you want one Ollama tag
+without editing the whole ladder:
+
+```bash
+rollup digest --ollama --effort balanced --single-model qwen2.5:7b
+rollup doctor --ollama --single-model qwen2.5:7b --network
+```
+
+Run Studio exposes the same knob in **Compose**: a checkbox plus, for Ollama, a dropdown of local tags (filled after the page loads via `POST /run/ollama-models`; GET `/run` never contacts Ollama). LiteLLM uses a text field. Checking the box enables LLM summaries for that run. Not saved to TOML.
+Explicit `--ollama-model` / `--final-review-model` still win when set.
+
 ## UI preferences
 
 Web-only preferences live in the same TOML under `[ui]` (still not SQLite):

@@ -13,6 +13,8 @@ from rollup.llm_client import (
     OllamaClient,
     _consume_litellm_stream,
     _parse_litellm_non_stream,
+    fetch_ollama_model_names,
+    list_ollama_models,
     validate_llm_api_base,
 )
 from rollup.provider_options import ProviderOptionsError, reject_litellm_ollama_model
@@ -99,3 +101,25 @@ def test_litellm_client_missing_extra() -> None:
                 ),
                 max_output_chars=100,
             )
+
+
+@patch("requests.get")
+def test_list_ollama_models_returns_sorted_names(mock_get: MagicMock) -> None:
+    mock_get.return_value.json.return_value = {
+        "models": [{"name": "qwen2.5:7b"}, {"name": "llama3.2:3b"}, {"name": "qwen2.5:7b"}]
+    }
+    mock_get.return_value.raise_for_status = MagicMock()
+    names = list_ollama_models("http://localhost:11434/api/generate")
+    assert names == ["llama3.2:3b", "qwen2.5:7b"]
+    mock_get.assert_called_once()
+    assert "/api/tags" in mock_get.call_args[0][0]
+
+
+@patch("requests.get")
+def test_list_ollama_models_empty_on_error(mock_get: MagicMock) -> None:
+    mock_get.side_effect = ConnectionError("down")
+    assert list_ollama_models("http://localhost:11434/api/generate") == []
+    names, err = fetch_ollama_model_names("http://localhost:11434/api/generate")
+    assert names == []
+    assert err
+

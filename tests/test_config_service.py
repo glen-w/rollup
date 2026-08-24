@@ -193,3 +193,28 @@ def test_custom_profile_in_effective_merge() -> None:
     assert eff.profile_name == "tech"
     assert eff.sticky["lookback_days"] == 2
     assert eff.sticky["folder"] == ["tech"]
+
+
+def test_effort_overrides_roundtrip(tmp_path: Path) -> None:
+    from rollup.effort import EffortModelOverride
+
+    path = tmp_path / "config.toml"
+    path.write_text("lookback_days = 7\n", encoding="utf-8")
+    rev = compute_revision(path)
+    patch = ConfigPatch(
+        effort_overrides={
+            "high": EffortModelOverride(
+                profiles={"max": "my-max:33b"},
+                ollama_model="my-group:7b",
+            )
+        }
+    )
+    saved = apply_and_save(path, patch, expected_revision=rev)
+    assert saved.loaded.efforts["high"].profiles["max"] == "my-max:33b"
+    assert saved.loaded.efforts["high"].ollama_model == "my-group:7b"
+    text = path.read_text(encoding="utf-8")
+    assert "[efforts.high]" in text or 'max = "my-max:33b"' in text
+    eff = resolve_effective(saved.loaded)
+    assert "efforts.high.max" in {row[0] for row in []} or (
+        eff.effort_overrides["high"].profiles["max"] == "my-max:33b"
+    )

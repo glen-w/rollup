@@ -239,3 +239,95 @@ def test_cmd_digest_list_efforts(capsys: pytest.CaptureFixture[str]) -> None:
     assert "light:" in captured.out
     assert "balanced:" in captured.out
     assert "high:" in captured.out
+
+
+def test_effort_model_override_swaps_models() -> None:
+    from rollup.effort import EffortModelOverride
+
+    builtin = get_effort_preset("high")
+    override = EffortModelOverride(
+        profiles={"rough": "custom-rough:latest", "deep": "custom-deep:latest"},
+        ollama_model="custom-group:latest",
+        final_review_model="custom-review:latest",
+    )
+    custom = get_effort_preset("high", override=override)
+    assert custom.profile_set.profiles["rough"].model == "custom-rough:latest"
+    assert custom.profile_set.profiles["standard"].model == builtin.profile_set.profiles["standard"].model
+    assert custom.profile_set.profiles["deep"].model == "custom-deep:latest"
+    assert custom.ollama_model == "custom-group:latest"
+    assert custom.final_review_model == "custom-review:latest"
+    assert "custom-rough:latest" in custom.expected_models()
+
+
+def test_resolve_profile_set_applies_effort_overrides() -> None:
+    from rollup.effort import EffortModelOverride
+
+    override = EffortModelOverride(profiles={"max": "my-max:33b"})
+    profile_set = resolve_profile_set(
+        effort="balanced",
+        effort_overrides={"balanced": override},
+    )
+    assert profile_set.profiles["max"].model == "my-max:33b"
+
+
+def test_build_config_applies_effort_overrides_from_loaded_config() -> None:
+    from rollup.effort import EffortModelOverride
+    from rollup.user_config import LoadedUserConfig
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["digest", "--effort", "high", "--root", "/tmp/root", "--mail-root", "/tmp/mail"]
+    )
+    args._loaded_user_config = LoadedUserConfig(
+        efforts={
+            "high": EffortModelOverride(
+                profiles={"rough": "alt-rough:1"},
+                ollama_model="alt-group:1",
+            )
+        }
+    )
+    config = _build_config(args)
+    assert config.ollama_model == "alt-group:1"
+    assert config.effort_overrides["high"].profiles["rough"] == "alt-rough:1"
+
+
+def test_apply_single_model_swaps_all_profiles() -> None:
+    from rollup.effort import apply_single_model, apply_single_model_to_preset
+
+    balanced = get_effort_preset("balanced")
+    unified = apply_single_model(balanced.profile_set, "one-model:7b")
+    for profile in unified.profiles.values():
+        assert profile.model == "one-model:7b"
+
+    preset = apply_single_model_to_preset(balanced, "one-model:7b")
+    assert preset.ollama_model == "one-model:7b"
+    assert preset.final_review_model == "one-model:7b"
+    assert preset.profile_set.profiles["max"].model == "one-model:7b"
+
+
+def test_resolve_profile_set_single_model() -> None:
+    from rollup.effort import apply_single_model
+
+    profile_set = resolve_profile_set(effort="balanced", single_model="solo:3b")
+    assert profile_set.profiles["rough"].model == "solo:3b"
+    assert profile_set.profiles["max"].model == "solo:3b"
+
+
+def test_build_config_single_model_sets_companions() -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "digest",
+            "--single-model",
+            "solo:7b",
+            "--root",
+            "/tmp/root",
+            "--mail-root",
+            "/tmp/mail",
+        ]
+    )
+    config = _build_config(args)
+    assert config.single_model == "solo:7b"
+    assert config.ollama_model == "solo:7b"
+    assert config.final_review_model == "solo:7b"
+    assert config.llm_model == "solo:7b"

@@ -184,7 +184,14 @@ python -m rollup digest --ollama --effort high --lookback-days 7 --summary-routi
 python -m rollup doctor --ollama --effort high --network
 ```
 
-`balanced` matches today's built-in defaults. Explicit `--ollama-model` / `--final-review-model` / `--max-chars-for-llm` still win over the preset. Do not combine `--effort` with `--summary-profile-set`.
+`balanced` matches today's built-in defaults. Override models inside an effort with `[efforts.high]` (and friends) in TOML or Settings. Explicit `--ollama-model` / `--final-review-model` / `--max-chars-for-llm` still win over the preset. Do not combine `--effort` with `--summary-profile-set`.
+
+Use one model for every profile on a single run (not sticky):
+
+```bash
+python -m rollup digest --ollama --effort balanced --single-model qwen2.5:7b --lookback-days 7
+python -m rollup doctor --ollama --single-model qwen2.5:7b --network
+```
 
 ### XTEINK e-ink output
 

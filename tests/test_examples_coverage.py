@@ -50,6 +50,7 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("group summaries", "--group-summaries"),
     ("effort presets", "--effort"),
     ("list efforts", "--list-efforts"),
+    ("single model override", "--single-model"),
     ("xteink e-ink output", "--xteink"),
     ("output writer selection", "--output"),
     ("output none md/html only", "--output none"),

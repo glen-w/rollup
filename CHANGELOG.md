@@ -4,6 +4,13 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.8.1 — 2026-08-24
+
+### Added
+
+- **Effort model overrides**: `[efforts.light|balanced|high]` in TOML (and Configuration Centre) customise which Ollama models each effort ladder uses, without replacing the whole summary profile set. `--list-efforts` and doctor show the effective models.
+- **`--single-model`**: one-shot override for every summary profile, group/fallback, and final review (effort still controls budgets). Available on `digest` and `doctor`. Run Studio Compose has a checkbox plus an Ollama dropdown of local tags (`POST /run/ollama-models`; GET `/run` never contacts Ollama); not sticky.
+
 ## 0.7.0 — 2026-08-05
 
 ### Added

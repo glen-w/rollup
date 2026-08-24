@@ -345,11 +345,12 @@ Final review does **not** require `--ollama`. It calls Ollama independently when
 | `balanced` (default) | `llama3.2:3b` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `llama3.2:3b` | `qwen2.5:7b` | 30_000 |
 | `high` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `qwen3.6:27b` | `qwen2.5:7b` | `gpt-oss:20b` | 50_000 |
 
-Explicit flags (`--ollama-model`, `--final-review-model`, `--max-chars-for-llm`) override the effort preset. Do not combine `--effort` with `--summary-profile-set` (custom JSON remains the escape hatch for nonstandard tags).
+Explicit flags (`--ollama-model`, `--final-review-model`, `--max-chars-for-llm`) override the effort preset. Customise the models inside each effort via `[efforts.<name>]` in TOML or the Configuration Centre — profile names and type routes stay the same. Do not combine `--effort` with `--summary-profile-set` (custom JSON remains the escape hatch for nonstandard tags).
 
 ```bash
 python -m rollup digest --list-efforts
 python -m rollup digest --ollama --effort high
+python -m rollup digest --ollama --effort balanced --single-model qwen2.5:7b
 python -m rollup doctor --ollama --effort high --network
 ```
 

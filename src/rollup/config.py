@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from rollup.effort import EffortModelOverride
     from rollup.folder_theme import FolderThemeOverride
 
 DEFAULT_MAIL_ROOT = Path.home() / "email" / "gmail"
@@ -83,6 +84,8 @@ class Config:
     run_profile: str | None = None
     list_profiles: bool = False
     folder_themes: dict[str, FolderThemeOverride] = field(default_factory=dict)
+    effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
+    single_model: str | None = None
     llm_provider: str = DEFAULT_LLM_PROVIDER
     llm_model: str | None = None
     llm_api_base: str | None = None

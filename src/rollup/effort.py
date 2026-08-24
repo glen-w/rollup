@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Literal
+from dataclasses import dataclass, field, replace
+from typing import Literal, Mapping
 
 from rollup.config import (
     DEFAULT_EFFORT as _DEFAULT_EFFORT_STR,
@@ -23,9 +23,30 @@ EFFORT_NAMES: tuple[EffortName, ...] = ("light", "balanced", "high")
 # Final-review default matches builtin final_review_profiles (qwen2.5:7b).
 DEFAULT_FINAL_REVIEW_MODEL = "qwen2.5:7b"
 
+# Summary-profile slots whose models can be overridden per effort.
+EFFORT_PROFILE_SLOTS: tuple[str, ...] = ("rough", "standard", "deep", "max")
+EFFORT_COMPANION_KEYS: tuple[str, ...] = ("ollama_model", "final_review_model")
+EFFORT_OVERRIDE_KEYS = frozenset(EFFORT_PROFILE_SLOTS) | frozenset(EFFORT_COMPANION_KEYS)
+
 
 class UnknownEffortError(ValueError):
     """Raised when an effort preset name is not defined."""
+
+
+@dataclass(frozen=True)
+class EffortModelOverride:
+    """Optional model substitutions for one built-in effort preset."""
+
+    profiles: dict[str, str] = field(default_factory=dict)
+    ollama_model: str | None = None
+    final_review_model: str | None = None
+
+    def is_empty(self) -> bool:
+        return (
+            not self.profiles
+            and self.ollama_model is None
+            and self.final_review_model is None
+        )
 
 
 @dataclass(frozen=True)
@@ -209,7 +230,34 @@ def _high_preset() -> EffortPreset:
     )
 
 
-def get_effort_preset(name: str) -> EffortPreset:
+def apply_effort_override(
+    preset: EffortPreset,
+    override: EffortModelOverride | None,
+) -> EffortPreset:
+    """Substitute models on a built-in preset. Empty/None override is a no-op."""
+    if override is None or override.is_empty():
+        return preset
+    profiles = dict(preset.profile_set.profiles)
+    for slot, model in override.profiles.items():
+        if slot not in profiles:
+            raise UnknownEffortError(
+                f"Unknown profile slot {slot!r} in effort {preset.name} override. "
+                f"Available: {', '.join(EFFORT_PROFILE_SLOTS)}"
+            )
+        profiles[slot] = replace(profiles[slot], model=model)
+    profile_set = replace(preset.profile_set, profiles=profiles)
+    return replace(
+        preset,
+        profile_set=profile_set,
+        ollama_model=override.ollama_model or preset.ollama_model,
+        final_review_model=override.final_review_model or preset.final_review_model,
+    )
+
+
+def get_effort_preset(
+    name: str,
+    override: EffortModelOverride | None = None,
+) -> EffortPreset:
     """Return a named effort preset or raise UnknownEffortError."""
     presets = {
         "light": _light_preset,
@@ -221,12 +269,17 @@ def get_effort_preset(name: str) -> EffortPreset:
         raise UnknownEffortError(
             f"Unknown effort {name!r}. Available: {', '.join(EFFORT_NAMES)}"
         )
-    return factory()
+    return apply_effort_override(factory(), override)
 
 
-def list_effort_presets() -> tuple[EffortPreset, ...]:
+def list_effort_presets(
+    overrides: Mapping[str, EffortModelOverride] | None = None,
+) -> tuple[EffortPreset, ...]:
     """Return all built-in effort presets in display order."""
-    return tuple(get_effort_preset(name) for name in EFFORT_NAMES)
+    ov = overrides or {}
+    return tuple(
+        get_effort_preset(name, override=ov.get(name)) for name in EFFORT_NAMES
+    )
 
 
 def resolve_effort_name(name: str | None) -> EffortName:
@@ -240,14 +293,127 @@ def resolve_effort_name(name: str | None) -> EffortName:
     return name  # type: ignore[return-value]
 
 
+def apply_single_model(
+    profile_set: SummaryProfileSet,
+    model: str,
+    *,
+    provider: str = "ollama",
+) -> SummaryProfileSet:
+    """Point every summary profile at one model. Empty model is a no-op."""
+    model = model.strip()
+    if not model:
+        return profile_set
+    profiles: dict[str, SummaryProfile] = {}
+    for name, profile in profile_set.profiles.items():
+        if provider == "litellm":
+            profiles[name] = replace(
+                profile,
+                model=model,
+                provider="litellm",
+                think=False,
+                num_ctx=None,
+                options={},
+            )
+        else:
+            profiles[name] = replace(profile, model=model, provider="ollama")
+    return replace(profile_set, profiles=profiles)
+
+
+def apply_single_model_to_preset(
+    preset: EffortPreset,
+    model: str,
+    *,
+    provider: str = "ollama",
+) -> EffortPreset:
+    """Swap every ladder + companion model; effort budgets stay as they are."""
+    model = model.strip()
+    if not model:
+        return preset
+    return replace(
+        preset,
+        profile_set=apply_single_model(
+            preset.profile_set, model, provider=provider
+        ),
+        ollama_model=model,
+        final_review_model=model,
+    )
+
+
 def resolve_profile_set(
     *,
     effort: str | None = None,
     summary_profile_set_path: str | None = None,
+    effort_overrides: Mapping[str, EffortModelOverride] | None = None,
+    single_model: str | None = None,
+    llm_provider: str | None = None,
 ):
     """Load a custom profile-set JSON, or the effort preset's built-in ladder."""
     from rollup.summary_profiles import load_summary_profile_set
 
     if summary_profile_set_path is not None:
-        return load_summary_profile_set(summary_profile_set_path)
-    return get_effort_preset(resolve_effort_name(effort)).profile_set
+        profile_set = load_summary_profile_set(summary_profile_set_path)
+    else:
+        name = resolve_effort_name(effort)
+        override = (effort_overrides or {}).get(name)
+        profile_set = get_effort_preset(name, override=override).profile_set
+    if single_model:
+        profile_set = apply_single_model(
+            profile_set,
+            single_model,
+            provider=llm_provider or "ollama",
+        )
+    return profile_set
+
+
+def effort_editor_rows(
+    overrides: Mapping[str, EffortModelOverride] | None = None,
+) -> list[dict[str, object]]:
+    """UI rows for editing per-effort models. Placeholders are built-in defaults."""
+    ov = overrides or {}
+    slot_labels = {
+        "rough": "Rough",
+        "standard": "Standard",
+        "deep": "Deep",
+        "max": "Max",
+        "ollama_model": "Group / fallback",
+        "final_review_model": "Final review",
+    }
+    rows: list[dict[str, object]] = []
+    for preset in list_effort_presets():
+        override = ov.get(preset.name)
+        slots: list[dict[str, str]] = []
+        for name in EFFORT_PROFILE_SLOTS:
+            default = preset.profile_set.profiles[name].model
+            value = (override.profiles.get(name) if override else None) or ""
+            slots.append(
+                {
+                    "name": name,
+                    "label": slot_labels[name],
+                    "default": default,
+                    "value": value,
+                }
+            )
+        slots.append(
+            {
+                "name": "ollama_model",
+                "label": slot_labels["ollama_model"],
+                "default": preset.ollama_model,
+                "value": (override.ollama_model if override else None) or "",
+            }
+        )
+        slots.append(
+            {
+                "name": "final_review_model",
+                "label": slot_labels["final_review_model"],
+                "default": preset.final_review_model,
+                "value": (override.final_review_model if override else None) or "",
+            }
+        )
+        rows.append(
+            {
+                "name": preset.name,
+                "description": preset.description,
+                "slots": slots,
+            }
+        )
+    return rows

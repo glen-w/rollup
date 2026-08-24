@@ -25,6 +25,12 @@ from rollup.config_service import (
     resolve_effective,
     validate_patch,
 )
+from rollup.effort import (
+    EFFORT_NAMES,
+    EFFORT_PROFILE_SLOTS,
+    EffortModelOverride,
+    effort_editor_rows,
+)
 from rollup.folder_theme import FolderThemeOverride, folder_slug, theme_for
 from rollup.output_writers import discover_writers
 from rollup.run_profiles import list_run_profiles
@@ -155,6 +161,44 @@ def _profiles_from_form() -> tuple[dict[str, dict], set[str]]:
     return profiles, remove
 
 
+def _effort_overrides_from_form() -> dict[str, EffortModelOverride] | None:
+    """Parse effort model fields; None means the form omitted them (leave unchanged)."""
+    if not any(key.startswith("effort_model_") for key in request.form):
+        return None
+    out: dict[str, EffortModelOverride] = {}
+    for name in EFFORT_NAMES:
+        profiles: dict[str, str] = {}
+        for slot in EFFORT_PROFILE_SLOTS:
+            raw = request.form.get(f"effort_model_{name}_{slot}", "").strip()
+            if raw:
+                profiles[slot] = raw
+        ollama = request.form.get(f"effort_model_{name}_ollama_model", "").strip()
+        review = request.form.get(
+            f"effort_model_{name}_final_review_model", ""
+        ).strip()
+        override = EffortModelOverride(
+            profiles=profiles,
+            ollama_model=ollama or None,
+            final_review_model=review or None,
+        )
+        if not override.is_empty():
+            out[name] = override
+    return out
+
+
+def _effort_fingerprint(overrides: dict[str, EffortModelOverride] | None) -> str:
+    if not overrides:
+        return ""
+    parts: list[str] = []
+    for name in sorted(overrides):
+        ov = overrides[name]
+        slots = ",".join(f"{k}={v}" for k, v in sorted(ov.profiles.items()))
+        parts.append(
+            f"{name}:{slots}:{ov.ollama_model or ''}:{ov.final_review_model or ''}"
+        )
+    return "|".join(parts)
+
+
 def _ui_from_form() -> UiPreferences:
     landing = request.form.get("landing_page", "archive").strip()
     preferred = request.form.get("preferred_view", "html").strip()
@@ -213,6 +257,7 @@ def _patch_from_request() -> ConfigPatch:
         profiles=profiles if profiles else None,
         remove_profiles=remove,
         ui=_ui_from_form(),
+        effort_overrides=_effort_overrides_from_form(),
     )
 
 
@@ -342,6 +387,7 @@ def settings_index():
         onboarding=onboarding,
         landing_pages=sorted(UI_LANDING_PAGES),
         preferred_views=sorted(UI_PREFERRED_VIEWS),
+        effort_ladders=effort_editor_rows(doc.loaded.efforts if doc else {}),
         preview_token=None,
         diff_rows=None,
         patch_summary=None,
@@ -384,6 +430,11 @@ def settings_preview():
                 else doc.loaded.profiles
             ),
             ui=patch.ui if patch.ui is not None else doc.loaded.ui,
+            efforts=(
+                patch.effort_overrides
+                if patch.effort_overrides is not None
+                else doc.loaded.efforts
+            ),
             sources=doc.loaded.sources,
         )
         if patch.remove_profiles:
@@ -395,6 +446,7 @@ def settings_preview():
                 folder_themes=after_loaded.folder_themes,
                 profiles=profiles,
                 ui=after_loaded.ui,
+                efforts=after_loaded.efforts,
                 sources=after_loaded.sources,
             )
         after = resolve_effective(after_loaded)
@@ -403,6 +455,7 @@ def settings_preview():
             doc.revision,
             str(sorted(patch.values.items())),
             str(sorted(patch.clear_values)),
+            _effort_fingerprint(patch.effort_overrides),
         )
         token = issue_maintenance_token(
             secret=current_app.secret_key,

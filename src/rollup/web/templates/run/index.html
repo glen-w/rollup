@@ -22,6 +22,10 @@
     <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
     <dt>Matched folders</dt>
     <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
+    {% if use_single_model and selected_single_model %}
+    <dt>Single model</dt>
+    <dd><code>{{ selected_single_model }}</code> <span class="muted">(this run only)</span></dd>
+    {% endif %}
   </dl>
 </section>
 
@@ -59,6 +63,38 @@
         <option value="0">off — local-only</option>
       </select>
     </label>
+    {% set provider = (sticky.get('llm_provider') if sticky else 'ollama') or 'ollama' %}
+    {% set selected = selected_single_model|default('') %}
+    <label class="inline-check">
+      <input type="checkbox" name="use_single_model" id="use-single-model" value="1"
+             {% if use_single_model %}checked{% endif %}>
+      Use a single model for this run
+    </label>
+    <div id="single-model-fields" class="single-model-fields" {% if not use_single_model %}hidden{% endif %}>
+      {% if provider != 'litellm' %}
+      <label>Ollama model
+        <select name="single_model" id="single-model-select"
+                data-models-url="{{ url_for('run.run_ollama_models') }}"
+                data-selected="{{ selected }}">
+          {% if selected %}
+          <option value="{{ selected }}" selected>{{ selected }}</option>
+          {% else %}
+          <option value="">Loading local models…</option>
+          {% endif %}
+        </select>
+      </label>
+      <label id="single-model-custom-wrap" hidden>
+        Model tag (Ollama not reachable — type a tag)
+        <input type="text" id="single-model-custom" placeholder="llama3.2:3b" value="{{ selected }}">
+      </label>
+      {% else %}
+      <label>LiteLLM model
+        <input type="text" name="single_model" id="single-model-input"
+               value="{{ selected }}" placeholder="openai/gpt-4o">
+      </label>
+      {% endif %}
+      <p class="note">Replaces every effort-ladder model (including group/fallback and final review) for this run only. Enables LLM summaries. Not saved to TOML.</p>
+    </div>
     <label>Writers
       <select name="output_mode">
         <option value="">(config default)</option>

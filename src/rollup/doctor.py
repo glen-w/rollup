@@ -13,7 +13,11 @@ from urllib.parse import urlparse
 from rollup import __version__
 from rollup.config import Config
 from rollup.discovery import iter_mbox_files
-from rollup.effort import get_effort_preset, resolve_effort_name
+from rollup.effort import (
+    apply_single_model_to_preset,
+    get_effort_preset,
+    resolve_effort_name,
+)
 from rollup.manifest import read_latest_manifest
 from rollup.run_options import RunOptions
 from rollup.safety import SafetyError, assert_safe_write_paths, is_inside, validate_read_root
@@ -354,8 +358,20 @@ def _check_live_mail(config: Config) -> DoctorCheck | None:
     return None
 
 
+def _effective_effort_preset(config: Config):
+    name = resolve_effort_name(config.effort)
+    preset = get_effort_preset(
+        name, override=config.effort_overrides.get(name)
+    )
+    if config.single_model:
+        preset = apply_single_model_to_preset(
+            preset, config.single_model, provider=config.llm_provider
+        )
+    return preset
+
+
 def _check_effort_preset(config: Config) -> DoctorCheck:
-    preset = get_effort_preset(resolve_effort_name(config.effort))
+    preset = _effective_effort_preset(config)
     models = ", ".join(preset.expected_models())
     return DoctorCheck(
         id="effort_preset",
@@ -466,9 +482,7 @@ def _check_ollama_network(config: Config) -> list[DoctorCheck]:
                 message=f"Ollama reachable ({len(models)} model(s))",
             )
         )
-        wanted_models = list(
-            get_effort_preset(resolve_effort_name(config.effort)).expected_models()
-        )
+        wanted_models = list(_effective_effort_preset(config).expected_models())
         if config.ollama_model and config.ollama_model not in wanted_models:
             wanted_models.append(config.ollama_model)
         if config.final_review_model and config.final_review_model not in wanted_models:

@@ -146,11 +146,23 @@ def _build_config(
         )
 
     effort = getattr(args, "effort", None)
-    preset = get_effort_preset(resolve_effort_name(effort))
+    loaded = getattr(args, "_loaded_user_config", None)
+    effort_overrides = dict(getattr(loaded, "efforts", {}) or {})
+    effort_name = resolve_effort_name(effort)
+    preset = get_effort_preset(
+        effort_name, override=effort_overrides.get(effort_name)
+    )
+
+    raw_single = getattr(args, "single_model", None)
+    single_model = (
+        raw_single.strip()
+        if isinstance(raw_single, str) and raw_single.strip()
+        else None
+    )
 
     ollama_model = getattr(args, "ollama_model", None)
     if ollama_model is None:
-        ollama_model = preset.ollama_model
+        ollama_model = single_model or preset.ollama_model
 
     max_chars_for_llm = getattr(args, "max_chars_for_llm", None)
     if max_chars_for_llm is None:
@@ -158,7 +170,11 @@ def _build_config(
 
     final_review_model = getattr(args, "final_review_model", None)
     if final_review_model is None:
-        final_review_model = preset.final_review_model
+        final_review_model = single_model or preset.final_review_model
+
+    llm_model = getattr(args, "llm_model", None)
+    if llm_model is None and single_model:
+        llm_model = single_model
 
     return Config(
         root=Path(args.root).expanduser(),
@@ -179,7 +195,7 @@ def _build_config(
         ollama_model=ollama_model,
         allow_remote_ollama=getattr(args, "allow_remote_ollama", False),
         llm_provider=getattr(args, "llm_provider", DEFAULT_LLM_PROVIDER),
-        llm_model=getattr(args, "llm_model", None),
+        llm_model=llm_model,
         llm_api_base=getattr(args, "llm_api_base", None),
         summary_profile=getattr(args, "summary_profile", None),
         summary_variants=summary_variants,
@@ -236,6 +252,8 @@ def _build_config(
         run_profile=getattr(args, "profile", None),
         list_profiles=getattr(args, "list_profiles", False),
         folder_themes=dict(folder_themes or {}),
+        effort_overrides=effort_overrides,
+        single_model=single_model,
     )
 
 
@@ -489,6 +507,9 @@ def _load_and_validate_profile_set(config: Config):
     profile_set = resolve_profile_set(
         effort=config.effort,
         summary_profile_set_path=config.summary_profile_set_path,
+        effort_overrides=config.effort_overrides,
+        single_model=config.single_model,
+        llm_provider=config.llm_provider,
     )
     return require_valid_summary_profile_set(
         profile_set, get_canonical_newsletter_types()
@@ -504,8 +525,8 @@ def _print_summary_profile_listing(profile_set) -> None:
         )
 
 
-def _print_effort_listing() -> None:
-    for preset in list_effort_presets():
+def _print_effort_listing(overrides=None) -> None:
+    for preset in list_effort_presets(overrides):
         models = ", ".join(preset.expected_models())
         print(
             f"{preset.name}: {preset.description} "
@@ -619,10 +640,10 @@ def cmd_digest(args: argparse.Namespace) -> int:
     if conflict:
         print(f"ERROR: {conflict}", file=sys.stderr)
         return 1
-    if getattr(args, "list_efforts", False):
-        _print_effort_listing()
-        return 0
     loaded: LoadedUserConfig = getattr(args, "_loaded_user_config", LoadedUserConfig())
+    if getattr(args, "list_efforts", False):
+        _print_effort_listing(loaded.efforts)
+        return 0
     if getattr(args, "list_profiles", False):
         _print_run_profile_listing(loaded)
         return 0

@@ -60,6 +60,8 @@ def test_settings_get(app) -> None:
     assert resp.status_code == 200
     assert b"Configuration Centre" in resp.data
     assert b"First-run checklist" in resp.data
+    assert b"effort_model_balanced_rough" in resp.data
+    assert b"effort_model_high_max" in resp.data
 
 
 def test_run_studio_get(app) -> None:
@@ -70,6 +72,8 @@ def test_run_studio_get(app) -> None:
     assert b"Run Studio" in resp.data
     assert b"Effective run" in resp.data
     assert b"rollup digest" in resp.data or b"digest" in resp.data
+    assert b"use_single_model" in resp.data
+    assert b"Use a single model for this run" in resp.data
 
 
 def test_settings_preview_requires_csrf(app) -> None:
@@ -291,3 +295,186 @@ def test_landing_page_run_redirect(app) -> None:
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 302
     assert "/run" in (resp.headers.get("Location") or "")
+
+
+def test_settings_saves_effort_models(app) -> None:
+    application, cfg = app
+    client = application.test_client()
+    with client.session_transaction() as sess:
+        sess[CSRF_SESSION_KEY] = "test-csrf-token"
+    base = {
+        "csrf_token": "test-csrf-token",
+        "mail_root": str(Path(application.config["MAIL_ROOT"])),
+        "root": str(Path(application.config["NEWSLETTER_ROOT"])),
+        "output_dir": str(Path(application.config["OUTPUT_DIR"])),
+        "state_dir": str(Path(application.config["STATE_DIR"])),
+        "log_dir": str(Path(application.config["STATE_DIR"]) / "logs"),
+        "lookback_days": "7",
+        "effort": "balanced",
+        "ollama": "0",
+        "no_grouping": "0",
+        "output_mode": "none",
+        "profile": "weekly",
+        "landing_page": "archive",
+        "preferred_view": "html",
+        "onboarding_complete": "1",
+        "effort_model_high_rough": "my-rough:latest",
+        "effort_model_high_standard": "",
+        "effort_model_high_deep": "",
+        "effort_model_high_max": "",
+        "effort_model_high_ollama_model": "my-group:latest",
+        "effort_model_high_final_review_model": "",
+        "effort_model_light_rough": "",
+        "effort_model_balanced_rough": "",
+    }
+    resp = client.post("/settings/preview", data=base, follow_redirects=False)
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    import re
+
+    confirm = re.search(r'name="confirm_token" value="([^"]+)"', html)
+    preview_fp = re.search(r'name="preview_fp" value="([^"]+)"', html)
+    assert confirm and preview_fp
+    with client.session_transaction() as sess:
+        token = sess[CSRF_SESSION_KEY]
+    save_resp = client.post(
+        "/settings/save",
+        data={
+            **base,
+            "csrf_token": token,
+            "confirm_token": confirm.group(1),
+            "preview_fp": preview_fp.group(1),
+        },
+        follow_redirects=True,
+    )
+    assert save_resp.status_code == 200
+    text = cfg.read_text(encoding="utf-8")
+    assert "my-rough:latest" in text
+    assert "my-group:latest" in text
+
+
+def test_run_studio_single_model_in_argv(app, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rollup.web import run_runner
+    from rollup.web.run_runner import ActiveRun
+    from rollup.web.routes import run as run_routes
+
+    application, _cfg = app
+    client = application.test_client()
+    captured: dict[str, list[str]] = {}
+
+    def fake_start(argv, *, dry_run, cwd=None):
+        captured["argv"] = list(argv)
+        run = ActiveRun(
+            run_id="test-single",
+            argv=list(argv),
+            dry_run=dry_run,
+            started_at=0.0,
+            status="dry_run",
+            exit_code=0,
+        )
+        run_runner._active = run  # noqa: SLF001
+        return run
+
+    monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
+    monkeypatch.setattr(
+        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
+    )
+    monkeypatch.setattr(run_runner, "is_busy", lambda: False)
+
+    with client.session_transaction() as sess:
+        sess[CSRF_SESSION_KEY] = "csrf-single"
+    resp = client.post(
+        "/run/dry-run",
+        data={
+            "csrf_token": "csrf-single",
+            "profile": "weekly",
+            "ollama": "0",
+            "use_single_model": "1",
+            "single_model": "qwen2.5:7b",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)
+    argv = captured.get("argv") or []
+    assert "--single-model" in argv
+    assert "qwen2.5:7b" in argv
+    assert "--ollama" in argv
+
+
+def test_run_studio_ignores_single_model_unless_checked(
+    app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rollup.web import run_runner
+    from rollup.web.run_runner import ActiveRun
+    from rollup.web.routes import run as run_routes
+
+    application, _cfg = app
+    client = application.test_client()
+    captured: dict[str, list[str]] = {}
+
+    def fake_start(argv, *, dry_run, cwd=None):
+        captured["argv"] = list(argv)
+        run = ActiveRun(
+            run_id="test-unchecked",
+            argv=list(argv),
+            dry_run=dry_run,
+            started_at=0.0,
+            status="dry_run",
+            exit_code=0,
+        )
+        run_runner._active = run  # noqa: SLF001
+        return run
+
+    monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
+    monkeypatch.setattr(
+        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
+    )
+    monkeypatch.setattr(run_runner, "is_busy", lambda: False)
+
+    with client.session_transaction() as sess:
+        sess[CSRF_SESSION_KEY] = "csrf-unchecked"
+    resp = client.post(
+        "/run/dry-run",
+        data={
+            "csrf_token": "csrf-unchecked",
+            "profile": "weekly",
+            "single_model": "qwen2.5:7b",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)
+    argv = captured.get("argv") or []
+    assert "--single-model" not in argv
+
+
+def test_run_studio_get_does_not_list_ollama(app, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rollup.web.routes import run as run_routes
+
+    def boom(*_a, **_k):
+        raise AssertionError("GET /run must not contact Ollama")
+
+    monkeypatch.setattr(run_routes, "list_ollama_models", boom)
+    application, _cfg = app
+    client = application.test_client()
+    resp = client.get("/run/")
+    assert resp.status_code == 200
+
+
+def test_run_ollama_models_lists_tags(app, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rollup.web.routes import run as run_routes
+
+    monkeypatch.setattr(
+        run_routes, "list_ollama_models", lambda *_a, **_k: ["llama3.2:3b", "qwen2.5:7b"]
+    )
+    application, _cfg = app
+    client = application.test_client()
+    with client.session_transaction() as sess:
+        sess[CSRF_SESSION_KEY] = "csrf-tags"
+    resp = client.post(
+        "/run/ollama-models",
+        data={"csrf_token": "csrf-tags"},
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["models"] == ["llama3.2:3b", "qwen2.5:7b"]

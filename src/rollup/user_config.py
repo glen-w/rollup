@@ -7,6 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from rollup.effort import (
+    EFFORT_COMPANION_KEYS,
+    EFFORT_NAMES,
+    EFFORT_OVERRIDE_KEYS,
+    EFFORT_PROFILE_SLOTS,
+    EffortModelOverride,
+)
 from rollup.folder_theme import FolderThemeOverride
 
 if sys.version_info >= (3, 11):
@@ -47,7 +54,7 @@ UI_KEYS = frozenset({"landing_page", "preferred_view", "onboarding_complete"})
 UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
-TOP_LEVEL_KEYS = STICKY_KEYS | frozenset({"folders", "profiles", "ui"})
+TOP_LEVEL_KEYS = STICKY_KEYS | frozenset({"folders", "profiles", "ui", "efforts"})
 
 FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
 
@@ -68,6 +75,7 @@ class LoadedUserConfig:
     values: dict[str, Any] = field(default_factory=dict)
     folder_themes: dict[str, FolderThemeOverride] = field(default_factory=dict)
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    efforts: dict[str, EffortModelOverride] = field(default_factory=dict)
     ui: UiPreferences = field(default_factory=UiPreferences)
     sources: tuple[Path, ...] = ()
 
@@ -279,6 +287,108 @@ def _parse_profiles(raw: Any, *, path: Path) -> dict[str, dict[str, Any]]:
     return profiles
 
 
+def _parse_efforts(
+    raw: Any, *, path: Path
+) -> dict[str, EffortModelOverride]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise UserConfigError(f"{path}: [efforts] must be a table")
+    out: dict[str, EffortModelOverride] = {}
+    for name, body in raw.items():
+        if not isinstance(name, str) or not name.strip():
+            raise UserConfigError(f"{path}: effort names must be non-empty strings")
+        effort_name = name.strip()
+        if effort_name not in EFFORT_NAMES:
+            raise UserConfigError(
+                f"{path}: unknown effort {effort_name!r} in [efforts]; "
+                f"expected {', '.join(EFFORT_NAMES)}"
+            )
+        if not isinstance(body, dict):
+            raise UserConfigError(f"{path}: [efforts.{effort_name}] must be a table")
+        unknown = set(body) - EFFORT_OVERRIDE_KEYS
+        if unknown:
+            keys = ", ".join(sorted(unknown))
+            raise UserConfigError(
+                f"{path}: unknown key(s) in [efforts.{effort_name}]: {keys}"
+            )
+        profiles: dict[str, str] = {}
+        for slot in EFFORT_PROFILE_SLOTS:
+            if slot not in body:
+                continue
+            value = body[slot]
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(
+                    f"{path}: [efforts.{effort_name}].{slot} must be a non-empty string"
+                )
+            profiles[slot] = value.strip()
+        companions: dict[str, str | None] = {
+            "ollama_model": None,
+            "final_review_model": None,
+        }
+        for key in EFFORT_COMPANION_KEYS:
+            if key not in body:
+                continue
+            value = body[key]
+            if not isinstance(value, str) or not value.strip():
+                raise UserConfigError(
+                    f"{path}: [efforts.{effort_name}].{key} must be a non-empty string"
+                )
+            companions[key] = value.strip()
+        override = EffortModelOverride(
+            profiles=profiles,
+            ollama_model=companions["ollama_model"],
+            final_review_model=companions["final_review_model"],
+        )
+        if not override.is_empty():
+            out[effort_name] = override
+    return out
+
+
+def efforts_to_raw(
+    overrides: Mapping[str, EffortModelOverride],
+) -> dict[str, dict[str, str]]:
+    """Serialize effort overrides for TOML validation / round-trip."""
+    out: dict[str, dict[str, str]] = {}
+    for name, override in overrides.items():
+        body: dict[str, str] = dict(override.profiles)
+        if override.ollama_model:
+            body["ollama_model"] = override.ollama_model
+        if override.final_review_model:
+            body["final_review_model"] = override.final_review_model
+        if body:
+            out[name] = body
+    return out
+
+
+def _merge_effort_overrides(
+    base: Mapping[str, EffortModelOverride],
+    overlay: Mapping[str, EffortModelOverride],
+) -> dict[str, EffortModelOverride]:
+    merged = dict(base)
+    for name, override in overlay.items():
+        existing = merged.get(name)
+        if existing is None:
+            merged[name] = override
+            continue
+        profiles = dict(existing.profiles)
+        profiles.update(override.profiles)
+        merged[name] = EffortModelOverride(
+            profiles=profiles,
+            ollama_model=(
+                override.ollama_model
+                if override.ollama_model is not None
+                else existing.ollama_model
+            ),
+            final_review_model=(
+                override.final_review_model
+                if override.final_review_model is not None
+                else existing.final_review_model
+            ),
+        )
+    return merged
+
+
 def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     unknown = set(data) - TOP_LEVEL_KEYS
     if unknown:
@@ -289,11 +399,13 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     values = _normalize_sticky(sticky_raw, path=path, context="top level")
     folder_themes = _parse_folder_themes(data.get("folders"), path=path)
     profiles = _parse_profiles(data.get("profiles"), path=path)
+    efforts = _parse_efforts(data.get("efforts"), path=path)
     ui = _parse_ui(data.get("ui"), path=path)
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
+        efforts=efforts,
         ui=ui,
         sources=(path,),
     )
@@ -329,6 +441,7 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
+        efforts=_merge_effort_overrides(base.efforts, overlay.efforts),
         ui=ui,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )

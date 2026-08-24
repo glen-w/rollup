@@ -111,26 +111,49 @@ def _ollama_model_matches(requested: str, available: str) -> bool:
     return False
 
 
-def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
+def fetch_ollama_model_names(
+    base_url: str, *, timeout: float = 10.0
+) -> tuple[list[str], str | None]:
+    """Return sorted unique `/api/tags` names, or `([], error)` on failure."""
     import requests
 
     parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False, "Ollama URL must use http/https with a hostname."
+        return [], "Ollama URL must use http/https with a hostname."
     tags_url = f"{parsed.scheme}://{parsed.netloc}/api/tags"
     try:
-        resp = requests.get(tags_url, timeout=10)
+        resp = requests.get(tags_url, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
-        models = [m.get("name", "") for m in data.get("models", [])]
-        if not any(_ollama_model_matches(model, m) for m in models):
-            return (
-                False,
-                f"Model {model!r} not found in Ollama. Available: {models[:5]}",
-            )
-        return True, "ok"
+        names: list[str] = []
+        seen: set[str] = set()
+        for row in data.get("models", []) or []:
+            name = str(row.get("name") or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+        names.sort(key=str.lower)
+        return names, None
     except Exception as exc:
-        return False, sanitize_provider_message(str(exc))
+        return [], sanitize_provider_message(str(exc))
+
+
+def list_ollama_models(base_url: str, *, timeout: float = 2.0) -> list[str]:
+    """Local Ollama tags for UI pickers. Empty on any error (never raises)."""
+    names, _err = fetch_ollama_model_names(base_url, timeout=timeout)
+    return names
+
+
+def check_ollama_available(base_url: str, model: str) -> tuple[bool, str]:
+    names, err = fetch_ollama_model_names(base_url, timeout=10)
+    if err is not None:
+        return False, err
+    if not any(_ollama_model_matches(model, m) for m in names):
+        return (
+            False,
+            f"Model {model!r} not found in Ollama. Available: {names[:5]}",
+        )
+    return True, "ok"
 
 
 def _resolve_ollama_done_stop_reason(data: dict[str, object]) -> StreamStopReason:

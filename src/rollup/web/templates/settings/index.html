@@ -116,6 +116,19 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
     <label>Summary profile
       <input type="text" name="summary_profile" value="{{ sticky.get('summary_profile', '') }}" placeholder="e.g. standard">
     </label>
+    <p class="note">Customise which Ollama models each effort uses. Leave a slot blank to keep the built-in default (shown as placeholder). Profile names and type routes stay the same. A sticky <code>ollama_model</code> / <code>--ollama-model</code> still overrides the group/fallback model for a run.</p>
+    {% for ladder in effort_ladders %}
+    <h3 class="effort-ladder-heading">{{ ladder.name }}</h3>
+    <p class="muted">{{ ladder.description }}</p>
+    <div class="effort-ladder-grid">
+      {% for slot in ladder.slots %}
+      <label>{{ slot.label }}
+        <input type="text" name="effort_model_{{ ladder.name }}_{{ slot.name }}"
+               value="{{ slot.value }}" placeholder="{{ slot.default }}">
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
   </section>
 
   <section class="card-section">

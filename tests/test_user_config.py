@@ -196,3 +196,28 @@ def test_empty_search_paths_and_invalid_toml(tmp_path: Path) -> None:
     bad.write_text("[[[not valid", encoding="utf-8")
     with pytest.raises(UserConfigError):
         load_user_config(search_paths=(bad,))
+
+
+def test_parse_effort_model_overrides(tmp_path: Path) -> None:
+    cfg = parse_toml_dict(
+        {
+            "efforts": {
+                "high": {
+                    "rough": "custom-rough:latest",
+                    "ollama_model": "custom-group:latest",
+                }
+            }
+        },
+        path=tmp_path / "x.toml",
+    )
+    assert cfg.efforts["high"].profiles["rough"] == "custom-rough:latest"
+    assert cfg.efforts["high"].ollama_model == "custom-group:latest"
+    assert cfg.efforts["high"].final_review_model is None
+
+
+def test_parse_rejects_unknown_effort_name(tmp_path: Path) -> None:
+    with pytest.raises(UserConfigError, match="unknown effort"):
+        parse_toml_dict(
+            {"efforts": {"turbo": {"rough": "x"}}},
+            path=tmp_path / "x.toml",
+        )

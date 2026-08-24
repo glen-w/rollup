@@ -16,11 +16,13 @@ from flask import (
     url_for,
 )
 
+from rollup.config import DEFAULT_OLLAMA_URL
 from rollup.config_service import (
     build_digest_argv,
     load_document,
     resolve_effective,
 )
+from rollup.llm_client import list_ollama_models
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import UserConfigError
 from rollup.web.csrf import rotate_csrf_token, validate_csrf_token
@@ -57,9 +59,10 @@ def _load_effective(profile: str | None = None, overrides: dict | None = None):
     return doc, resolve_effective(doc.loaded, profile_name=profile, overrides=overrides)
 
 
-def _overrides_from_form() -> tuple[str | None, dict]:
+def _overrides_from_form() -> tuple[str | None, dict, list[str]]:
     profile = request.form.get("profile") or request.args.get("profile") or None
     overrides: dict = {}
+    extra: list[str] = []
     lookback = request.form.get("lookback_days", "").strip()
     if lookback.isdigit():
         overrides["lookback_days"] = int(lookback)
@@ -81,7 +84,32 @@ def _overrides_from_form() -> tuple[str | None, dict]:
         overrides["output"] = selected or ["none"]
     elif output_mode == "all":
         overrides["output"] = ["all"]
-    return profile, overrides
+    use_single = request.form.get("use_single_model") == "1"
+    single_model = (request.form.get("single_model") or "").strip()
+    if use_single and single_model:
+        extra.extend(["--single-model", single_model, "--ollama"])
+        overrides["ollama"] = True
+    return profile, overrides, extra
+
+
+def _single_model_context() -> dict[str, object]:
+    return {
+        "use_single_model": request.form.get("use_single_model") == "1",
+        "selected_single_model": (request.form.get("single_model") or "").strip(),
+    }
+
+
+def _with_litellm_model(extra: list[str], sticky: dict) -> list[str]:
+    if (
+        extra
+        and "--single-model" in extra
+        and (sticky.get("llm_provider") or "ollama") == "litellm"
+    ):
+        idx = extra.index("--single-model")
+        model = extra[idx + 1] if idx + 1 < len(extra) else ""
+        if model:
+            extra = list(extra) + ["--llm-model", model]
+    return extra
 
 
 def _matched_folders(sticky: dict) -> list[str]:
@@ -132,6 +160,8 @@ def run_studio():
             cron_hint="",
             active=get_active_run(),
             busy=is_busy(),
+            use_single_model=False,
+            selected_single_model="",
         )
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
     matched = _matched_folders(effective.sticky)
@@ -149,6 +179,8 @@ def run_studio():
         cron_hint=cron,
         active=get_active_run(),
         busy=is_busy(),
+        use_single_model=False,
+        selected_single_model="",
     )
 
 
@@ -165,14 +197,17 @@ def run_preview():
         flash("Invalid CSRF token")
         return redirect(url_for("run.run_studio")), 400
     rotate_csrf_token()
-    profile, overrides = _overrides_from_form()
+    profile, overrides, extra = _overrides_from_form()
     try:
         doc, effective = _load_effective(profile, overrides)
     except UserConfigError as exc:
         flash(str(exc))
         return redirect(url_for("run.run_studio"))
+    extra = _with_litellm_model(extra, effective.sticky)
     matched = _matched_folders(effective.sticky)
-    argv = build_digest_argv(effective, config_path=_config_path(), dry_run=False)
+    argv = build_digest_argv(
+        effective, config_path=_config_path(), dry_run=False, extra=extra or None
+    )
     cli = "rollup " + " ".join(_shell_quote(a) for a in argv)
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
@@ -189,6 +224,7 @@ def run_preview():
         active=get_active_run(),
         busy=is_busy(),
         temp_overrides=overrides,
+        **_single_model_context(),
     )
 
 
@@ -200,10 +236,19 @@ def run_dry():
     rotate_csrf_token()
     if is_busy():
         return _busy_response()
-    profile, overrides = _overrides_from_form()
+    profile, overrides, extra = _overrides_from_form()
     try:
         _doc, effective = _load_effective(profile, overrides)
-        argv = build_digest_argv(effective, config_path=_config_path(), dry_run=True)
+        extra = _with_litellm_model(extra, effective.sticky)
+        if (
+            request.form.get("use_single_model") == "1"
+            and not (request.form.get("single_model") or "").strip()
+        ):
+            flash('Choose a model, or uncheck “Use a single model for this run”.')
+            return redirect(url_for("run.run_studio"))
+        argv = build_digest_argv(
+            effective, config_path=_config_path(), dry_run=True, extra=extra or None
+        )
         start_digest_subprocess(argv, dry_run=True)
         result = wait_until_idle(timeout=600)
     except RuntimeError as exc:
@@ -228,10 +273,19 @@ def run_start():
     rotate_csrf_token()
     if is_busy():
         return _busy_response()
-    profile, overrides = _overrides_from_form()
+    profile, overrides, extra = _overrides_from_form()
     try:
         _doc, effective = _load_effective(profile, overrides)
-        argv = build_digest_argv(effective, config_path=_config_path(), dry_run=False)
+        extra = _with_litellm_model(extra, effective.sticky)
+        if (
+            request.form.get("use_single_model") == "1"
+            and not (request.form.get("single_model") or "").strip()
+        ):
+            flash('Choose a model, or uncheck “Use a single model for this run”.')
+            return redirect(url_for("run.run_studio"))
+        argv = build_digest_argv(
+            effective, config_path=_config_path(), dry_run=False, extra=extra or None
+        )
         start_digest_subprocess(argv, dry_run=False)
         result = wait_until_idle(timeout=3600)
     except RuntimeError as exc:
@@ -244,6 +298,16 @@ def run_start():
     else:
         flash(f"Digest finished: status={result.status}, exit={result.exit_code}")
     return redirect(url_for("run.run_result"))
+
+
+@bp.post("/ollama-models")
+def run_ollama_models():
+    """List local Ollama tags. POST-only so GET /run never contacts Ollama."""
+    token = request.form.get("csrf_token") or request.headers.get("X-CSRFToken")
+    if not validate_csrf_token(token):
+        return jsonify({"ok": False, "models": [], "error": "csrf"}), 400
+    models = list_ollama_models(DEFAULT_OLLAMA_URL, timeout=2.0)
+    return jsonify({"ok": True, "models": models})
 
 
 @bp.get("/status")

@@ -439,12 +439,16 @@ table.data th {
   border-radius: 4px;
   background: #fff;
 }
-.settings-form label.inline {
+.settings-form label.inline,
+.settings-form label.inline-check {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   margin-right: 1rem;
   width: auto;
+}
+.single-model-fields {
+  margin: 0 0 1rem 1.5rem;
 }
 .hint-badge {
   display: inline-block;
@@ -486,6 +490,19 @@ table.data th {
 .profile-row input, .profile-row select {
   width: auto;
   max-width: 10rem;
+}
+.effort-ladder-heading {
+  font-size: 1rem;
+  margin: 1rem 0 0.15rem;
+}
+.effort-ladder-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+@media (max-width: 640px) {
+  .effort-ladder-grid { grid-template-columns: 1fr; }
 }
 .diff-table {
   width: 100%;
