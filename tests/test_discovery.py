@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rollup.discovery import build_inventory, filter_folders, iter_mbox_files
+from rollup.discovery import build_inventory, filter_folders, iter_mbox_files, list_flat_mbox_names
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "Newsletters.sbd"
 
@@ -96,3 +96,37 @@ def test_hidden_and_backup_excluded(tmp_path: Path) -> None:
     (root / "keep.bak").write_bytes(b"From \n")
     names = {f.folder_name for f in iter_mbox_files(root)}
     assert names == {"keep"}
+
+
+def test_list_flat_mbox_names_skips_sidecars(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    (root / "tech").write_bytes(b"From \n")
+    (root / "tech.msf").write_text("index")
+    (root / "tech.dat").write_text("data")
+    (root / "tech.toc").write_text("toc")
+    (root / ".hidden").write_bytes(b"From \n")
+    assert list_flat_mbox_names(root) == ["tech"]
+
+
+def test_list_flat_mbox_names_skips_sbd_dirs(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    (root / "top").write_bytes(b"From \n")
+    (root / "nested.sbd").mkdir()
+    assert list_flat_mbox_names(root) == ["top"]
+
+
+def test_list_flat_mbox_names_include_exclude_case_insensitive(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    (root / "Tech").write_bytes(b"From \n")
+    (root / "hoops").write_bytes(b"From \n")
+    (root / "misc").write_bytes(b"From \n")
+    assert list_flat_mbox_names(root, include=("tech",)) == ["Tech"]
+    assert list_flat_mbox_names(root, exclude=("HOOPS",)) == ["Tech", "misc"]
+
+
+def test_list_flat_mbox_names_missing_root() -> None:
+    assert list_flat_mbox_names(None) == []
+    assert list_flat_mbox_names(Path("/nonexistent/path")) == []

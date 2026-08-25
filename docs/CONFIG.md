@@ -41,7 +41,7 @@ When you add a new sticky key that should appear on the CLI, extend
 asserted in tests. The sticky key `profile` is resolved via `--profile` /
 `EffectiveConfigView.profile_name`, not the sticky→argv body.
 
-Scheduler helpers use a **separate** `cron_helpers.build_digest_argv` (paths +
+Scheduler helpers use a **separate** `cron_helpers.build_scheduled_digest_argv` (paths +
 `--cron`); do not confuse it with the sticky registry.
 
 ## Minimal config

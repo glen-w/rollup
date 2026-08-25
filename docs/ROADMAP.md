@@ -15,11 +15,11 @@ This is guidance for contributors, not a commitment calendar.
 
 Incremental follow-ups from the post–0.6.3 refactor audit — **behavior-preserving** preferred:
 
-1. **Shared Thunderbird folder listing** for Settings and Run Studio (sidecar skip `.msf`/`.dat`/`.toc` today duplicated in web routes)
-2. **One web helper** to load the active `ConfigDocument` (`CONFIG_PATH` / `CONFIG_EXPLICIT`) used by app startup, Settings, Run, and Archive themes
+1. ~~**Shared Thunderbird folder listing**~~ for Settings and Run Studio (`discovery.list_flat_mbox_names`)
+2. ~~**One web helper**~~ to load the active `ConfigDocument` (`rollup.web.config.load_web_config_document`)
 3. **`state.py` / `source_registry.py` splits** by concern (schema migrate vs cache vs registry APIs) when the next feature forces edits there
 4. **`render.py` MD/HTML twin paths** — shared structure + thin formatters if a new output surface needs them
-5. Optional rename of `cron_helpers.build_digest_argv` to avoid colliding with `config_service.build_digest_argv` (different jobs; do not merge)
+5. ~~Optional rename of `cron_helpers.build_digest_argv`~~ → `build_scheduled_digest_argv` (done; different jobs; do not merge with `config_service.build_digest_argv`)
 
 ## Product non-goals (still)
 

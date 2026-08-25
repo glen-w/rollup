@@ -20,11 +20,12 @@ from rollup.config_service import (
     ConfigValidationError,
     apply_and_save,
     effective_diff,
-    load_document,
     patch_from_form_values,
     resolve_effective,
     validate_patch,
 )
+from rollup.discovery import list_flat_mbox_names
+from rollup.web.config import load_web_config_document
 from rollup.effort import (
     EFFORT_NAMES,
     EFFORT_PROFILE_SLOTS,
@@ -50,39 +51,8 @@ from rollup.web.maintenance_tokens import (
 bp = Blueprint("settings", __name__, url_prefix="/settings")
 
 
-def _config_explicit() -> str | None:
-    if current_app.config.get("CONFIG_EXPLICIT"):
-        return current_app.config.get("CONFIG_PATH")
-    return None
-
-
 def _load_doc():
-    explicit = _config_explicit()
-    path_override = current_app.config.get("CONFIG_PATH")
-    if explicit:
-        return load_document(explicit=explicit)
-    # Prefer the resolved path stored at web startup when present.
-    if path_override:
-        return load_document(explicit=path_override)
-    return load_document()
-
-
-def _discover_folder_names(newsletter_root: Path | None) -> list[str]:
-    if newsletter_root is None or not newsletter_root.is_dir():
-        return []
-    names: list[str] = []
-    try:
-        for child in sorted(newsletter_root.iterdir()):
-            if child.is_file() and not child.name.startswith("."):
-                # Skip Thunderbird sidecars
-                if child.suffix in {".msf", ".dat", ".toc"}:
-                    continue
-                names.append(child.name)
-            elif child.is_dir() and child.suffix == ".sbd":
-                continue
-    except OSError:
-        return []
-    return names
+    return load_web_config_document()
 
 
 def _parse_csv(raw: str | None) -> list[str]:
@@ -333,7 +303,7 @@ def settings_index():
     except Exception:
         writers = ["xteink", "txt", "json", "epub"]
     newsletter = current_app.config.get("NEWSLETTER_ROOT")
-    discovered = _discover_folder_names(newsletter)
+    discovered = list_flat_mbox_names(newsletter)
     folder_rows = []
     themes = doc.loaded.folder_themes if doc else {}
     for name in discovered:

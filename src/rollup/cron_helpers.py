@@ -44,7 +44,7 @@ def resolve_python(explicit: str | None = None) -> tuple[Path, list[str]]:
     return path, warnings
 
 
-def build_digest_argv(paths: SchedulerPaths, *, extra: list[str] | None = None) -> list[str]:
+def build_scheduled_digest_argv(paths: SchedulerPaths, *, extra: list[str] | None = None) -> list[str]:
     args = [
         str(paths.python),
         "-m",
@@ -74,7 +74,7 @@ def render_crontab(
     extra: list[str] | None = None,
 ) -> str:
     """Render a crontab line with shell-quoted paths (alternative to launchd)."""
-    argv = build_digest_argv(paths, extra=extra)
+    argv = build_scheduled_digest_argv(paths, extra=extra)
     cmd = (
         f"cd {shlex.quote(str(paths.workdir))} && "
         + " ".join(shlex.quote(a) for a in argv)
@@ -96,7 +96,7 @@ def render_launchd_plist(
     extra: list[str] | None = None,
 ) -> bytes:
     """Render a launchd LaunchAgent plist (preferred on macOS)."""
-    argv = build_digest_argv(paths, extra=extra)
+    argv = build_scheduled_digest_argv(paths, extra=extra)
     # ProgramArguments should not include the shell; python is Program.
     program_arguments = argv
     plist = {

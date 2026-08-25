@@ -31,6 +31,7 @@ _EXCLUDED_SUFFIXES = frozenset(
         ".bak",
         ".tmp",
         ".part",
+        ".toc",
     }
 )
 
@@ -154,6 +155,46 @@ def is_path_inside(child: Path, parent: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def list_flat_mbox_names(
+    newsletter_root: Path | None,
+    *,
+    include: tuple[str, ...] | list[str] = (),
+    exclude: tuple[str, ...] | list[str] = (),
+) -> list[str]:
+    """List top-level mbox basenames under a Thunderbird newsletter root.
+
+    Used by the web UI (Settings folder themes, Run Studio matched folders).
+    Skips dotfiles, ``.sbd`` directories, and Thunderbird sidecars via
+    ``_is_excluded_sidecar``. Optional ``include`` / ``exclude`` filters are
+    case-insensitive on folder names.
+    """
+    if newsletter_root is None or not newsletter_root.is_dir():
+        return []
+    include_list = list(include)
+    exclude_list = list(exclude)
+    include_lower = {f.lower() for f in include_list} if include_list else None
+    exclude_lower = {f.lower() for f in exclude_list}
+    names: list[str] = []
+    try:
+        for child in sorted(newsletter_root.iterdir()):
+            if child.is_dir() and _is_sbd_dir(child):
+                continue
+            if not child.is_file():
+                continue
+            if _is_excluded_sidecar(child.name):
+                continue
+            name = child.name
+            if include_lower is not None:
+                if name not in include_list and name.lower() not in include_lower:
+                    continue
+            if name in exclude_list or name.lower() in exclude_lower:
+                continue
+            names.append(name)
+    except OSError:
+        return []
+    return names
 
 
 def filter_folders(

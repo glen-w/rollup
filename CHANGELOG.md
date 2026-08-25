@@ -4,6 +4,12 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.8.3 — 2026-08-25
+
+### Changed
+
+- **Structural hardening**: shared `discovery.list_flat_mbox_names` for Settings and Run Studio folder listing; unified `rollup.web.config.load_web_config_document` for TOML loading across web routes; renamed scheduler `cron_helpers.build_scheduled_digest_argv` to avoid colliding with `config_service.build_digest_argv`.
+
 ## 0.8.2 — 2026-08-25
 
 ### Added

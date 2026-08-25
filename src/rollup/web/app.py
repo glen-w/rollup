@@ -36,10 +36,10 @@ def refresh_config_derived(app: Flask) -> None:
 
 def _refresh_config_derived(app: Flask) -> None:
     try:
-        from rollup.config_service import load_document
+        from rollup.web.config import load_web_config_document
 
-        explicit = app.config.get("CONFIG_PATH")
-        doc = load_document(explicit=explicit) if explicit else load_document()
+        with app.app_context():
+            doc = load_web_config_document()
         app.config["FOLDER_THEMES"] = dict(doc.loaded.folder_themes)
         app.config["UI_LANDING_PAGE"] = doc.loaded.ui.landing_page
         app.config["UI_PREFERRED_VIEW"] = doc.loaded.ui.preferred_view

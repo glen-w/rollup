@@ -10,6 +10,7 @@ from pathlib import Path
 
 from rollup.cron_helpers import (
     SchedulerPaths,
+    build_scheduled_digest_argv,
     format_cron_status,
     render_crontab,
     render_launchd_plist,
@@ -124,6 +125,23 @@ def test_launchd_plist_validates(tmp_path: Path) -> None:
     assert "StandardOutPath" in plist
     assert "StandardErrorPath" in plist
     assert Path(plist["ProgramArguments"][0]) == Path(sys.executable)
+
+
+def test_build_scheduled_digest_argv_includes_cron_flag(tmp_path: Path) -> None:
+    paths = SchedulerPaths(
+        python=Path(sys.executable),
+        workdir=tmp_path,
+        root=FIXTURE_ROOT,
+        mail_root=FIXTURE_ROOT.parent,
+        output_dir=tmp_path / "output",
+        state_dir=tmp_path / "state",
+        log_dir=tmp_path / "logs",
+    )
+    argv = build_scheduled_digest_argv(paths, extra=["--no-ollama"])
+    assert argv[0] == str(paths.python)
+    assert argv[1:4] == ["-m", "rollup", "digest"]
+    assert "--cron" in argv
+    assert "--no-ollama" in argv
 
 
 def test_crontab_is_shell_quoted(tmp_path: Path) -> None:

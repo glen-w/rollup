@@ -28,10 +28,9 @@ def _preferred_view() -> str:
     if cached in ("html", "markdown", "entries"):
         return cached
     try:
-        from rollup.config_service import load_document
+        from rollup.web.config import load_web_config_document
 
-        explicit = current_app.config.get("CONFIG_PATH")
-        doc = load_document(explicit=explicit) if explicit else load_document()
+        doc = load_web_config_document()
         view = doc.loaded.ui.preferred_view
         current_app.config["UI_PREFERRED_VIEW"] = view
         return view

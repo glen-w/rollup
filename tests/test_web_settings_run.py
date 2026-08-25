@@ -215,6 +215,64 @@ def test_settings_preview_and_save(app) -> None:
     assert 'effort = "light"' in text
 
 
+def test_load_web_config_document_uses_app_config_path(app) -> None:
+    from rollup.web.config import load_web_config_document
+
+    application, cfg = app
+    with application.app_context():
+        doc = load_web_config_document()
+    assert doc.path.resolve() == cfg.resolve()
+    assert doc.exists is True
+
+
+def test_load_web_config_document_explicit_missing_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rollup.web.app import create_app
+    from rollup.web.config import load_web_config_document
+
+    state = tmp_path / "state"
+    out = tmp_path / "out"
+    mail = tmp_path / "mail"
+    root = mail / "Newsletters.sbd"
+    state.mkdir()
+    out.mkdir()
+    root.mkdir(parents=True)
+    init_db(state / "rollup.db").close()
+    missing = tmp_path / "missing.toml"
+    monkeypatch.chdir(tmp_path)
+    application = create_app(
+        state_dir=state,
+        output_dir=out,
+        mail_root=mail,
+        newsletter_root=root,
+        testing=True,
+        config_path=missing,
+    )
+    application.config["CONFIG_EXPLICIT"] = True
+    with application.app_context():
+        doc = load_web_config_document()
+    assert doc.path.resolve() == missing.resolve()
+    assert doc.exists is False
+
+
+def test_run_studio_shows_matched_fixture_folder(app) -> None:
+    application, _cfg = app
+    client = application.test_client()
+    resp = client.get("/run/")
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert "tech" in html
+
+
+def test_refresh_config_derived_loads_ui_prefs(app) -> None:
+    from rollup.web.app import refresh_config_derived
+
+    application, cfg = app
+    text = cfg.read_text(encoding="utf-8")
+    cfg.write_text(text + '\n[ui]\npreferred_view = "markdown"\n', encoding="utf-8")
+    refresh_config_derived(application)
+    assert application.config["UI_PREFERRED_VIEW"] == "markdown"
+
+
 def test_preferred_view_highlighted_on_archive(app) -> None:
     import uuid
     from datetime import datetime, timezone

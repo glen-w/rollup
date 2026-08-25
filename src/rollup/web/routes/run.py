@@ -19,12 +19,13 @@ from flask import (
 from rollup.config import DEFAULT_OLLAMA_URL
 from rollup.config_service import (
     build_digest_argv,
-    load_document,
     resolve_effective,
 )
+from rollup.discovery import list_flat_mbox_names
 from rollup.llm_client import list_ollama_models
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import UserConfigError
+from rollup.web.config import load_web_config_document
 from rollup.web.csrf import rotate_csrf_token, validate_csrf_token
 from rollup.web.run_runner import (
     get_active_run,
@@ -50,12 +51,11 @@ def _config_path() -> Path:
     raw = current_app.config.get("CONFIG_PATH")
     if raw:
         return Path(raw)
-    return load_document().path
+    return load_web_config_document().path
 
 
 def _load_effective(profile: str | None = None, overrides: dict | None = None):
-    explicit = current_app.config.get("CONFIG_PATH")
-    doc = load_document(explicit=explicit) if explicit else load_document()
+    doc = load_web_config_document()
     return doc, resolve_effective(doc.loaded, profile_name=profile, overrides=overrides)
 
 
@@ -117,29 +117,11 @@ def _matched_folders(sticky: dict) -> list[str]:
     if not root:
         return []
     path = Path(str(root)).expanduser()
-    if not path.is_dir():
-        return []
-    include = set(sticky.get("folder") or [])
-    exclude = set(sticky.get("exclude_folder") or [])
-    names: list[str] = []
-    try:
-        for child in sorted(path.iterdir()):
-            if not child.is_file() or child.name.startswith("."):
-                continue
-            if child.suffix in {".msf", ".dat", ".toc"}:
-                continue
-            if include and child.name not in include and child.name.lower() not in {
-                f.lower() for f in include
-            }:
-                continue
-            if child.name in exclude or child.name.lower() in {
-                f.lower() for f in exclude
-            }:
-                continue
-            names.append(child.name)
-    except OSError:
-        return []
-    return names
+    return list_flat_mbox_names(
+        path,
+        include=sticky.get("folder") or (),
+        exclude=sticky.get("exclude_folder") or (),
+    )
 
 
 @bp.get("")
