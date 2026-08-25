@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import status_badge %}
 {% block title %}Run result — Rollup{% endblock %}
 {% block content %}
 <h1>Run result</h1>
@@ -10,8 +11,8 @@
   <dl class="kv">
     <dt>Run id</dt><dd><code>{{ active.run_id }}</code></dd>
     <dt>Status</dt>
-    <dd><span class="status-{{ active.status }}">{{ active.status }}</span>
-      (exit {{ active.exit_code if active.exit_code is not none else '—' }})</dd>
+    <dd>{{ status_badge(active.status) }}
+      <span class="muted">(exit {{ active.exit_code if active.exit_code is not none else '—' }})</span></dd>
     <dt>Mode</dt><dd>{% if active.dry_run %}dry-run{% else %}digest{% endif %}</dd>
   </dl>
   {% if active.error %}

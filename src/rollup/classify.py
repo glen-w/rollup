@@ -17,8 +17,12 @@ ESSAY_MAX_LINK_RATIO = 0.03
 MULTI_SECTION_MIN_HEADINGS = 3
 MULTI_SECTION_MIN_BULLETS = 10
 MULTI_SECTION_MIN_WORDS = 600
+ITEM_LIST_MIN_BULLETS = 12
+ITEM_LIST_MIN_WORDS = 250
+ITEM_LIST_MAX_LINK_RATIO = 0.04
 TYPE_PRIORITY: tuple[NewsletterType, ...] = (
     "essay",
+    "item_list",
     "multi_section_digest",
     "short_update",
     "link_roundup",
@@ -76,6 +80,7 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
             "short_update": 0.0,
             "essay": 0.0,
             "multi_section_digest": 0.0,
+            "item_list": 0.0,
         }
 
         if (
@@ -84,6 +89,12 @@ def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
             and word_count < LINK_ROUNDUP_MAX_WORDS
         ):
             scores["link_roundup"] = 0.9
+        if (
+            bullet_count >= ITEM_LIST_MIN_BULLETS
+            and word_count >= ITEM_LIST_MIN_WORDS
+            and ratio < ITEM_LIST_MAX_LINK_RATIO
+        ):
+            scores["item_list"] = 0.9
         if heading_count >= MULTI_SECTION_MIN_HEADINGS or (
             bullet_count > MULTI_SECTION_MIN_BULLETS
             and word_count > MULTI_SECTION_MIN_WORDS

@@ -50,6 +50,7 @@ MAX_OUTPUT_CHARS_BY_STYLE = {
     "rough": 1500,
     "standard": 3000,
     "deep": 6000,
+    "preserve": 16000,
 }
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -67,6 +68,13 @@ PROMPT_STYLE_INSTRUCTIONS = {
         "Start with substance on line 1 — no intro sentence. "
         "Preserve nuance, caveats, dates, and numbers. "
         "Distinguish news from opinion and explain why it matters."
+    ),
+    "preserve": (
+        "This is an item list (jobs, papers, alerts, etc.). "
+        "Output every distinct item as its own bullet. "
+        "Light editing only: fix broken line wraps, remove duplicate headers/footers, "
+        "and strip unsubscribe boilerplate. Do not merge, rank, or omit items. "
+        "Do not add commentary. Start with the first item — no intro line."
     ),
 }
 
@@ -169,8 +177,11 @@ class SummarizeMessageResult:
     link_count: int
 
 
-def _load_prompt(newsletter_type: str) -> str:
-    common_path = PROMPTS_DIR / "_common.txt"
+def _load_prompt(newsletter_type: str, *, prompt_style: str = "standard") -> str:
+    common_name = (
+        "_common_preserve.txt" if prompt_style == "preserve" else "_common.txt"
+    )
+    common_path = PROMPTS_DIR / common_name
     type_path = PROMPTS_DIR / f"{newsletter_type}.txt"
     parts: list[str] = []
     if common_path.exists():
@@ -184,7 +195,7 @@ def build_prompt(
     classified: ClassifiedMessage, body_excerpt: str, prompt_style: str = "standard"
 ) -> str:
     p = classified.parsed
-    template = _load_prompt(classified.newsletter_type)
+    template = _load_prompt(classified.newsletter_type, prompt_style=prompt_style)
     style_instructions = PROMPT_STYLE_INSTRUCTIONS.get(
         prompt_style, PROMPT_STYLE_INSTRUCTIONS["standard"]
     )

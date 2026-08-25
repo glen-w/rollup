@@ -1,38 +1,50 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import enabled_badge, info_row, policy_row %}
 {% block title %}{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}{% endblock %}
 {% block content %}
 <article class="source-detail">
   <h1>{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}</h1>
-  <p class="meta"><code>{{ record.source_key }}</code> · lifecycle {{ record.lifecycle }}</p>
+  <p class="meta">
+    <code>{{ record.source_key }}</code>
+    · lifecycle <span class="lifecycle-{{ record.lifecycle }}">{{ record.lifecycle }}</span>
+    · {{ enabled_badge(record.policy.enabled) }}
+  </p>
   <p class="note">Registry management — inferred facts vs user overrides. Content browsing lives under Quality.</p>
 
   <details class="panel" open>
     <summary>Inferred / observed facts</summary>
     <div class="card-body">
-      <ul class="stats">
-        <li>Messages: {{ record.observation.message_count_total }}</li>
-        <li>First seen: {{ record.observation.first_seen_at or "—" }}</li>
-        <li>Last seen: {{ record.observation.last_seen_at or "—" }}</li>
-        <li>Cadence: {{ record.observation.cadence.label }} (n={{ record.observation.cadence.sample_count }}, conf={{ "%.2f"|format(record.observation.cadence.confidence) }})</li>
-        <li>Detected type: {{ record.observation.last_detected_newsletter_type or "—" }}</li>
-        <li>Last folder: {{ record.observation.last_folder_name or "—" }}</li>
-        <li>Observed display name: {{ record.observation.display_name_observed or "—" }}</li>
-        <li>List-ID: {{ record.observation.observed_list_id or "—" }}</li>
-      </ul>
+      <div class="stats-panel">
+        <dl class="info-grid">
+          {{ info_row("Messages", record.observation.message_count_total) }}
+          {{ info_row("First seen", record.observation.first_seen_at) }}
+          {{ info_row("Last seen", record.observation.last_seen_at) }}
+          <dt>Cadence</dt>
+          <dd>{{ record.observation.cadence.label }}
+            <span class="muted">(n={{ record.observation.cadence.sample_count }}, conf={{ "%.2f"|format(record.observation.cadence.confidence) }})</span>
+          </dd>
+          {{ info_row("Detected type", record.observation.last_detected_newsletter_type) }}
+          {{ info_row("Last folder", record.observation.last_folder_name) }}
+          {{ info_row("Observed display name", record.observation.display_name_observed) }}
+          {{ info_row("List-ID", record.observation.observed_list_id) }}
+        </dl>
+      </div>
     </div>
   </details>
 
   <details class="panel" open>
     <summary>Effective policy (with provenance)</summary>
     <div class="card-body">
-      <ul class="stats">
-        <li>enabled={{ record.policy.enabled }} <code>{{ record.policy.provenance.enabled }}</code></li>
-        <li>always_surface={{ record.policy.always_surface }} <code>{{ record.policy.provenance.always_surface }}</code></li>
-        <li>priority={{ record.policy.priority }} <code>{{ record.policy.provenance.priority }}</code></li>
-        <li>type override={{ record.policy.newsletter_type_override or "—" }} <code>{{ record.policy.provenance.newsletter_type }}</code></li>
-        <li>grouping={{ record.policy.grouping_policy }} <code>{{ record.policy.provenance.grouping_policy }}</code></li>
-        <li>summary profile={{ record.policy.summary_profile_override or "—" }} <code>{{ record.policy.provenance.summary_profile }}</code></li>
-      </ul>
+      <div class="stats-panel">
+        <dl class="policy-grid">
+          {{ policy_row("enabled", record.policy.enabled, record.policy.provenance.enabled) }}
+          {{ policy_row("always_surface", record.policy.always_surface, record.policy.provenance.always_surface) }}
+          {{ policy_row("priority", record.policy.priority, record.policy.provenance.priority) }}
+          {{ policy_row("type override", record.policy.newsletter_type_override, record.policy.provenance.newsletter_type) }}
+          {{ policy_row("grouping", record.policy.grouping_policy, record.policy.provenance.grouping_policy) }}
+          {{ policy_row("summary profile", record.policy.summary_profile_override, record.policy.provenance.summary_profile) }}
+        </dl>
+      </div>
     </div>
   </details>
 

@@ -11,7 +11,7 @@ from rollup.models import NewsletterType
 
 SUMMARY_PROFILE_SCHEMA_VERSION = 1
 SUMMARY_PROVIDERS = frozenset({"ollama", "litellm"})
-PROMPT_STYLES = frozenset({"rough", "standard", "deep"})
+PROMPT_STYLES = frozenset({"rough", "standard", "deep", "preserve"})
 ROUTING_RESERVED_KEYS = frozenset({"default"})
 DEFAULT_NUM_PREDICT = 2048
 DEFAULT_THINK = False
@@ -245,6 +245,16 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             num_predict=DEFAULT_NUM_PREDICT,
             think=DEFAULT_THINK,
         ),
+        "preserve": _make_profile(
+            "preserve",
+            "qwen2.5:7b",
+            "preserve",
+            temperature=0.1,
+            num_ctx=32768,
+            timeout_seconds=180,
+            description="Minimal cleaning for item lists; keeps every entry.",
+            num_predict=4096,
+        ),
     }
     return SummaryProfileSet(
         profiles=profiles,
@@ -255,6 +265,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             "link_roundup": "rough",
             "multi_section_digest": "standard",
             "essay": "max",
+            "item_list": "preserve",
             "unclassified": "standard",
         },
         name="builtin",

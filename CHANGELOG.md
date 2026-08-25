@@ -4,6 +4,13 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.8.2 — 2026-08-25
+
+### Added
+
+- **`item_list` newsletter type** with **`preserve`** summary profile: minimal LLM cleaning for job alerts, scholar updates, journal TOCs, and other long bullet lists where every entry must survive. Auto-classified or set per source (`rollup sources set … --type item_list`).
+- Web **info macros** and structured key/value panels (status badges, provenance chips) across Admin, Rollups, Sources, and Run Studio.
+
 ## 0.8.1 — 2026-08-24
 
 ### Added

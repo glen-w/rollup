@@ -1,0 +1,54 @@
+{# Reusable labels, values, status badges, and provenance chips for system info panels. #}
+
+{% macro display_value(val, empty="—") %}
+  {% if val is none or val == "" %}
+  <span class="is-empty">{{ empty }}</span>
+  {% else %}
+  {{ val }}
+  {% endif %}
+{% endmacro %}
+
+{% macro status_badge(status, label=none) %}
+  <span class="status-badge status-{{ status | replace('_', '-') }}">{{ label or status }}</span>
+{% endmacro %}
+
+{% macro provenance_badge(prov) %}
+  <span class="provenance prov-{{ prov }}">{{ prov }}</span>
+{% endmacro %}
+
+{% macro bool_badge(val) %}
+  {% if val is sameas true %}
+  <span class="bool-val bool-yes">true</span>
+  {% elif val is sameas false %}
+  <span class="bool-val bool-no">false</span>
+  {% else %}
+  <span class="bool-val bool-unknown">{{ val }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro enabled_badge(enabled) %}
+  {% if enabled %}
+  <span class="status-badge status-enabled">enabled</span>
+  {% else %}
+  <span class="status-badge status-disabled">disabled</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro policy_row(key, value, provenance) %}
+  <dt class="policy-key">{{ key }}</dt>
+  <dd class="policy-value">
+    {% if value is sameas true or value is sameas false %}
+    {{ bool_badge(value) }}
+    {% elif value is none or value == "" %}
+    <span class="is-empty">—</span>
+    {% else %}
+    <span class="policy-val">{{ value }}</span>
+    {% endif %}
+    {{ provenance_badge(provenance) }}
+  </dd>
+{% endmacro %}
+
+{% macro info_row(label, value) %}
+  <dt>{{ label }}</dt>
+  <dd>{% if value is none or value == "" %}<span class="is-empty">—</span>{% else %}{{ value }}{% endif %}</dd>
+{% endmacro %}

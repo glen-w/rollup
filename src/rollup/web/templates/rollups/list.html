@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import info_row, status_badge %}
 {% block title %}Rollup archive{% endblock %}
 {% block content %}
 <h1>Rollup archive</h1>
@@ -14,17 +15,18 @@
         <strong>{% if r.started_at %}{{ r.started_at | human_datetime }}{% else %}{{ r.run_id }}{% endif %}</strong>
         {% if r.window_start %} · {{ r.window_start | human_date_range(r.window_end) }}{% endif %}
         · {{ r.messages_included if r.messages_included is not none else "—" }} emails
-        · {{ r.status }}{% if r.degraded %} · degraded{% endif %}
+        · {{ status_badge(r.status) }}{% if r.degraded %} <span class="degraded-tag">degraded</span>{% endif %}
       </summary>
       <div class="card-body">
         <div class="stats-panel">
-          <ul class="stats">
-            <li>Sources: {{ r.sources_included if r.sources_included is not none else "—" }}</li>
-            <li>Groups: {{ r.groups_created if r.groups_created is not none else "—" }}</li>
-            <li>Skipped: {{ r.skipped if r.skipped is not none else "—" }}</li>
-            <li>AI / cache: {{ r.summaries_ollama if r.summaries_ollama is not none else "—" }}{% if r.summaries_litellm %} · LiteLLM {{ r.summaries_litellm }}{% endif %} / {{ r.summaries_cache if r.summaries_cache is not none else "—" }}</li>
-            {% if r.entry_index_version == 0 %}<li>Metadata only</li>{% endif %}
-          </ul>
+          <dl class="info-grid">
+            {{ info_row("Sources", r.sources_included) }}
+            {{ info_row("Groups", r.groups_created) }}
+            {{ info_row("Skipped", r.skipped) }}
+            <dt>AI / cache</dt>
+            <dd>{{ r.summaries_ollama if r.summaries_ollama is not none else "—" }}{% if r.summaries_litellm %} · LiteLLM {{ r.summaries_litellm }}{% endif %} / {{ r.summaries_cache if r.summaries_cache is not none else "—" }}</dd>
+            {% if r.entry_index_version == 0 %}<dt>Index</dt><dd><span class="muted">metadata only</span></dd>{% endif %}
+          </dl>
         </div>
         <p class="artifact-links">
           {% if preferred_view == 'entries' or not (r.has_md or r.has_html) %}

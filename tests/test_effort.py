@@ -63,7 +63,13 @@ def test_all_efforts_share_type_routes() -> None:
     routes = get_effort_preset("balanced").profile_set.type_routes
     for preset in list_effort_presets():
         assert preset.profile_set.type_routes == routes
-        assert set(preset.profile_set.profiles) == {"rough", "standard", "deep", "max"}
+        assert set(preset.profile_set.profiles) == {
+            "rough",
+            "standard",
+            "deep",
+            "max",
+            "preserve",
+        }
 
 
 def test_light_and_high_model_ladder() -> None:
@@ -331,3 +337,64 @@ def test_build_config_single_model_sets_companions() -> None:
     assert config.ollama_model == "solo:7b"
     assert config.final_review_model == "solo:7b"
     assert config.llm_model == "solo:7b"
+
+
+def test_apply_effort_override_unknown_slot() -> None:
+    from rollup.effort import EffortModelOverride, apply_effort_override
+
+    preset = get_effort_preset("balanced")
+    with pytest.raises(UnknownEffortError, match="Unknown profile slot"):
+        apply_effort_override(
+            preset, EffortModelOverride(profiles={"turbo": "nope:1"})
+        )
+
+
+def test_apply_single_model_empty_is_noop() -> None:
+    from rollup.effort import apply_single_model, apply_single_model_to_preset
+
+    balanced = get_effort_preset("balanced")
+    assert apply_single_model(balanced.profile_set, "  ") is balanced.profile_set
+    assert apply_single_model_to_preset(balanced, "") is balanced
+
+
+def test_apply_single_model_litellm_provider() -> None:
+    from rollup.effort import apply_single_model, apply_single_model_to_preset
+
+    balanced = get_effort_preset("balanced")
+    unified = apply_single_model(
+        balanced.profile_set, "openai/gpt-4o", provider="litellm"
+    )
+    for profile in unified.profiles.values():
+        assert profile.model == "openai/gpt-4o"
+        assert profile.provider == "litellm"
+        assert profile.think is False
+        assert profile.num_ctx is None
+
+    preset = apply_single_model_to_preset(
+        balanced, "openai/gpt-4o", provider="litellm"
+    )
+    assert preset.ollama_model == "openai/gpt-4o"
+    assert preset.profile_set.profiles["standard"].provider == "litellm"
+
+
+def test_effort_editor_rows_exposes_defaults_and_overrides() -> None:
+    from rollup.effort import EffortModelOverride, effort_editor_rows
+
+    rows = effort_editor_rows(
+        {
+            "high": EffortModelOverride(
+                profiles={"max": "custom-max:1"},
+                ollama_model="custom-group:1",
+            )
+        }
+    )
+    names = [row["name"] for row in rows]
+    assert names == ["light", "balanced", "high"]
+    high = next(row for row in rows if row["name"] == "high")
+    slots = {slot["name"]: slot for slot in high["slots"]}
+    assert slots["max"]["value"] == "custom-max:1"
+    assert slots["max"]["default"] == "qwen3.6:27b"
+    assert slots["ollama_model"]["value"] == "custom-group:1"
+    assert slots["rough"]["value"] == ""
+    light = next(row for row in rows if row["name"] == "light")
+    assert any(slot["name"] == "final_review_model" for slot in light["slots"])

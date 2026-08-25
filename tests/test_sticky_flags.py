@@ -42,6 +42,21 @@ def test_sticky_to_argv_bool_pairs_and_output() -> None:
     assert "--effort" in argv and "light" in argv
 
 
+def test_sticky_to_argv_llm_provider_and_model() -> None:
+    argv = sticky_to_argv(
+        {
+            "llm_provider": "litellm",
+            "llm_model": "openai/gpt-4o",
+            "ollama": True,
+        }
+    )
+    assert "--llm-provider" in argv
+    assert argv[argv.index("--llm-provider") + 1] == "litellm"
+    assert "--llm-model" in argv
+    assert argv[argv.index("--llm-model") + 1] == "openai/gpt-4o"
+    assert "--ollama" in argv
+
+
 def test_sticky_to_argv_default_all_omits_output() -> None:
     argv = sticky_to_argv({"output": ["all"], "ollama": True, "no_grouping": False})
     assert "--ollama" in argv

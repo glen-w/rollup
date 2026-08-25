@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import info_row, status_badge %}
 {% block title %}Rollup {{ run.run_id[:8] }}{% endblock %}
 {% block content %}
 <article class="rollup-detail">
@@ -8,17 +9,17 @@
   {% endif %}
 
   <details class="panel">
-    <summary>Run details · {{ run.status }}{% if run.degraded %} · degraded{% endif %}</summary>
+    <summary>Run details · {{ status_badge(run.status) }}{% if run.degraded %} <span class="degraded-tag">degraded</span>{% endif %}</summary>
     <div class="card-body">
       <div class="stats-panel">
-        <ul class="stats">
-          <li>Included: {{ run.messages_included if run.messages_included is not none else "—" }}</li>
-          <li>Sources: {{ run.sources_included if run.sources_included is not none else "—" }}</li>
-          <li>Groups: {{ run.groups_created if run.groups_created is not none else "—" }}</li>
-          <li>Ollama: {{ run.summaries_ollama if run.summaries_ollama is not none else "—" }}</li>
-          <li>LiteLLM: {{ run.summaries_litellm if run.summaries_litellm is not none else "—" }}</li>
-          <li>Cache: {{ run.summaries_cache if run.summaries_cache is not none else "—" }}</li>
-        </ul>
+        <dl class="info-grid">
+          {{ info_row("Included", run.messages_included) }}
+          {{ info_row("Sources", run.sources_included) }}
+          {{ info_row("Groups", run.groups_created) }}
+          {{ info_row("Ollama", run.summaries_ollama) }}
+          {{ info_row("LiteLLM", run.summaries_litellm) }}
+          {{ info_row("Cache", run.summaries_cache) }}
+        </dl>
       </div>
       <p class="artifact-links">
         {% if run.markdown_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}

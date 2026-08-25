@@ -166,6 +166,7 @@ def _light_preset() -> EffortPreset:
             num_predict=512,
             description="Light effort: essay route capped at 7B.",
         ),
+        "preserve": base["preserve"],
     }
     description = (
         "Light effort: smaller models for constrained machines "
@@ -214,6 +215,14 @@ def _high_preset() -> EffortPreset:
             base["max"],
             model="qwen3.6:27b",
             description="High effort: essay route on 27B with full budget.",
+        ),
+        "preserve": _replace_profile(
+            base["preserve"],
+            model="qwen3.6:27b",
+            num_ctx=65536,
+            timeout_seconds=600,
+            num_predict=4096,
+            description="High effort: item-list preservation on 27B.",
         ),
     }
     description = (

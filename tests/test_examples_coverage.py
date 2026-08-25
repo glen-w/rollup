@@ -51,6 +51,7 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("effort presets", "--effort"),
     ("list efforts", "--list-efforts"),
     ("single model override", "--single-model"),
+    ("effort model TOML overrides", "[efforts.high]"),
     ("xteink e-ink output", "--xteink"),
     ("output writer selection", "--output"),
     ("output none md/html only", "--output none"),

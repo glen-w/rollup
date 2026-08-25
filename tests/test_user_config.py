@@ -221,3 +221,62 @@ def test_parse_rejects_unknown_effort_name(tmp_path: Path) -> None:
             {"efforts": {"turbo": {"rough": "x"}}},
             path=tmp_path / "x.toml",
         )
+
+
+def test_parse_llm_provider_and_model(tmp_path: Path) -> None:
+    cfg = parse_toml_dict(
+        {"llm_provider": "LiteLLM", "llm_model": "openai/gpt-4o"},
+        path=tmp_path / "x.toml",
+    )
+    assert cfg.values["llm_provider"] == "litellm"
+    assert cfg.values["llm_model"] == "openai/gpt-4o"
+
+
+def test_parse_rejects_bad_llm_provider(tmp_path: Path) -> None:
+    with pytest.raises(UserConfigError, match="llm_provider"):
+        parse_toml_dict({"llm_provider": "openai"}, path=tmp_path / "x.toml")
+
+
+def test_parse_ui_rejects_invalid_landing(tmp_path: Path) -> None:
+    with pytest.raises(UserConfigError, match="landing_page"):
+        parse_toml_dict(
+            {"ui": {"landing_page": "dashboard"}},
+            path=tmp_path / "x.toml",
+        )
+    with pytest.raises(UserConfigError, match="preferred_view"):
+        parse_toml_dict(
+            {"ui": {"preferred_view": "pdf"}},
+            path=tmp_path / "x.toml",
+        )
+
+
+def test_parse_rejects_empty_effort_slot(tmp_path: Path) -> None:
+    with pytest.raises(UserConfigError, match="must be a non-empty string"):
+        parse_toml_dict(
+            {"efforts": {"high": {"max": "   "}}},
+            path=tmp_path / "x.toml",
+        )
+    with pytest.raises(UserConfigError, match="unknown key"):
+        parse_toml_dict(
+            {"efforts": {"high": {"turbo": "x"}}},
+            path=tmp_path / "x.toml",
+        )
+
+
+def test_merge_effort_overrides_across_files(tmp_path: Path) -> None:
+    a = tmp_path / "a.toml"
+    b = tmp_path / "b.toml"
+    a.write_text(
+        '[efforts.high]\nrough = "base-rough:1"\nollama_model = "base-group:1"\n',
+        encoding="utf-8",
+    )
+    b.write_text(
+        '[efforts.high]\nmax = "overlay-max:1"\nfinal_review_model = "overlay-review:1"\n',
+        encoding="utf-8",
+    )
+    loaded = load_user_config(search_paths=(a, b))
+    high = loaded.efforts["high"]
+    assert high.profiles["rough"] == "base-rough:1"
+    assert high.profiles["max"] == "overlay-max:1"
+    assert high.ollama_model == "base-group:1"
+    assert high.final_review_model == "overlay-review:1"

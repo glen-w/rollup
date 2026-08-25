@@ -98,3 +98,13 @@ def test_link_roundup_still_detects_link_heavy_short_posts() -> None:
     links = tuple(f"https://news.example/{i}" for i in range(12))
     result = classify_message(_parsed_message(body, links=links))
     assert result.newsletter_type == "link_roundup"
+
+
+def test_classify_item_list_long_bullet_list() -> None:
+    bullets = "\n".join(
+        f"- Job opening {i}: Research Scientist at Lab {i}, deadline March {i % 28 + 1}"
+        for i in range(25)
+    )
+    body = f"Weekly openings\n\n{bullets}\n\nApply via the links in each listing."
+    result = classify_message(_parsed_message(body))
+    assert result.newsletter_type == "item_list"

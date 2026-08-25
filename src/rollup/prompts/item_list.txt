@@ -1,0 +1,8 @@
+Newsletter subject: {subject}
+From: {sender}
+Type: {newsletter_type}
+
+Content excerpt:
+{body_excerpt}
+
+Output every distinct item as its own bullet (one job, paper, or alert per bullet). Keep titles, dates, locations, and identifiers intact. Light cleanup only — do not merge, rank, or omit items. No intro line before the first bullet.

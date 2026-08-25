@@ -174,13 +174,14 @@ def test_list_type_routes_ui_friendly() -> None:
 def test_type_routing_selects_expected_profile() -> None:
     profile_set = get_builtin_summary_profile_set()
     plan = resolve_summary_plan(
-        [_entry("essay"), _entry("link_roundup")],
+        [_entry("essay"), _entry("link_roundup"), _entry("item_list")],
         profile_set,
         SummaryCliOptions(summary_type_routing=True),
     )
     assert plan.mode == "type_routed"
     assert plan.jobs_by_variant["default"][0].profile_name == "max"
     assert plan.jobs_by_variant["default"][1].profile_name == "rough"
+    assert plan.jobs_by_variant["default"][2].profile_name == "preserve"
 
 
 def test_summary_profile_overrides_type_routing() -> None:

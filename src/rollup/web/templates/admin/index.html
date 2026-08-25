@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import info_row, status_badge %}
 {% block title %}Admin — Rollup{% endblock %}
 {% block content %}
 <article class="admin-page">
@@ -25,11 +26,14 @@
       {% if panels.settings.ok %}
       {% for section_title, items in panels.settings.data %}
       <h2 class="config-group">{{ section_title }}</h2>
-      <ul class="stats">
-        {% for label, value in items %}
-        <li>{{ label }}: <code>{{ value }}</code></li>
-        {% endfor %}
-      </ul>
+      <div class="stats-panel">
+        <dl class="info-grid">
+          {% for label, value in items %}
+          <dt>{{ label }}</dt>
+          <dd><code class="config-value">{{ value }}</code></dd>
+          {% endfor %}
+        </dl>
+      </div>
       {% endfor %}
       <p class="note">Current web process settings only — not a historical run configuration.
       Edit sticky digest config in <a href="{{ url_for('settings.settings_index') }}">Settings</a>
@@ -45,11 +49,14 @@
       {% if panels.digest_defaults.ok %}
       {% for section_title, items in panels.digest_defaults.data %}
       <h2 class="config-group">{{ section_title }}</h2>
-      <ul class="stats">
-        {% for label, value in items %}
-        <li>{{ label }}: <code>{{ value }}</code></li>
-        {% endfor %}
-      </ul>
+      <div class="stats-panel">
+        <dl class="info-grid">
+          {% for label, value in items %}
+          <dt>{{ label }}</dt>
+          <dd><code class="config-value">{{ value }}</code></dd>
+          {% endfor %}
+        </dl>
+      </div>
       {% endfor %}
       <p class="note">Resolved from user config + run profile defaults (read-only here).
       Edit and save sticky config in <a href="{{ url_for('settings.settings_index') }}">Settings</a>.</p>
@@ -63,11 +70,19 @@
       {{ panel_error(panels.doctor) }}
       {% if panels.doctor.ok %}
       {% set report = panels.doctor.data %}
-      <p>{% if report.ok %}OK{% else %}Issues found{% endif %}
-        · {{ report.error_count }} error(s) · {{ report.warning_count }} warning(s)</p>
-      <ul class="stats">
+      <p class="doctor-summary">
+        {% if report.ok %}{{ status_badge('pass', 'OK') }}{% else %}{{ status_badge('fail', 'Issues found') }}{% endif %}
+        <span class="muted">{{ report.error_count }} error(s) · {{ report.warning_count }} warning(s)</span>
+      </p>
+      <ul class="check-list">
         {% for c in report.checks %}
-        <li class="status-{{ c.status }}">{{ c.status }} · {{ c.message }}{% if c.fix and c.status in ['fail', 'warn'] %} — fix: {{ c.fix }}{% endif %}</li>
+        <li class="status-{{ c.status }}">
+          <span class="check-status">{{ c.status }}</span>
+          {{ c.message }}
+          {% if c.fix and c.status in ['fail', 'warn'] %}
+          <span class="check-fix">— fix: {{ c.fix }}</span>
+          {% endif %}
+        </li>
         {% endfor %}
       </ul>
       {% endif %}
@@ -80,15 +95,22 @@
       {{ panel_error(panels.schema) }}
       {% if panels.schema.ok %}
       {% set s = panels.schema.data %}
-      <ul class="stats">
-        <li>Schema version: {{ s.schema_version }} (package {{ s.package_schema_version }})</li>
-        <li>Journal mode: <code>{{ s.journal_mode }}</code> · {{ s.note }}</li>
-        {% if s.missing_tables %}
-        <li>Missing tables: {{ s.missing_tables | join(', ') }}</li>
-        {% else %}
-        <li>Canonical tables present</li>
-        {% endif %}
-      </ul>
+      <div class="stats-panel">
+        <dl class="info-grid">
+          <dt>Schema version</dt>
+          <dd>{{ s.schema_version }} <span class="muted">(package {{ s.package_schema_version }})</span></dd>
+          <dt>Journal mode</dt>
+          <dd><code class="config-value">{{ s.journal_mode }}</code> · {{ s.note }}</dd>
+          <dt>Tables</dt>
+          <dd>
+            {% if s.missing_tables %}
+            <span class="status-badge status-fail">missing</span> {{ s.missing_tables | join(', ') }}
+            {% else %}
+            <span class="status-badge status-pass">ok</span> canonical tables present
+            {% endif %}
+          </dd>
+        </dl>
+      </div>
       {% endif %}
     </div>
   </details>
@@ -113,20 +135,29 @@
       {% for card in m.cards %}
       <details class="rollup-run-card">
         <summary>
-          <span class="{{ card.status_css }}">{{ card.status }}</span>
+          <span class="status-badge {{ card.status_css }}">{{ card.status }}</span>
           · <code>{{ card.run_id[:8] }}…</code>
           · {{ card.started_at or "—" }}
           · {{ card.source }}
-          {% if card.degraded %} · degraded{% endif %}
+          {% if card.degraded %}<span class="degraded-tag">degraded</span>{% endif %}
         </summary>
         <div class="card-body">
-          <ul class="stats">
-            <li>Messages included: {{ card.messages_included if card.messages_included is not none else "not recorded" }}</li>
-            <li>Warnings: {{ card.warning_count if card.warning_count is not none else "not recorded" }}</li>
-            <li>Config fingerprint: {{ card.config_fingerprint or "not recorded" }}</li>
-            {% if card.conflict_note %}<li>{{ card.conflict_note }}</li>{% endif %}
-            {% if card.recovery_labels %}<li>Guidance: {{ card.recovery_labels | join(', ') }}</li>{% endif %}
-          </ul>
+          <div class="stats-panel">
+            <dl class="info-grid">
+              <dt>Messages included</dt>
+              <dd>{% if card.messages_included is not none %}{{ card.messages_included }}{% else %}<span class="is-empty">not recorded</span>{% endif %}</dd>
+              <dt>Warnings</dt>
+              <dd>{% if card.warning_count is not none %}{{ card.warning_count }}{% else %}<span class="is-empty">not recorded</span>{% endif %}</dd>
+              <dt>Config fingerprint</dt>
+              <dd>{% if card.config_fingerprint %}<code class="config-value">{{ card.config_fingerprint }}</code>{% else %}<span class="is-empty">not recorded</span>{% endif %}</dd>
+              {% if card.conflict_note %}
+              <dt>Conflict</dt><dd>{{ card.conflict_note }}</dd>
+              {% endif %}
+              {% if card.recovery_labels %}
+              <dt>Guidance</dt><dd>{{ card.recovery_labels | join(', ') }}</dd>
+              {% endif %}
+            </dl>
+          </div>
           {% if card.diagnostics %}
           <ul>
             {% for d in card.diagnostics %}
@@ -158,24 +189,28 @@
       {% if panels.bodies.ok %}
       {% set b = panels.bodies.data %}
       <div class="stats-panel">
-        <ul class="stats">
-          <li>Total bodies: {{ b.stats.total_rows }}</li>
-          <li>Populated: {{ b.stats.populated }}</li>
-          <li>Empty indexed: {{ b.stats.empty }}</li>
-          <li>Truncated: {{ b.stats.truncated }}</li>
-          <li>Orphans: {{ b.stats.orphans }}</li>
-          <li>Coverage:
-            {% if b.stats.coverage_pct is none %}N/A ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }}){% else %}
-            {{ "%.1f"|format(b.stats.coverage_pct) }}% ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }}){% endif %}
-          </li>
-          <li>Database size: {{ b.stats.db_file_bytes }} bytes</li>
-          <li>Table storage: {{ b.stats.table_storage }}{% if b.stats.table_storage_approximate %} (approximate){% endif %}</li>
+        <dl class="info-grid">
+          <dt>Total bodies</dt><dd>{{ b.stats.total_rows }}</dd>
+          <dt>Populated</dt><dd>{{ b.stats.populated }}</dd>
+          <dt>Empty indexed</dt><dd>{{ b.stats.empty }}</dd>
+          <dt>Truncated</dt><dd>{{ b.stats.truncated }}</dd>
+          <dt>Orphans</dt><dd>{{ b.stats.orphans }}</dd>
+          <dt>Coverage</dt>
+          <dd>
+            {% if b.stats.coverage_pct is none %}
+            <span class="is-empty">N/A</span> ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }})
+            {% else %}
+            {{ "%.1f"|format(b.stats.coverage_pct) }}% ({{ b.stats.coverage_numerator }}/{{ b.stats.coverage_denominator }})
+            {% endif %}
+          </dd>
+          <dt>Database size</dt><dd>{{ b.stats.db_file_bytes }} bytes</dd>
+          <dt>Table storage</dt>
+          <dd>{{ b.stats.table_storage }}{% if b.stats.table_storage_approximate %} <span class="muted">(approximate)</span>{% endif %}</dd>
           {% if b.stats.by_reader_version %}
-          <li>By reader version:
-            {% for ver, count in b.stats.by_reader_version.items() %}v{{ ver }}={{ count }} {% endfor %}
-          </li>
+          <dt>By reader version</dt>
+          <dd>{% for ver, count in b.stats.by_reader_version.items() %}<code class="config-value">v{{ ver }}={{ count }}</code> {% endfor %}</dd>
           {% endif %}
-        </ul>
+        </dl>
       </div>
       <p>Schema version: {{ b.report.schema_version }}{% if b.deep %} · deep{% endif %}</p>
       {% if b.report.issues %}
@@ -212,12 +247,14 @@
         {% if backfill_preview.error %}
         <p class="banner">{{ backfill_preview.error }}</p>
         {% else %}
-        <ul class="stats">
-          <li>Candidates: {{ backfill_preview.candidates }}</li>
-          <li>Matched writes: {{ backfill_preview.matched }}</li>
-          <li>Ambiguous: {{ backfill_preview.ambiguous }}</li>
-          <li>Scanned: {{ backfill_preview.scanned }} · parse failed: {{ backfill_preview.parse_failed }}</li>
-        </ul>
+        <div class="stats-panel">
+          <dl class="info-grid">
+            <dt>Candidates</dt><dd>{{ backfill_preview.candidates }}</dd>
+            <dt>Matched writes</dt><dd>{{ backfill_preview.matched }}</dd>
+            <dt>Ambiguous</dt><dd>{{ backfill_preview.ambiguous }}</dd>
+            <dt>Scanned</dt><dd>{{ backfill_preview.scanned }} · parse failed: {{ backfill_preview.parse_failed }}</dd>
+          </dl>
+        </div>
         {% if backfill_preview.token %}
         <form method="post" action="{{ url_for('admin.admin_bodies_backfill') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

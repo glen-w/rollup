@@ -453,6 +453,7 @@ Default per-type routes in the built-in profile set:
 | `link_roundup` | `rough` | `llama3.2:3b` |
 | `multi_section_digest` | `standard` | `qwen2.5:7b` |
 | `essay` | `max` | `qwen3.6:27b` |
+| `item_list` | `preserve` | `qwen2.5:7b` |
 | `unclassified` | `standard` | `qwen2.5:7b` |
 
 See [docs/EXAMPLES.md](docs/EXAMPLES.md#digest-with-ollama-recommended-full-run) for runnable routing examples.
@@ -481,11 +482,12 @@ Canonical newsletter classifier labels are:
 - `multi_section_digest`
 - `essay`
 - `link_roundup`
+- `item_list` (job alerts, scholar updates, journal TOCs — minimal LLM cleaning)
 - `unclassified`
 
 ## Prompt templates
 
-Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `unclassified`). Final review prompts live in `rollup/prompts/final_review/`.
+Ollama prompt templates ship inside the `rollup` package (`rollup/prompts/`). Each run prepends `_common.txt` (forbids reproducing full newsletter text) plus a type-specific template (`short_update`, `multi_section_digest`, `essay`, `link_roundup`, `item_list`, `unclassified`). The `preserve` prompt style uses `_common_preserve.txt` instead, for item lists where every entry must survive. Final review prompts live in `rollup/prompts/final_review/`.
 
 Summary cache entries are stored in SQLite during summarisation (before digest files are written). Use `--rebuild-summaries` to bypass the cache.
 

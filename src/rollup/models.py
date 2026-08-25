@@ -12,6 +12,7 @@ NewsletterType = Literal[
     "multi_section_digest",
     "essay",
     "link_roundup",
+    "item_list",
     "unclassified",
 ]
 SummarySource = Literal[

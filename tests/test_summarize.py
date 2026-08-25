@@ -40,6 +40,7 @@ NEWSLETTER_TYPES = (
     "multi_section_digest",
     "essay",
     "link_roundup",
+    "item_list",
     "unclassified",
 )
 
@@ -150,6 +151,15 @@ def test_build_prompt_style_changes_prompt() -> None:
     rough = build_prompt(entry.classified, excerpt, prompt_style="rough")
     deep = build_prompt(entry.classified, excerpt, prompt_style="deep")
     assert rough != deep
+
+
+def test_build_prompt_preserve_uses_common_preserve() -> None:
+    classified = _classified("item_list", "- Paper A\n- Paper B\n- Paper C")
+    excerpt = classified.parsed.body_text
+    prompt = build_prompt(classified, excerpt, prompt_style="preserve")
+    assert "Preserve every distinct item" in prompt
+    assert "Do not reproduce the newsletter text" not in prompt
+    assert "Do not merge, rank, or omit items" in prompt
 
 
 @pytest.mark.parametrize(

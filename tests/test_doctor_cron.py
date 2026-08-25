@@ -186,3 +186,79 @@ def test_format_doctor_human_and_remote_ollama_fail(tmp_path: Path) -> None:
     assert live.ok is False
     loopback = next(c for c in live.checks if c.id == "ollama_loopback")
     assert loopback.status == "fail"
+
+
+def test_doctor_effort_preset_check_includes_models(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from rollup.doctor import _check_effort_preset, _check_litellm_config
+    from rollup.effort import EffortModelOverride
+
+    high = _check_effort_preset(replace(_config(tmp_path), effort="high"))
+    assert high.id == "effort_preset"
+    assert high.status == "info"
+    assert "gpt-oss:20b" in high.message
+    assert "qwen3.6:27b" in high.message
+
+    overridden = _check_effort_preset(
+        replace(
+            _config(tmp_path),
+            effort="high",
+            effort_overrides={
+                "high": EffortModelOverride(profiles={"max": "custom-max:1"})
+            },
+        )
+    )
+    assert "custom-max:1" in overridden.message
+
+    single = _check_effort_preset(
+        replace(_config(tmp_path), effort="balanced", single_model="solo:7b")
+    )
+    assert "solo:7b" in single.message
+
+    assert _check_litellm_config(_config(tmp_path)) is None
+
+
+def test_doctor_litellm_config_missing_extra(tmp_path: Path, monkeypatch) -> None:
+    import builtins
+    from dataclasses import replace
+
+    from rollup.doctor import _check_litellm_config
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "litellm" or name.startswith("litellm."):
+            raise ImportError("blocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    check = _check_litellm_config(
+        replace(_config(tmp_path), no_ollama=False, llm_provider="litellm")
+    )
+    assert check is not None
+    assert check.id == "litellm_extra"
+    assert check.status == "fail"
+
+
+def test_doctor_ollama_models_warns_when_tags_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from rollup.doctor import _check_ollama_network
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"models": [{"name": "llama3.2:3b"}]}
+    mock_resp.raise_for_status = MagicMock()
+    monkeypatch.setattr("requests.get", lambda *a, **k: mock_resp)
+    checks = {
+        c.id: c
+        for c in _check_ollama_network(
+            replace(_config(tmp_path), no_ollama=False, effort="high")
+        )
+    }
+    assert checks["ollama_reachable"].status == "pass"
+    assert checks["ollama_models"].status == "warn"
+    assert "gpt-oss:20b" in checks["ollama_models"].message

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/info_macros.html" import info_row %}
 {% block title %}Source quality{% endblock %}
 {% block content %}
 <h1>Newsletter quality</h1>
@@ -19,16 +20,16 @@
       <div class="card-body">
         <p><a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.canonical_source_key)) }}">View source</a></p>
         <div class="stats-panel">
-          <ul class="stats">
-            <li>Lifetime: {{ "%.2f"|format(s.lifetime_average) if s.lifetime_average is not none else "—" }}</li>
-            <li>Recent: {{ "%.2f"|format(s.recent_weighted) if s.recent_weighted is not none else "—" }}</li>
-            <li>Trend: {{ s.trend }}</li>
-            <li>Read: {{ "%.0f%%"|format(s.read_rate * 100) if s.read_rate is not none else "—" }}</li>
-            <li>Save: {{ "%.0f%%"|format(s.save_rate * 100) if s.save_rate is not none else "—" }}</li>
-            <li>Dismiss: {{ "%.0f%%"|format(s.dismiss_rate * 100) if s.dismiss_rate is not none else "—" }}</li>
-            <li>Last rated: {{ s.last_rated_at or "—" }}</li>
-            <li>Last received: {{ s.last_received_at or "—" }}</li>
-          </ul>
+          <dl class="info-grid">
+            <dt>Lifetime</dt><dd>{% if s.lifetime_average is not none %}{{ "%.2f"|format(s.lifetime_average) }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+            <dt>Recent</dt><dd>{% if s.recent_weighted is not none %}{{ "%.2f"|format(s.recent_weighted) }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+            <dt>Trend</dt><dd>{{ s.trend }}</dd>
+            <dt>Read</dt><dd>{% if s.read_rate is not none %}{{ "%.0f%%"|format(s.read_rate * 100) }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+            <dt>Save</dt><dd>{% if s.save_rate is not none %}{{ "%.0f%%"|format(s.save_rate * 100) }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+            <dt>Dismiss</dt><dd>{% if s.dismiss_rate is not none %}{{ "%.0f%%"|format(s.dismiss_rate * 100) }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+            {{ info_row("Last rated", s.last_rated_at) }}
+            {{ info_row("Last received", s.last_received_at) }}
+          </dl>
         </div>
       </div>
     </details>

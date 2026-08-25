@@ -21,7 +21,7 @@ Per-source overrides (CLI):
 | enabled / disabled | Disabled sources are excluded after the date window |
 | always-surface | Include undated seen messages from this source (does **not** bypass the lookback window) |
 | priority | 0–100; higher sorts earlier in MD/HTML |
-| type | Preferred newsletter type (classifier still runs; override is effective type) |
+| type | Preferred newsletter type (classifier still runs; override is effective type). Use `item_list` for job alerts, scholar updates, and journal TOCs that need every entry preserved. |
 | grouping | `auto`, `standalone`, `sender_batch`, `notification_stream`, `daily_editions` |
 | summary-profile | Preferred summary profile name |
 | display-name | Render label |
