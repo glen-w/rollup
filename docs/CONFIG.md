@@ -173,6 +173,7 @@ search, company pages, follows, and mentions are not supported yet (see
 ```toml
 [linkedin]
 enabled = true   # opt-in fetch on digest; default false
+article_fetch = true   # fetch linked article bodies for link posts (default on)
 
 [linkedin.searches.watchlist]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&fromMember=%5B%22ACo…%22%5D"
@@ -181,6 +182,8 @@ enabled = true
 ```
 
 ### Session cookies (environment only)
+
+Step-by-step (Chrome / Firefox / Safari): [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
 
 Copy both cookies from a logged-in browser (DevTools → Application/Storage →
 Cookies → `https://www.linkedin.com`). **Never** put them in TOML, Settings, or
@@ -206,16 +209,18 @@ For launchd/cron, pass the same variables in the job environment (plist
 ### Behaviour
 
 - Enable: `[linkedin].enabled = true` and/or `rollup digest --linkedin`. `--no-linkedin` turns fetch off for that run.
+- Article fetch: `[linkedin].article_fetch = true` by default — link posts also fetch the URL from Voyager `ArticleComponent` (external blogs, Pulse). Adds HTTP beyond Voyager; disable with `[linkedin].article_fetch = false` or `--no-linkedin-article-fetch`. Failures leave the commentary teaser and add a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, …); they do not fail the digest.
 - URL must be `https://www.linkedin.com/search/results/content/…` with a `fromMember` facet (author `ACo…` ids). Copy it from LinkedIn after filtering Content search by people.
 - `--folder` / `--exclude-folder` accept `linkedin:watchlist` names like mbox folders.
 - Posts are dated from LinkedIn activity ids; the digest **lookback window** still applies after ingest (older posts are skipped, not listed as undated).
-- Caps (per search): 20 authors, 2 pages × 10 posts each, 100 posts total, 2s backoff between requests.
+- `linkedin:*` folders stay **standalone** (no `notification_stream` grouping). Subject prefers the article title when present; preview keeps the full body up to 2000 characters.
+- Caps (per search): 20 authors, 2 pages × 10 posts each, 100 posts total, 2s backoff between requests. Article fetch: 50 URLs per run, 1s backoff.
 - Message identity is `li:activity:…`; author source key is `li:member:…` (mute with `rollup sources disable li:member:…`).
 - Fetch failure **partial** (exit 2) when mail still publishes; LinkedIn-only runs **hard-fail** (exit 1) when fetch cannot proceed.
 - `--dry-run` and web **GET** routes never contact LinkedIn (dry-run warns if cookies are missing).
 
 Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
-Settings stores URLs only. Full recipe: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+Settings stores URLs only. How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
 ## Run profiles vs effort
 

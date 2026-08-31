@@ -99,6 +99,7 @@ def _folder_themes_from_form() -> dict[str, FolderThemeOverride]:
 
 def _linkedin_from_form() -> LinkedInConfig:
     enabled = "1" in request.form.getlist("linkedin_enabled")
+    article_fetch = "1" in request.form.getlist("linkedin_article_fetch")
     searches: dict[str, LinkedInSearch] = {}
     slugs = request.form.getlist("linkedin_slug")
     urls = request.form.getlist("linkedin_url")
@@ -125,7 +126,7 @@ def _linkedin_from_form() -> LinkedInConfig:
             display_name=display,
             enabled=search_enabled,
         )
-    return LinkedInConfig(enabled=enabled, searches=searches)
+    return LinkedInConfig(enabled=enabled, article_fetch=article_fetch, searches=searches)
 
 
 def _profiles_from_form() -> tuple[dict[str, dict], set[str]]:

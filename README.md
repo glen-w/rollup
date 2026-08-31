@@ -289,13 +289,15 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
     python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
     python -m rollup digest --ollama --summary-routing-report
     ```
-11. Optional LinkedIn author feeds (`fromMember` URL in TOML; cookies in env only):
+11. Optional LinkedIn author feeds (`fromMember` URL in TOML; cookies in env only).
+    Copy `li_at` and `JSESSIONID` from a logged-in browser — step-by-step:
+    [docs/EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
     ```bash
     export ROLLUP_LINKEDIN_LI_AT='…'
     export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
     python -m rollup digest --linkedin --folder linkedin:watchlist
     ```
-    See [docs/CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional) and [docs/EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
+    See also [docs/CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional).
 
 ## Configuration
 
@@ -315,8 +317,9 @@ Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.to
 | *(digest mode)* | **no Ollama** | Omit both `--ollama` and `--no-ollama` |
 | `--no-ollama` | implicit default | Preview summaries; no LLM network |
 | `--ollama` | off | Opt-in local Ollama summarisation |
-| `--linkedin` | off (unless TOML `[linkedin].enabled`) | Opt-in LinkedIn `fromMember` fetch; needs `ROLLUP_LINKEDIN_LI_AT` + `ROLLUP_LINKEDIN_JSESSIONID` in the environment ([CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional)) |
+| `--linkedin` | off (unless TOML `[linkedin].enabled`) | Opt-in LinkedIn `fromMember` fetch; needs `ROLLUP_LINKEDIN_LI_AT` + `ROLLUP_LINKEDIN_JSESSIONID` in the environment ([EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network)) |
 | `--no-linkedin` | implicit default | Disable LinkedIn fetch for this run |
+| `--no-linkedin-article-fetch` | off | Skip fetching linked article bodies (default is to fetch when LinkedIn is on) |
 | `--effort` | `balanced` | Machine-power preset: `light` / `balanced` / `high` (models + related defaults) |
 | `--list-efforts` | off | List effort presets and exit |
 | `--summary-profile` | — | **Ollama only:** one profile for all messages |

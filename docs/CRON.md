@@ -84,7 +84,10 @@ export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
 
 For launchd, put them under `EnvironmentVariables` in the plist, or wrap the
 Python invocation in a script that exports them. Refresh both cookies when
-LinkedIn 401s. See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
+LinkedIn 401s. How to copy cookies: [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
+Article fetch (default on) adds extra HTTP to linked article hosts; disable with
+`[linkedin].article_fetch = false` if the scheduled job should stay Voyager-only.
+See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 
 ## launchd (preferred on macOS)
 

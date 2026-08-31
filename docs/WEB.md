@@ -37,7 +37,7 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 ## Configuration Centre (`/settings`)
 
-Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers, **LinkedIn content searches** (URLs only — set `ROLLUP_LINKEDIN_LI_AT` and `ROLLUP_LINKEDIN_JSESSIONID` in the process environment; never in TOML), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky.
+Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers, **LinkedIn content searches** (URLs and article-fetch toggle only — set `ROLLUP_LINKEDIN_LI_AT` and `ROLLUP_LINKEDIN_JSESSIONID` in the process environment; never in TOML), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
 
 Saves are previewed as an effective-config diff, confirmed with a one-time maintenance token, validated, backed up, and persisted atomically with optimistic concurrency (revision mismatch → re-preview). Digest settings are **not** stored in SQLite.
 

@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rollup.addons.artifact_write import atomic_write_digest_artifact
-from rollup.addons.offline_text import strip_urls_for_offline
+from rollup.addons.offline_text import strip_urls_for_offline, truncate_with_ellipsis
 from rollup.assets import EPUB_COVER_FILENAME, epub_cover_bytes
 from rollup.final_review import format_final_review_digest_summary
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
@@ -138,12 +138,12 @@ def _render_group_xhtml(group: DigestGroup) -> str:
         parts.append("<ol class='compact-list'>")
         for entry in group.entries:
             p = entry.classified.parsed
-            subject = html_module.escape(p.subject[:100])
+            subject = html_module.escape(truncate_with_ellipsis(p.subject, 100))
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
             preview_src = strip_urls_for_offline(
-                (entry.summary or p.preview or "")[:200]
+                truncate_with_ellipsis(entry.summary or p.preview or "", 200)
             )
             preview = html_module.escape(preview_src)
             item = f"<li><strong>{date}</strong> — {subject}"

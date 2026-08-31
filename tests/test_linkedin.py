@@ -89,6 +89,56 @@ def test_posts_from_profile_updates_fixture() -> None:
     assert "feature" in posts[0].text.lower()
 
 
+def test_posts_from_link_post_update() -> None:
+    import json
+
+    payload = json.loads((FIXTURES / "link_post_update.json").read_text(encoding="utf-8"))
+    posts = posts_from_profile_updates_payload(payload)
+    assert len(posts) == 1
+    assert posts[0].activity_id == "7500100210124099584"
+    assert posts[0].article_url == "https://example.com/blog/tagging-on-a-borrowed-boat"
+    assert "Tagging on a borrowed boat" in posts[0].article_title or ""
+
+
+def test_linkedin_subject_uses_article_title() -> None:
+    from rollup.linkedin.models import LinkedInPost
+    from rollup.linkedin.parse import linkedin_post_to_parsed_message
+
+    post = LinkedInPost(
+        activity_id="1",
+        author_name="A",
+        author_member_id="ACoAAA",
+        text="Short teaser only.",
+        permalink="https://example.com",
+        created_at=None,
+        article_title="Tagging on a borrowed boat — Francisco Blaha",
+    )
+    msg = linkedin_post_to_parsed_message(
+        post, search_slug="watchlist", max_body_chars=50_000
+    )
+    assert msg.subject == "Tagging on a borrowed boat — Francisco Blaha"
+
+
+def test_linkedin_preview_not_truncated_for_short_body() -> None:
+    from rollup.linkedin.models import LinkedInPost
+    from rollup.linkedin.parse import linkedin_post_to_parsed_message
+
+    body = "word " * 300
+    post = LinkedInPost(
+        activity_id="2",
+        author_name="A",
+        author_member_id=None,
+        text=body.strip(),
+        permalink="",
+        created_at=None,
+    )
+    msg = linkedin_post_to_parsed_message(
+        post, search_slug="watchlist", max_body_chars=50_000
+    )
+    assert msg.preview == body.strip()
+    assert not msg.preview.endswith("…")
+
+
 def test_created_at_from_activity_snowflake() -> None:
     from datetime import timezone
 
@@ -157,8 +207,15 @@ def test_parse_linkedin_toml() -> None:
     }
     loaded = parse_toml_dict(data, path=Path("test.toml"))
     assert loaded.linkedin.enabled is True
+    assert loaded.linkedin.article_fetch is True
     assert "watchlist" in loaded.linkedin.searches
     assert loaded.linkedin.searches["watchlist"].url == WATCHLIST_URL
+
+
+def test_parse_linkedin_article_fetch_false() -> None:
+    data = {"linkedin": {"enabled": True, "article_fetch": False}}
+    loaded = parse_toml_dict(data, path=Path("test.toml"))
+    assert loaded.linkedin.article_fetch is False
 
 
 def test_folder_name_and_filter() -> None:

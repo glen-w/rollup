@@ -9,6 +9,7 @@ from statistics import median
 from typing import Literal
 
 from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
+from rollup.linkedin.config import LINKEDIN_FOLDER_PREFIX
 from rollup.run_options import GroupingConfig
 from rollup.source_identity import normalize_email as normalize_email
 
@@ -159,6 +160,17 @@ def _group_entry_list(
         policy = None
         if snapshot is not None:
             policy = snapshot.policy_for(entry.classified.parsed.source_key)
+        parsed = entry.classified.parsed
+        if parsed.folder_name.startswith(LINKEDIN_FOLDER_PREFIX):
+            decisions.append(
+                GroupingDecision(
+                    reason_code="LONG_FORM_STANDALONE",
+                    message_key=parsed.message_key,
+                    detail="linkedin_folder=standalone",
+                )
+            )
+            standalone.append(entry)
+            continue
         if policy is not None and policy.grouping_policy == "standalone":
             decisions.append(
                 GroupingDecision(

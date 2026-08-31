@@ -477,13 +477,24 @@ def stage_parse_linkedin(
         return [], [], False
 
     from rollup.error_sanitize import sanitize_provider_message
+    from rollup.linkedin.article import enrich_posts_with_articles
     from rollup.linkedin.fetch import LinkedInFetchError, fetch_search_posts
     from rollup.linkedin.parse import linkedin_post_to_parsed_message
-    from rollup.linkedin.session import linkedin_cookie_configured
+    from rollup.linkedin.session import (
+        LinkedInSessionError,
+        build_linkedin_session,
+        linkedin_cookie_configured,
+    )
 
     warnings: list[StageWarning] = []
     messages: list[ParsedMessage] = []
     degraded = False
+    article_session = None
+    if config.linkedin.article_fetch:
+        try:
+            article_session = build_linkedin_session()
+        except LinkedInSessionError:
+            article_session = None
 
     if dry_run:
         from rollup.linkedin.session import jsession_id_configured
@@ -530,12 +541,21 @@ def stage_parse_linkedin(
                 lookback_days=config.lookback_days,
                 client=client,
             )
-            for post in posts:
+            if article_session is not None and config.linkedin.article_fetch:
+                posts, article_warnings = enrich_posts_with_articles(
+                    posts,
+                    article_session,
+                    enabled=True,
+                )
+            else:
+                article_warnings = [() for _ in posts]
+            for post, post_warnings in zip(posts, article_warnings, strict=True):
                 messages.append(
                     linkedin_post_to_parsed_message(
                         post,
                         search_slug=search.slug,
                         max_body_chars=config.max_body_chars,
+                        extra_warnings=post_warnings,
                     )
                 )
         except LinkedInFetchError as exc:

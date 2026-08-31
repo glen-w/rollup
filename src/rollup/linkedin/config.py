@@ -41,6 +41,7 @@ def slug_from_folder_name(folder_name: str) -> str | None:
 @dataclass(frozen=True)
 class LinkedInConfig:
     enabled: bool = False
+    article_fetch: bool = True
     searches: dict[str, LinkedInSearch] = field(default_factory=dict)
 
 
@@ -53,6 +54,10 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
     enabled = raw.get("enabled", False)
     if not isinstance(enabled, bool):
         raise ValueError(f"{path}: [linkedin].enabled must be a boolean")
+
+    article_fetch = raw.get("article_fetch", True)
+    if not isinstance(article_fetch, bool):
+        raise ValueError(f"{path}: [linkedin].article_fetch must be a boolean")
 
     searches_raw = raw.get("searches")
     searches: dict[str, LinkedInSearch] = {}
@@ -114,7 +119,7 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
                 order=order,
             )
 
-    return LinkedInConfig(enabled=enabled, searches=searches)
+    return LinkedInConfig(enabled=enabled, article_fetch=article_fetch, searches=searches)
 
 
 def filter_linkedin_searches(

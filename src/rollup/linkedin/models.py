@@ -16,3 +16,5 @@ class LinkedInPost:
     text: str
     permalink: str
     created_at: datetime | None
+    article_url: str | None = None
+    article_title: str | None = None

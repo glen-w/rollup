@@ -166,6 +166,11 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       <input type="checkbox" name="linkedin_enabled" value="1" {% if linkedin.enabled %}checked{% endif %}>
       Enable LinkedIn fetch on digest runs
     </label>
+    <label>
+      <input type="hidden" name="linkedin_article_fetch" value="0">
+      <input type="checkbox" name="linkedin_article_fetch" value="1" {% if linkedin.article_fetch %}checked{% endif %}>
+      Fetch linked article bodies for link posts (extra HTTP; default on)
+    </label>
     <div class="linkedin-search-grid">
       {% for slug, search in linkedin.searches.items() %}
       <div class="linkedin-search-row">

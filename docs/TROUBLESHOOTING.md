@@ -134,3 +134,5 @@ rollup digest --linkedin
 - **Checkpoint / authwall:** complete LinkedIn’s verification in the browser, then export fresh cookies.
 - **LinkedIn-only run (`--folder linkedin:…` and no mbox):** fetch failure is **exit 1**, not partial.
 - **Dry-run / Settings GET:** never contacts LinkedIn.
+- **Link-post still a short teaser:** article fetch is on by default. Confirm `[linkedin].article_fetch` is not `false` and you did not pass `--no-linkedin-article-fetch`. Voyager must expose `ArticleComponent` (`content.navigationContext.actionTarget`). Job posts and posts without a link card stay commentary-only. A failed article GET leaves the teaser and sets a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, `linkedin_article_url_invalid`); it does not fail the digest.
+- **How to copy cookies:** [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).

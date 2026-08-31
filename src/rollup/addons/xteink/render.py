@@ -10,6 +10,7 @@ from typing import Mapping
 from rollup.addons.offline_text import (
     OFFLINE_LINE_LENGTH,
     strip_urls_for_offline,
+    truncate_with_ellipsis,
     wrap_text,
 )
 from rollup.folder_theme import FolderThemeOverride
@@ -34,17 +35,7 @@ XTEINK_SUBJECT_MAX = 100
 # Compatibility aliases for tests / callers that imported private helpers.
 _strip_urls_for_xteink = strip_urls_for_offline
 _wrap_text = wrap_text
-
-
-def _truncate(text: str, max_chars: int) -> str:
-    """Truncate at a word boundary when possible; append an ellipsis."""
-    text = (text or "").strip()
-    if len(text) <= max_chars:
-        return text
-    cut = text[: max_chars - 1].rstrip()
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0].rstrip()
-    return cut + "…"
+_truncate = truncate_with_ellipsis
 
 
 def _render_xteink_entry_md(

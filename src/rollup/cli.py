@@ -100,6 +100,16 @@ def _resolve_no_linkedin(args: argparse.Namespace) -> bool:
     return True
 
 
+def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
+    loaded = getattr(args, "_loaded_user_config", None)
+    linkedin = getattr(loaded, "linkedin", None) or LinkedInConfig()
+    if getattr(args, "no_linkedin_article_fetch", False):
+        from dataclasses import replace
+
+        return replace(linkedin, article_fetch=False)
+    return linkedin
+
+
 def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
     """Warn when LLM-only flags are passed but summarisation is disabled."""
     if not config.no_ollama:
@@ -263,8 +273,7 @@ def _build_config(
         effort_overrides=effort_overrides,
         single_model=single_model,
         no_linkedin=_resolve_no_linkedin(args),
-        linkedin=getattr(getattr(args, "_loaded_user_config", None), "linkedin", None)
-        or LinkedInConfig(),
+        linkedin=_resolve_linkedin_config(args),
     )
 
 

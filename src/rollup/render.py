@@ -10,6 +10,7 @@ from email.utils import parseaddr
 from pathlib import Path
 
 from rollup.assets import FAVICON_FILENAME, LOGO_FILENAME
+from rollup.addons.offline_text import truncate_with_ellipsis
 from rollup.folder_theme import (
     FolderThemeOverride,
     folder_accent_css,
@@ -489,10 +490,7 @@ def _render_run_details_md(report: DigestReport) -> list[str]:
 
 
 def _truncate(text: str, max_chars: int) -> str:
-    text = (text or "").strip()
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 1].rstrip() + "…"
+    return truncate_with_ellipsis(text, max_chars)
 
 
 def _render_group_md(group: DigestGroup, max_display_links: int) -> str:

@@ -278,7 +278,10 @@ def _themes_to_raw(
 
 
 def _linkedin_to_raw(linkedin: LinkedInConfig) -> dict[str, Any]:
-    body: dict[str, Any] = {"enabled": linkedin.enabled}
+    body: dict[str, Any] = {
+        "enabled": linkedin.enabled,
+        "article_fetch": linkedin.article_fetch,
+    }
     if linkedin.searches:
         searches: dict[str, dict[str, Any]] = {}
         for slug, search in sorted(linkedin.searches.items()):
@@ -515,6 +518,7 @@ def _apply_patch_to_doc(
     if patch.linkedin is not None:
         linkedin_table = tomlkit.table()
         linkedin_table["enabled"] = patch.linkedin.enabled
+        linkedin_table["article_fetch"] = patch.linkedin.article_fetch
         if patch.linkedin.searches:
             searches_table = tomlkit.table()
             for slug, search in sorted(patch.linkedin.searches.items()):
@@ -684,6 +688,8 @@ def build_digest_argv(
         argv.append("--linkedin")
     else:
         argv.append("--no-linkedin")
+    if not effective.linkedin.article_fetch:
+        argv.append("--no-linkedin-article-fetch")
     if dry_run:
         argv.append("--dry-run")
     if extra:

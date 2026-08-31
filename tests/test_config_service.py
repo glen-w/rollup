@@ -128,6 +128,7 @@ def test_build_digest_argv_includes_dry_run(tmp_path: Path) -> None:
     assert "--dry-run" in argv
     assert "--no-ollama" in argv
     assert "--profile" in argv
+    assert "--no-linkedin-article-fetch" not in argv
 
 
 def test_build_digest_argv_fixture_paths() -> None:

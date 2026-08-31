@@ -146,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable LinkedIn fetch (default when neither flag is passed)",
     )
+    dig.add_argument(
+        "--no-linkedin-article-fetch",
+        action="store_true",
+        help="Disable fetching linked article bodies for LinkedIn link posts",
+    )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",

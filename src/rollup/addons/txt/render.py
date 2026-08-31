@@ -9,6 +9,7 @@ from rollup.addons.artifact_write import atomic_write_digest_artifact
 from rollup.addons.offline_text import (
     OFFLINE_LINE_LENGTH,
     strip_urls_for_offline,
+    truncate_with_ellipsis,
     wrap_text,
 )
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
@@ -65,11 +66,13 @@ def _render_group_txt(group: DigestGroup) -> str:
             )
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = p.subject[:100]
+            subject = truncate_with_ellipsis(p.subject, 100)
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
-            preview = strip_urls_for_offline(p.preview[:200] if p.preview else "")
+            preview = strip_urls_for_offline(
+                truncate_with_ellipsis(p.preview or "", 200)
+            )
             lines.append(f"{i}. {date} — {subject}")
             if preview:
                 lines.append(f"   Preview: {preview}")
@@ -100,9 +103,11 @@ def _render_group_txt(group: DigestGroup) -> str:
         )
     for entry in group.entries:
         p = entry.classified.parsed
-        subject = p.subject[:100]
+        subject = truncate_with_ellipsis(p.subject, 100)
         date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
-        preview = strip_urls_for_offline(p.preview[:200] if p.preview else "")
+        preview = strip_urls_for_offline(
+            truncate_with_ellipsis(p.preview or "", 200)
+        )
         lines.append(f"{date} — {subject}")
         if preview:
             lines.append(f"Preview: {preview}")

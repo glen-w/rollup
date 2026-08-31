@@ -77,6 +77,20 @@ def _parse_iso_datetime(raw: str | None) -> datetime | None:
     return dt
 
 
+def _article_fields_from_content(content: object) -> tuple[str | None, str | None]:
+    """Extract link-post article URL and title from Voyager ArticleComponent."""
+    if not isinstance(content, dict):
+        return None, None
+    article_url: str | None = None
+    nav = content.get("navigationContext")
+    if isinstance(nav, dict):
+        target = nav.get("actionTarget")
+        if isinstance(target, str) and target.startswith("https://"):
+            article_url = target.split("?", 1)[0]
+    article_title = _nested_text(content.get("title") or {})
+    return article_url, article_title or None
+
+
 def _nested_text(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
@@ -160,6 +174,7 @@ def post_from_update_v2(
         permalink = share_url.split("?", 1)[0]
     elif activity_id:
         permalink = f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}"
+    article_url, article_title = _article_fields_from_content(update.get("content"))
     return LinkedInPost(
         activity_id=activity_id,
         author_name=author_name,
@@ -167,6 +182,8 @@ def post_from_update_v2(
         text=text,
         permalink=permalink,
         created_at=created_at,
+        article_url=article_url,
+        article_title=article_title,
     )
 
 

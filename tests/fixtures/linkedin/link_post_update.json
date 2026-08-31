@@ -1,0 +1,30 @@
+{
+  "elements": [
+    {
+      "actor": {
+        "name": {"text": "Francisco Blaha"},
+        "urn": "urn:li:fsd_profile:ACoAAAGfWmEBBDYF4e-OExt0xyUuLUC-iZQAQbA"
+      },
+      "commentary": {
+        "text": {
+          "text": "Tagging continuity is not a nice-to-have in the science budget."
+        }
+      },
+      "content": {
+        "urn": "urn:li:article:7497240761615462075",
+        "title": {
+          "text": "Tagging on a borrowed boat — Francisco Blaha"
+        },
+        "navigationContext": {
+          "actionTarget": "https://example.com/blog/tagging-on-a-borrowed-boat"
+        },
+        "$type": "com.linkedin.voyager.feed.render.ArticleComponent"
+      },
+      "updateMetadata": {"urn": "urn:li:activity:7500100210124099584"},
+      "createdAt": 1756387200000,
+      "socialContent": {
+        "shareUrl": "https://www.linkedin.com/posts/francisco-blaha_tagging-activity-7500100210124099584"
+      }
+    }
+  ]
+}

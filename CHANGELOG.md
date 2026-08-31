@@ -4,6 +4,14 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **LinkedIn article fetch** (default on): link posts enrich commentary with fetched article HTML (`[linkedin].article_fetch`, `--no-linkedin-article-fetch`). Cookie copy and run: [EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
+
+### Changed
+
+- **LinkedIn digest display**: `linkedin:*` folders no longer collapse into notification-stream groups; subject/preview limits raised for LinkedIn posts; TXT/EPUB grouped previews use ellipsis truncation instead of hard mid-word cuts.
+
 ## 0.8.5 — 2026-08-31
 
 ### Added

@@ -69,16 +69,23 @@ python -m rollup web --open
 
 Author-list (`fromMember`) content-search URLs become digest sections named
 `linkedin:<slug>`. Fetch uses LinkedIn Voyager with **your** browser session.
+Link posts also fetch the linked article body by default (external blogs, Pulse).
 Reference: [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 
-1. In LinkedIn, open **Search → Content**, filter by the people you follow, copy the address-bar URL (`/search/results/content/` with `fromMember=`).
-2. Save it in TOML or Settings → **LinkedIn searches** (URLs only — never cookies).
-3. From DevTools → Application/Storage → Cookies → `linkedin.com`, copy `li_at` and `JSESSIONID` into the environment.
+### 1. Save a fromMember search URL
+
+1. Log in at [linkedin.com](https://www.linkedin.com) in a desktop browser.
+2. Open **Search**, switch the results type to **Content** (not People or Jobs).
+3. Filter by the people you want (`fromMember`). The address bar must contain
+   `/search/results/content/` and `fromMember=` with `ACo…` ids.
+4. Copy that URL. Save it in TOML or **Configuration Centre → LinkedIn searches**.
+   Store URLs only — never cookies.
 
 ```toml
 # ~/.config/rollup/config.toml  (or ./rollup.toml)
 [linkedin]
 enabled = true
+article_fetch = true   # default; set false to skip linked-article HTTP
 
 [linkedin.searches.watchlist]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&datePosted=%5B%22past-week%22%5D&fromMember=%5B%22ACoAAAMN5aEBk7L5BGyjHbFsDr40zYqwuSB7tlw%22%2C%22ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg%22%5D"
@@ -86,22 +93,82 @@ display_name = "LinkedIn watchlist"
 enabled = true
 ```
 
+Keyword-only search, company pages, follows, and mentions are not supported yet.
+
+### 2. Copy session cookies (li_at and JSESSIONID)
+
+Voyager needs two cookies from the **same** logged-in browser pane. They are
+session secrets: put them in the process environment only. Never TOML, Settings,
+git, or screenshots you share.
+
+| Cookie | Environment variable | Role |
+|--------|----------------------|------|
+| `li_at` | `ROLLUP_LINKEDIN_LI_AT` | Session |
+| `JSESSIONID` | `ROLLUP_LINKEDIN_JSESSIONID` | Voyager CSRF (`ajax:…`) |
+
+**Chrome / Edge / Brave**
+
+1. Stay logged in on `https://www.linkedin.com`.
+2. Open DevTools (`Cmd+Option+I` on macOS, `F12` elsewhere).
+3. **Application** (Chrome/Edge) or **Application / Storage** → **Cookies** →
+   `https://www.linkedin.com`.
+4. Find `li_at`. Copy the **Value** column (a long `AQE…` string).
+5. Find `JSESSIONID`. Copy the value. It usually looks like `ajax:123…` or
+   `"ajax:123…"`. Surrounding quotes are optional; Rollup accepts either.
+
+**Firefox**
+
+1. DevTools (`Cmd+Option+I`) → **Storage** → **Cookies** → `https://www.linkedin.com`.
+2. Copy `li_at` and `JSESSIONID` values as above.
+
+**Safari**
+
+1. Enable **Develop** menu (Settings → Advanced → Show features for web developers).
+2. **Develop → Show Web Inspector → Storage → Cookies** for `linkedin.com`.
+3. Copy `li_at` and `JSESSIONID`.
+
+They rotate together. After a 401, refresh **both** from the same pane. Treat a
+new `li_at` with a stale `JSESSIONID` as expired.
+
+### 3. Export and run
+
+In the same shell you use for `rollup` (do not commit these lines):
+
 ```bash
-export ROLLUP_LINKEDIN_LI_AT='…'          # never commit; not stored in TOML
-export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'  # same cookie pane; Voyager CSRF
+export ROLLUP_LINKEDIN_LI_AT='AQE…'          # li_at value
+export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'  # JSESSIONID value
+```
+
+Dry-run first (no LinkedIn HTTP; warns if cookies are missing):
+
+```bash
+python -m rollup digest --linkedin --dry-run
+```
+
+Then fetch. `--linkedin` is required unless `[linkedin].enabled = true` in TOML:
+
+```bash
 python -m rollup digest --linkedin --folder linkedin:watchlist
-python -m rollup digest --linkedin --dry-run   # lists searches; no network fetch
+python -m rollup digest --linkedin --lookback-days 7
 python -m rollup digest --no-linkedin          # mail only, even if TOML enables LinkedIn
+python -m rollup digest --linkedin --no-linkedin-article-fetch   # posts only, no article HTTP
 ```
 
 A successful fetch logs `Fetching LinkedIn fromMember feed (N authors) via Voyager`.
-Posts land in `linkedin:<slug>` (here `linkedin:watchlist`). Mute an author:
+Posts land in `linkedin:<slug>` (here `linkedin:watchlist`) as **standalone**
+entries (they are not collapsed into notification-stream groups). Link posts
+use the article title as the subject when Voyager exposes one, and append the
+fetched article body after the commentary teaser.
+
+Mute a noisy author:
 
 ```bash
 python -m rollup sources disable li:member:ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg
 ```
 
-Keyword-only LinkedIn search is not supported yet. If fetch fails, see
+For launchd/cron, put the same two variables in the job environment (plist
+`EnvironmentVariables`, or a wrapper script). See [CRON.md](CRON.md#environment-variables-linkedin).
+If fetch fails, see
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
 ## Doctor

@@ -108,6 +108,27 @@ def test_notification_stream_groups() -> None:
     assert any(d.reason_code == "FORMED_NOTIFICATION_STREAM" for d in result.reason_codes)
 
 
+def test_linkedin_folder_entries_stay_standalone() -> None:
+    entries = tuple(
+        _entry(
+            subject=f"LinkedIn update {i}",
+            sender="Francisco Blaha",
+            folder="linkedin:watchlist",
+            body="short linkedin post body",
+            newsletter_type="short_update",
+            days_ago=i,
+        )
+        for i in range(4)
+    )
+    result = apply_grouping(entries, (), GroupingConfig(enabled=True, min_group_size=3))
+    groups = [i for i in result.dated_items if isinstance(i, DigestGroup)]
+    assert groups == []
+    assert len(result.dated_items) == 4
+    assert any(
+        d.detail == "linkedin_folder=standalone" for d in result.reason_codes
+    )
+
+
 def test_daily_editions_group() -> None:
     entries = tuple(
         _entry(

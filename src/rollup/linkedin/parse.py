@@ -10,8 +10,8 @@ from rollup.linkedin.models import LinkedInPost
 from rollup.models import LinkItem, ParsedMessage
 from rollup.parse import compute_content_hash, compute_message_key
 
-_SUBJECT_MAX = 120
-_PREVIEW_MAX = 280
+_SUBJECT_MAX = 280
+_PREVIEW_FULL_MAX = 2000
 
 
 def _subject_from_text(text: str) -> str:
@@ -24,13 +24,23 @@ def _subject_from_text(text: str) -> str:
     return first_line[: _SUBJECT_MAX - 1] + "…"
 
 
+def _subject_from_post(post: LinkedInPost) -> str:
+    if post.article_title:
+        title = post.article_title.strip()
+        if title:
+            if len(title) <= _SUBJECT_MAX:
+                return title
+            return title[: _SUBJECT_MAX - 1] + "…"
+    return _subject_from_text(post.text)
+
+
 def _make_preview(body_text: str) -> str:
     cleaned = body_text.strip()
     if not cleaned:
         return ""
-    if len(cleaned) <= _PREVIEW_MAX:
+    if len(cleaned) <= _PREVIEW_FULL_MAX:
         return cleaned
-    return cleaned[: _PREVIEW_MAX - 1] + "…"
+    return cleaned[: _PREVIEW_FULL_MAX - 1] + "…"
 
 
 def _read_time_minutes(body_text: str) -> int:
@@ -68,17 +78,18 @@ def linkedin_post_to_parsed_message(
     *,
     search_slug: str,
     max_body_chars: int,
+    extra_warnings: tuple[str, ...] = (),
 ) -> ParsedMessage:
     folder_name = folder_name_for_search(search_slug)
     body_text = post.text.strip()
-    warnings: list[str] = []
+    warnings: list[str] = list(extra_warnings)
     if len(body_text) > max_body_chars:
         body_text = body_text[:max_body_chars]
         warnings.append("body_truncated")
     if not body_text:
         warnings.append("empty_body")
 
-    subject = _subject_from_text(post.text)
+    subject = _subject_from_post(post)
     sender = post.author_name or "(unknown)"
     date_raw = post.created_at.isoformat() if post.created_at else ""
     message_key, key_warnings = linkedin_message_key(post)

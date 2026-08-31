@@ -54,3 +54,14 @@ def wrap_text(text: str, line_length: int = OFFLINE_LINE_LENGTH) -> str:
             wrapped_lines.append(current_line)
 
     return "\n".join(wrapped_lines)
+
+
+def truncate_with_ellipsis(text: str, max_chars: int) -> str:
+    """Truncate at a word boundary when possible; append an ellipsis."""
+    text = (text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[: max_chars - 1].rstrip()
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0].rstrip()
+    return cut + "…"
