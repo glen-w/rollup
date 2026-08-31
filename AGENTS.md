@@ -26,7 +26,8 @@ rollup digest \
   --output-dir /tmp/rollup-cloud-demo/output \
   --log-dir /tmp/rollup-cloud-demo/logs \
   --lookback-days 3650 \
-  --no-ollama
+  --no-ollama \
+  --no-linkedin
 rollup web \
   --host 127.0.0.1 \
   --port 8765 \
@@ -36,7 +37,7 @@ rollup web \
   --log-dir /tmp/rollup-cloud-demo/logs
 ```
 
-Web binds **loopback only**. Default digest makes **no network calls** (preview summaries). Do not pass `--ollama` unless a local Ollama server is available.
+Web binds **loopback only**. Default digest makes **no network calls** (preview summaries). Do not pass `--ollama` unless a local Ollama server is available. Do not pass `--linkedin` (cloud VMs have no LinkedIn session).
 
 ### Verify
 

@@ -6,6 +6,8 @@
 
 {% if not active %}
 <p class="muted">No run in this web process yet.</p>
+{% elif active.status == 'running' %}
+{% include "run/_progress_panel.html" %}
 {% else %}
 <section class="card-section">
   <dl class="kv">
@@ -51,3 +53,8 @@
  · <a href="{{ url_for('settings.settings_index') }}">Settings</a></p>
 {% endblock %}
 
+{% block extra_scripts %}
+{% if active and active.status == 'running' %}
+<script src="{{ url_for('static', filename='run_progress.js') }}" defer></script>
+{% endif %}
+{% endblock %}

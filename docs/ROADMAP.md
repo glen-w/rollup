@@ -10,6 +10,11 @@ This is guidance for contributors, not a commitment calendar.
 - Loopback web UI: Archive, Quality, Registry, Admin, reader bodies ([WEB.md](WEB.md))
 - Configuration Centre (`/settings`) and Run Studio (`/run`) on the real TOML + CLI digest path
 - Shared `sticky_flags` registry (sticky ↔ CLI argv/argparse); `cli_parser` extraction; `run_digest` phase helpers
+- Optional LinkedIn `fromMember` folders (`[linkedin]` + `--linkedin`; Voyager `profileUpdatesV2`; session cookies from env)
+
+## Near-term (product)
+
+- **Richer LinkedIn sources beyond faceted `fromMember` search** — keyword SRP if LinkedIn exposes a working content-search query again; company/org posts; follows/mentions; Settings knobs that are not “paste a search URL”. v1 stays author-list URLs mapped through Voyager `profileUpdatesV2`.
 
 ## Near-term (engineering hygiene)
 
@@ -36,6 +41,7 @@ From [CONTRACT.md](CONTRACT.md) — not planned unless the contract changes:
 - Richer onboarding when mail paths are undiscoverable
 - Optional remote Ollama remains explicit (`--allow-remote-ollama`); optional LiteLLM via `rollup[llm]` + `--llm-provider litellm` (API keys from env only)
 - Deeper Admin failure history when manifests are missing (incomplete-history disclaimer stays)
+- LinkedIn HTML/API fragility — isolated fetch module; may break when LinkedIn changes
 
 ## Related docs
 

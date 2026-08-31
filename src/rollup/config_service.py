@@ -16,6 +16,7 @@ from tomlkit.items import Table
 
 from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
+from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
     UnknownRunProfileError,
@@ -77,6 +78,7 @@ class EffectiveConfigView:
     ollama_contacted: bool
     writers: list[str]
     effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
+    linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
 
 
 @dataclass
@@ -90,6 +92,7 @@ class ConfigPatch:
     remove_profiles: set[str] = field(default_factory=set)
     ui: UiPreferences | None = None
     effort_overrides: dict[str, EffortModelOverride] | None = None
+    linkedin: LinkedInConfig | None = None
 
 
 def compute_revision(path: Path) -> str:
@@ -174,6 +177,7 @@ def resolve_effective(
         ollama_contacted=ollama_on,
         writers=writers,
         effort_overrides=dict(loaded.efforts),
+        linkedin=loaded.linkedin,
     )
 
 
@@ -237,6 +241,9 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                     if patch.effort_overrides is not None
                     else base.efforts
                 ),
+                "linkedin": _linkedin_to_raw(
+                    patch.linkedin if patch.linkedin is not None else base.linkedin
+                ),
             },
             path=Path("<patch>"),
         )
@@ -268,6 +275,25 @@ def _themes_to_raw(
             body["order"] = theme.order
         out[slug] = body
     return out
+
+
+def _linkedin_to_raw(linkedin: LinkedInConfig) -> dict[str, Any]:
+    body: dict[str, Any] = {"enabled": linkedin.enabled}
+    if linkedin.searches:
+        searches: dict[str, dict[str, Any]] = {}
+        for slug, search in sorted(linkedin.searches.items()):
+            row: dict[str, Any] = {"url": search.url, "enabled": search.enabled}
+            if search.display_name:
+                row["display_name"] = search.display_name
+            if search.emoji:
+                row["emoji"] = search.emoji
+            if search.accent:
+                row["accent"] = search.accent
+            if search.order is not None:
+                row["order"] = search.order
+            searches[slug] = row
+        body["searches"] = searches
+    return body
 
 
 def _ui_to_raw(ui: UiPreferences) -> dict[str, Any]:
@@ -486,6 +512,29 @@ def _apply_patch_to_doc(
         elif "efforts" in doc:
             del doc["efforts"]
 
+    if patch.linkedin is not None:
+        linkedin_table = tomlkit.table()
+        linkedin_table["enabled"] = patch.linkedin.enabled
+        if patch.linkedin.searches:
+            searches_table = tomlkit.table()
+            for slug, search in sorted(patch.linkedin.searches.items()):
+                row = tomlkit.table()
+                row["url"] = search.url
+                row["enabled"] = search.enabled
+                if search.display_name:
+                    row["display_name"] = search.display_name
+                if search.emoji:
+                    row["emoji"] = search.emoji
+                if search.accent:
+                    row["accent"] = search.accent
+                if search.order is not None:
+                    row["order"] = search.order
+                searches_table[slug] = row
+            linkedin_table["searches"] = searches_table
+        doc["linkedin"] = linkedin_table
+    elif patch.linkedin is None and "linkedin" in doc and patch.clear_values:
+        pass
+
 
 def _to_toml_value(value: Any) -> Any:
     if isinstance(value, list):
@@ -556,6 +605,7 @@ def patch_from_form_values(
     remove_profiles: set[str] | None = None,
     ui: UiPreferences | None = None,
     effort_overrides: dict[str, EffortModelOverride] | None = None,
+    linkedin: LinkedInConfig | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
     values: dict[str, Any] = {}
@@ -611,6 +661,7 @@ def patch_from_form_values(
         remove_profiles=remove_profiles or set(),
         ui=ui,
         effort_overrides=effort_overrides,
+        linkedin=linkedin,
     )
 
 
@@ -629,6 +680,10 @@ def build_digest_argv(
         argv = ["--config", str(config_path), "digest"]
     argv.extend(["--profile", effective.profile_name])
     argv.extend(sticky_to_argv(effective.sticky))
+    if effective.linkedin.enabled:
+        argv.append("--linkedin")
+    else:
+        argv.append("--no-linkedin")
     if dry_run:
         argv.append("--dry-run")
     if extra:

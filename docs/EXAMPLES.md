@@ -21,7 +21,7 @@ source .venv/bin/activate
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
 Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md). Roadmap: [ROADMAP.md](ROADMAP.md).
 
-**Default digest mode** needs no Ollama server and makes no network calls. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
+**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML). Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
 If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
 
@@ -45,7 +45,7 @@ python -m rollup inventory
 
 ## Digest without Ollama (default)
 
-Preview and generate digests with no Ollama server and no network calls. `--no-ollama` is optional — it is the default when neither `--ollama` nor `--no-ollama` is passed.
+Preview and generate digests with no Ollama server and no network calls (unless LinkedIn is enabled). `--no-ollama` is optional — it is the default when neither `--ollama` nor `--no-ollama` is passed.
 
 ```bash
 python -m rollup digest
@@ -64,6 +64,45 @@ After a digest, browse the indexed archive (requires `pip install 'rollup[web]'`
 ```bash
 python -m rollup web --open
 ```
+
+## LinkedIn content searches (opt-in network)
+
+Author-list (`fromMember`) content-search URLs become digest sections named
+`linkedin:<slug>`. Fetch uses LinkedIn Voyager with **your** browser session.
+Reference: [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
+
+1. In LinkedIn, open **Search → Content**, filter by the people you follow, copy the address-bar URL (`/search/results/content/` with `fromMember=`).
+2. Save it in TOML or Settings → **LinkedIn searches** (URLs only — never cookies).
+3. From DevTools → Application/Storage → Cookies → `linkedin.com`, copy `li_at` and `JSESSIONID` into the environment.
+
+```toml
+# ~/.config/rollup/config.toml  (or ./rollup.toml)
+[linkedin]
+enabled = true
+
+[linkedin.searches.watchlist]
+url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&datePosted=%5B%22past-week%22%5D&fromMember=%5B%22ACoAAAMN5aEBk7L5BGyjHbFsDr40zYqwuSB7tlw%22%2C%22ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg%22%5D"
+display_name = "LinkedIn watchlist"
+enabled = true
+```
+
+```bash
+export ROLLUP_LINKEDIN_LI_AT='…'          # never commit; not stored in TOML
+export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'  # same cookie pane; Voyager CSRF
+python -m rollup digest --linkedin --folder linkedin:watchlist
+python -m rollup digest --linkedin --dry-run   # lists searches; no network fetch
+python -m rollup digest --no-linkedin          # mail only, even if TOML enables LinkedIn
+```
+
+A successful fetch logs `Fetching LinkedIn fromMember feed (N authors) via Voyager`.
+Posts land in `linkedin:<slug>` (here `linkedin:watchlist`). Mute an author:
+
+```bash
+python -m rollup sources disable li:member:ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg
+```
+
+Keyword-only LinkedIn search is not supported yet. If fetch fails, see
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
 ## Doctor
 

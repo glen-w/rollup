@@ -15,6 +15,7 @@ from rollup.effort import (
     EffortModelOverride,
 )
 from rollup.folder_theme import FolderThemeOverride
+from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -54,7 +55,9 @@ UI_KEYS = frozenset({"landing_page", "preferred_view", "onboarding_complete"})
 UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
-TOP_LEVEL_KEYS = STICKY_KEYS | frozenset({"folders", "profiles", "ui", "efforts"})
+TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
+    {"folders", "profiles", "ui", "efforts", "linkedin"}
+)
 
 FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
 
@@ -77,6 +80,7 @@ class LoadedUserConfig:
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     efforts: dict[str, EffortModelOverride] = field(default_factory=dict)
     ui: UiPreferences = field(default_factory=UiPreferences)
+    linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     sources: tuple[Path, ...] = ()
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -401,12 +405,17 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     profiles = _parse_profiles(data.get("profiles"), path=path)
     efforts = _parse_efforts(data.get("efforts"), path=path)
     ui = _parse_ui(data.get("ui"), path=path)
+    try:
+        linkedin = parse_linkedin_config(data.get("linkedin"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
         efforts=efforts,
         ui=ui,
+        linkedin=linkedin,
         sources=(path,),
     )
 
@@ -437,12 +446,14 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         profiles[name] = merged
     # Later file wins for [ui] wholesale (same as sticky values).
     ui = overlay.ui if overlay.sources else base.ui
+    linkedin = overlay.linkedin if overlay.sources else base.linkedin
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
         profiles=profiles,
         efforts=_merge_effort_overrides(base.efforts, overlay.efforts),
         ui=ui,
+        linkedin=linkedin,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )
 

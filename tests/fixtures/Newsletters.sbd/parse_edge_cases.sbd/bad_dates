@@ -1,0 +1,11 @@
+From - Tue Aug 04 15:30:58 2026
+Subject: Bad Date
+From: edge@example.com
+To: reader@example.com
+Date:
+Message-ID: <bad-date@example.com>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Body with an unparseable date.

@@ -8,7 +8,8 @@ Each message gets an optional `source_key`:
 
 1. `list:` + normalised `List-ID` when present
 2. else `from:` + normalised From address
-3. else unidentifiable (`source_key` is null) — still digested, not stored in the registry
+3. else `li:member:` + LinkedIn member id for LinkedIn posts (`li:activity:` is the per-post `message_key`)
+4. else unidentifiable (`source_key` is null) — still digested, not stored in the registry
 
 Folder is **not** part of identity. Subject / Reply-To / Return-Path / Sender are not used as keys.
 
@@ -35,6 +36,7 @@ Disable always outranks always-surface.
 rollup sources list
 rollup sources show from:alerts@github.com --json
 rollup sources disable from:noisy@example.com
+rollup sources disable li:member:ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg
 rollup sources set list:news.example.com --grouping sender_batch --priority 80
 rollup sources clear list:news.example.com --all
 rollup sources alias from:old@example.com from:new@example.com
@@ -71,3 +73,4 @@ Observations are regenerable from mail; back up overrides and aliases.
 
 - Shared ESP From addresses without List-ID collapse to one source.
 - Reproducibility across machines depends on registry state (`policy_state_revision` in manifests); `config_fingerprint` does not include per-source overrides.
+- LinkedIn `li:member:` keys follow Voyager actor ids; mute noisy authors with `rollup sources disable li:member:…` (see [CONFIG.md](CONFIG.md#linkedin-content-searches-optional)).

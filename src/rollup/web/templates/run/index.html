@@ -5,8 +5,7 @@
 <p class="meta">Compose a digest, preview the effective run, dry-run discovery, then generate outputs.</p>
 
 {% if busy %}
-<p class="banner">A digest is currently running. <a href="{{ url_for('run.run_status') }}">Status JSON</a>
- · <a href="{{ url_for('run.run_result') }}">Result</a></p>
+{% include "run/_progress_panel.html" %}
 {% endif %}
 
 {% if effective %}
@@ -16,12 +15,14 @@
     <dt>Profile</dt><dd>{{ effective.profile_name }}</dd>
     <dt>Lookback</dt><dd>{{ sticky.get('lookback_days', '—') }} days</dd>
     <dt>LLM</dt>
-    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">LLM enabled ({{ sticky.get('llm_provider', 'ollama') }})</span>{% if sticky.get('llm_provider') == 'litellm' %} <span class="hint-badge writes">newsletter text may leave this machine</span>{% endif %}{% else %}<span class="hint-badge local">local-only previews</span>{% endif %}</dd>
+    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">LLM enabled ({{ sticky.get('llm_provider', 'ollama') }})</span>{% if sticky.get('llm_provider') == 'litellm' %} <span class="hint-badge writes">newsletter text may leave this machine</span>{% endif %}{% else %}<span class="hint-badge local">preview excerpts (no model)</span>{% endif %}</dd>
     <dt>Writers</dt><dd>{{ effective.writers | join(', ') }} (+ Markdown/HTML)</dd>
     <dt>Newsletter root</dt><dd><code>{{ sticky.get('root', '—') }}</code></dd>
     <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
     <dt>Matched folders</dt>
     <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
+    <dt>LinkedIn</dt>
+    <dd>{% if linkedin_enabled %}<span class="hint-badge ollama">enabled</span> — {{ linkedin_search_count }} search{{ 'es' if linkedin_search_count != 1 else '' }}{% else %}<span class="hint-badge local">off</span>{% endif %}</dd>
     {% if use_single_model and selected_single_model %}
     <dt>Single model</dt>
     <dd><code>{{ selected_single_model }}</code> <span class="muted">(this run only)</span></dd>
@@ -59,10 +60,11 @@
     <label>LLM summaries
       <select name="ollama">
         <option value="">(profile default)</option>
-        <option value="1">on — call configured provider</option>
-        <option value="0">off — local-only</option>
+        <option value="1">on — generate with configured model</option>
+        <option value="0">off — preview excerpts only (no model)</option>
       </select>
     </label>
+    <p class="note">Off skips Ollama and LiteLLM entirely. Local Ollama still counts as on.</p>
     {% set provider = (sticky.get('llm_provider') if sticky else 'ollama') or 'ollama' %}
     {% set selected = selected_single_model|default('') %}
     <label class="inline-check">
@@ -105,9 +107,9 @@
   </section>
 
   <p class="run-actions">
-    <button type="submit" formaction="{{ url_for('run.run_preview') }}">Update effective preview</button>
-    <button type="submit" formaction="{{ url_for('run.run_dry') }}">Dry-run / discovery</button>
-    <button type="submit" class="primary" formaction="{{ url_for('run.run_start') }}">Run digest</button>
+    <button type="submit" formaction="{{ url_for('run.run_preview') }}"{% if busy %} disabled{% endif %}>Update effective preview</button>
+    <button type="submit" formaction="{{ url_for('run.run_dry') }}"{% if busy %} disabled{% endif %}>Dry-run / discovery</button>
+    <button type="submit" class="primary" formaction="{{ url_for('run.run_start') }}"{% if busy %} disabled{% endif %}>Run digest</button>
   </p>
 </form>
 
@@ -119,5 +121,11 @@
 </section>
 {% else %}
 <p class="banner">Could not resolve configuration. <a href="{{ url_for('settings.settings_index') }}">Open Settings</a>.</p>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if busy %}
+<script src="{{ url_for('static', filename='run_progress.js') }}" defer></script>
 {% endif %}
 {% endblock %}

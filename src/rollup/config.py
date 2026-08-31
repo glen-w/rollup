@@ -7,6 +7,8 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rollup.linkedin.config import LinkedInConfig
+
 if TYPE_CHECKING:
     from rollup.effort import EffortModelOverride
     from rollup.folder_theme import FolderThemeOverride
@@ -89,6 +91,8 @@ class Config:
     llm_provider: str = DEFAULT_LLM_PROVIDER
     llm_model: str | None = None
     llm_api_base: str | None = None
+    no_linkedin: bool = True
+    linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
 
     @property
     def db_path(self) -> Path:
@@ -98,6 +102,11 @@ class Config:
     def llm_enabled(self) -> bool:
         """True when LLM summarisation/review is enabled (--ollama / sticky ollama)."""
         return not self.no_ollama
+
+    @property
+    def linkedin_enabled(self) -> bool:
+        """True when LinkedIn content-search fetch is enabled (--linkedin / [linkedin].enabled)."""
+        return not self.no_linkedin
 
 
 def compute_date_window(

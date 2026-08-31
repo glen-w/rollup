@@ -4,6 +4,13 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.8.5 — 2026-08-31
+
+### Added
+
+- **LinkedIn `fromMember` feeds** as digest folders (`linkedin:<slug>`): save a faceted content-search URL in `[linkedin.searches.*]`, opt in with `--linkedin` or `[linkedin].enabled`. Fetch uses Voyager `profileUpdatesV2` with `ROLLUP_LINKEDIN_LI_AT` and `ROLLUP_LINKEDIN_JSESSIONID` from the environment (never TOML). Posts are dated from activity ids; lookback still applies after ingest. Mail-only runs degrade to partial (exit 2) if LinkedIn fails; LinkedIn-only runs hard-fail. Configuration Centre and Run Studio cover search URLs and `--linkedin`. Docs: [CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional), [EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network), [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+- **Run Studio live progress**: digest runs as a background subprocess with a progress bar and log tail (`GET /run/status`).
+
 ## 0.8.3 — 2026-08-25
 
 ### Changed

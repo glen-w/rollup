@@ -53,6 +53,7 @@ def test_digest_dry_run_does_not_modify_fixture_tree() -> None:
         str(FIXTURE_ROOT),
         "--dry-run",
         "--no-ollama",
+        "--no-linkedin",
     )
     assert result.returncode == 0, result.stderr
     after = _snapshot_tree(FIXTURE_ROOT)
@@ -70,6 +71,7 @@ def test_full_digest_write_does_not_modify_fixture_tree(tmp_path: Path) -> None:
         "--root",
         str(FIXTURE_ROOT),
         "--no-ollama",
+        "--no-linkedin",
         "--no-grouping",
         "--output-dir",
         str(tmp_path / "output"),

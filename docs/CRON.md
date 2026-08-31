@@ -58,6 +58,8 @@ Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `
 | Seen-state update fails after required pubs | 2 | Dated digest may exist; undated items may repeat on future runs |
 | Web-index failure | 0 if otherwise success | Typed secondary degradation; manifest event + diagnostic; does **not** alone force partial |
 | Group summaries degrade | 2 | Member summaries still render; cache/read/write or stream errors are recorded |
+| LinkedIn fetch fails; mail still publishes | 2 | Dated mail digest usable; LinkedIn section omitted; `linkedin_fetch_failed` (or similar) in warnings |
+| LinkedIn-only run (`--folder linkedin:…`, no mbox) and fetch fails | 1 | Nothing published |
 | High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
 
 **Irreversible boundary:** `latest.*`, seen-state, web index, and `success` status wait until every required dated artifact and required output writer has final paths. Manifest / web-index failures must not mark unpublished messages seen.
@@ -69,6 +71,20 @@ A global apply skip (e.g. missing fingerprint echo) alone does **not** force par
 Unattended apply uses conservative whole-set caps (`final_review_max_patches_unattended` / `final_review_max_changed_chars_unattended`): exceeding either skips **all** patches.
 
 **Dry-run** must not create databases, migrate schema, WAL/SHM files, locks, profile exports, staged publication temps, or writer artifacts.
+
+## Environment variables (LinkedIn)
+
+If `[linkedin].enabled` is set in TOML, the scheduled job must also receive
+session cookies in its **environment** (never in TOML):
+
+```bash
+export ROLLUP_LINKEDIN_LI_AT='…'
+export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
+```
+
+For launchd, put them under `EnvironmentVariables` in the plist, or wrap the
+Python invocation in a script that exports them. Refresh both cookies when
+LinkedIn 401s. See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 
 ## launchd (preferred on macOS)
 

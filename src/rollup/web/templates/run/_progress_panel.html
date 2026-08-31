@@ -1,0 +1,17 @@
+<section id="run-progress-panel" class="card-section run-progress"
+         data-status-url="{{ url_for('run.run_status') }}"
+         data-result-url="{{ url_for('run.run_result') }}">
+  <div class="run-progress-header">
+    <h2>Run in progress</h2>
+    <span class="hint-badge ollama" id="run-progress-mode">{% if active and active.dry_run %}dry-run{% else %}digest{% endif %}</span>
+  </div>
+  <p class="run-progress-phase" id="run-progress-phase">Starting…</p>
+  <div class="progress-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="3">
+    <div class="progress-bar" id="run-progress-bar" style="width: 3%"></div>
+  </div>
+  <p class="run-progress-llm muted" id="run-progress-llm" hidden></p>
+  <p class="run-progress-detail muted" id="run-progress-detail"></p>
+  <h3 class="run-progress-log-title">Live log</h3>
+  <pre class="cli-block log-tail" id="run-progress-log">{% if active %}{% for line in active.log_lines %}{{ line }}
+{% endfor %}{% endif %}</pre>
+</section>

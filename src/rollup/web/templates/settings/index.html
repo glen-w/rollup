@@ -92,7 +92,7 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       <input type="checkbox" name="ollama" value="1" {% if sticky.get('ollama') %}checked{% endif %}>
       Enable LLM summaries <span class="hint-badge ollama">calls a model</span>
     </label>
-    <p class="note">When off, Rollup stays local-only (preview excerpts; no Ollama or LiteLLM calls). API keys are never stored in TOML — set them in the environment for LiteLLM.</p>
+    <p class="note">When off, entries use preview excerpts — no Ollama or LiteLLM calls (local Ollama still counts as on). API keys are never stored in TOML — set them in the environment for LiteLLM.</p>
     <label>LLM provider (fallback / group path)
       <select name="llm_provider">
         <option value="ollama" {% if sticky.get('llm_provider', 'ollama') == 'ollama' %}selected{% endif %}>ollama (native local)</option>
@@ -153,6 +153,46 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
         <input type="checkbox" name="output_writer" value="{{ w }}" {% if w in outs %}checked{% endif %}>
         {{ w }}{% if w == 'xteink' %} <span class="muted">(Xteink X3)</span>{% endif %}
       </label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card-section">
+    <h2>LinkedIn searches</h2>
+    <p class="hint-badge ollama">network opt-in</p>
+    <p class="note">Each saved <strong>fromMember</strong> content-search URL becomes a digest section (<code>linkedin:&lt;slug&gt;</code>), like a mailbox folder. Set <code>ROLLUP_LINKEDIN_LI_AT</code> and <code>ROLLUP_LINKEDIN_JSESSIONID</code> in the environment — never stored in TOML. Keyword-only search is not supported yet. See docs/CONFIG.md.</p>
+    <label>
+      <input type="hidden" name="linkedin_enabled" value="0">
+      <input type="checkbox" name="linkedin_enabled" value="1" {% if linkedin.enabled %}checked{% endif %}>
+      Enable LinkedIn fetch on digest runs
+    </label>
+    <div class="linkedin-search-grid">
+      {% for slug, search in linkedin.searches.items() %}
+      <div class="linkedin-search-row">
+        <label>Slug <input type="text" name="linkedin_slug" value="{{ slug }}" placeholder="watchlist"></label>
+        <label>Display name <input type="text" name="linkedin_display_name" value="{{ search.display_name or '' }}"></label>
+        <label class="inline">
+          <input type="hidden" name="linkedin_search_enabled" value="0">
+          <input type="checkbox" name="linkedin_search_enabled" value="1" {% if search.enabled %}checked{% endif %}>
+          Enabled
+        </label>
+        <label>Search URL
+          <textarea name="linkedin_url" rows="3" placeholder="https://www.linkedin.com/search/results/content/?…">{{ search.url }}</textarea>
+        </label>
+      </div>
+      {% else %}
+      <div class="linkedin-search-row">
+        <label>Slug <input type="text" name="linkedin_slug" value="watchlist" placeholder="watchlist"></label>
+        <label>Display name <input type="text" name="linkedin_display_name" value=""></label>
+        <label class="inline">
+          <input type="hidden" name="linkedin_search_enabled" value="0">
+          <input type="checkbox" name="linkedin_search_enabled" value="1" checked>
+          Enabled
+        </label>
+        <label>Search URL
+          <textarea name="linkedin_url" rows="3" placeholder="https://www.linkedin.com/search/results/content/?…"></textarea>
+        </label>
+      </div>
       {% endfor %}
     </div>
   </section>

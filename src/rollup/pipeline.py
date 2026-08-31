@@ -6,7 +6,11 @@ import logging
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from rollup.linkedin.config import LinkedInSearch
+    from rollup.linkedin.fetch import LinkedInClient
 
 from rollup.clock import Clock, DEFAULT_CLOCK
 from rollup.config import Config, compute_date_window
@@ -90,6 +94,7 @@ class FilterCounts:
 @dataclass(frozen=True)
 class DiscoveryResult:
     folders: tuple[MboxFolder, ...]
+    linkedin_searches: tuple[LinkedInSearch, ...] = ()
     warnings: tuple[StageWarning, ...] = ()
 
 
@@ -207,6 +212,7 @@ class AggregatedResults:
     optional_writer_failed: bool = False
     writer_artifacts: list[Path] = field(default_factory=list)
     mbox_mutation_detected: bool = False
+    linkedin_degraded: bool = False
     no_input_reason: str | None = None
     messages_included: int = 0
 
@@ -299,6 +305,9 @@ def derive_run_status(
     if aggregated.mbox_mutation_detected:
         return "partial"
 
+    if aggregated.linkedin_degraded:
+        return "partial"
+
     if aggregated.required_writer_failed:
         return "failure"
 
@@ -321,32 +330,63 @@ def evaluate_no_input(
     parse: ParseResult,
 ) -> str | None:
     """Return a hard-failure reason when the run has no usable input, else None."""
-    if folders_include and not discovery.folders:
+    has_mbox = bool(discovery.folders)
+    has_linkedin = bool(discovery.linkedin_searches)
+
+    if folders_include and not has_mbox and not has_linkedin:
         return (
             "No folders matched explicit include "
             f"({', '.join(folders_include)}); refusing to publish"
         )
-    if not discovery.folders:
-        return "No readable mbox folders under newsletter root; refusing to publish"
-    if (
-        parse.counts.messages_parsed == 0
-        and parse.counts.messages_seen > 0
-        and parse.counts.parse_fatal_errors > 0
-    ):
-        return "All candidate messages failed parsing; refusing to publish"
-    if (
-        parse.counts.messages_parsed == 0
-        and parse.counts.folders_failed >= len(discovery.folders)
-        and len(discovery.folders) > 0
-    ):
-        return "No folders were readable; refusing to publish"
+    if not has_mbox and not has_linkedin:
+        return (
+            "No readable mbox folders or LinkedIn searches configured; "
+            "refusing to publish"
+        )
+
+    if has_mbox:
+        if (
+            parse.counts.messages_parsed == 0
+            and parse.counts.messages_seen > 0
+            and parse.counts.parse_fatal_errors > 0
+        ):
+            return "All candidate messages failed parsing; refusing to publish"
+        if (
+            parse.counts.messages_parsed == 0
+            and parse.counts.folders_failed >= len(discovery.folders)
+        ):
+            return "No folders were readable; refusing to publish"
+
+    if not has_mbox and has_linkedin and parse.counts.messages_parsed == 0:
+        linkedin_failed = any(
+            w.code.startswith("linkedin_") and w.code != "linkedin_dry_run"
+            for w in parse.warnings
+        )
+        if linkedin_failed:
+            return (
+                "LinkedIn fetch failed and no other input sources; "
+                "refusing to publish"
+            )
+
     return None
 
 
 def stage_discover(config: Config) -> DiscoveryResult:
+    from rollup.linkedin.config import filter_linkedin_searches
+
     folders = list(iter_mbox_files(config.root))
     folders = filter_folders(folders, config.folders_include, config.folders_exclude)
-    return DiscoveryResult(folders=tuple(folders))
+    linkedin_searches: tuple[LinkedInSearch, ...] = ()
+    if config.linkedin_enabled and config.linkedin.searches:
+        linkedin_searches = filter_linkedin_searches(
+            config.linkedin.searches,
+            folders_include=config.folders_include,
+            folders_exclude=config.folders_exclude,
+        )
+    return DiscoveryResult(
+        folders=tuple(folders),
+        linkedin_searches=linkedin_searches,
+    )
 
 
 def stage_parse(config: Config, folders: tuple[MboxFolder, ...]) -> ParseResult:
@@ -422,6 +462,123 @@ def stage_parse(config: Config, folders: tuple[MboxFolder, ...]) -> ParseResult:
         errors=tuple(errors),
         mutated_folders=tuple(mutated_folders),
         mutation_codes=tuple(mutation_codes),
+    )
+
+
+def stage_parse_linkedin(
+    config: Config,
+    searches: tuple["LinkedInSearch", ...],
+    *,
+    dry_run: bool,
+    client: "LinkedInClient | None" = None,
+) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
+    """Fetch LinkedIn searches and map to ParsedMessage. Returns (msgs, warnings, degraded)."""
+    if not searches:
+        return [], [], False
+
+    from rollup.error_sanitize import sanitize_provider_message
+    from rollup.linkedin.fetch import LinkedInFetchError, fetch_search_posts
+    from rollup.linkedin.parse import linkedin_post_to_parsed_message
+    from rollup.linkedin.session import linkedin_cookie_configured
+
+    warnings: list[StageWarning] = []
+    messages: list[ParsedMessage] = []
+    degraded = False
+
+    if dry_run:
+        from rollup.linkedin.session import jsession_id_configured
+        from rollup.linkedin.url import from_member_ids
+
+        if not linkedin_cookie_configured():
+            warnings.append(
+                StageWarning(
+                    code="linkedin_no_cookie",
+                    message=(
+                        "LinkedIn enabled but ROLLUP_LINKEDIN_LI_AT is not set "
+                        "(dry-run; no fetch)"
+                    ),
+                )
+            )
+        needs_voyager = any(from_member_ids(s.url) for s in searches)
+        if needs_voyager and not jsession_id_configured():
+            warnings.append(
+                StageWarning(
+                    code="linkedin_no_jsession",
+                    message=(
+                        "fromMember search requires ROLLUP_LINKEDIN_JSESSIONID "
+                        "(dry-run; no fetch)"
+                    ),
+                )
+            )
+        for search in searches:
+            warnings.append(
+                StageWarning(
+                    code="linkedin_dry_run",
+                    message=f"Would fetch LinkedIn search {search.slug}",
+                    folder=search.folder_name,
+                )
+            )
+        degraded = (not linkedin_cookie_configured()) or (
+            needs_voyager and not jsession_id_configured()
+        )
+        return messages, warnings, degraded
+
+    for search in searches:
+        try:
+            posts = fetch_search_posts(
+                search,
+                lookback_days=config.lookback_days,
+                client=client,
+            )
+            for post in posts:
+                messages.append(
+                    linkedin_post_to_parsed_message(
+                        post,
+                        search_slug=search.slug,
+                        max_body_chars=config.max_body_chars,
+                    )
+                )
+        except LinkedInFetchError as exc:
+            degraded = True
+            warnings.append(
+                StageWarning(
+                    code="linkedin_fetch_failed",
+                    message=sanitize_provider_message(str(exc)),
+                    folder=search.folder_name,
+                )
+            )
+            logger.warning(
+                "LinkedIn fetch failed for %s: %s",
+                search.slug,
+                sanitize_provider_message(str(exc)),
+            )
+
+    return messages, warnings, degraded
+
+
+def merge_linkedin_parse(
+    mbox_parse: ParseResult,
+    linkedin_messages: list[ParsedMessage],
+    linkedin_warnings: list[StageWarning],
+) -> ParseResult:
+    """Combine mbox and LinkedIn parse results."""
+    if not linkedin_messages and not linkedin_warnings:
+        return mbox_parse
+    combined = list(mbox_parse.messages) + linkedin_messages
+    li_seen = len(linkedin_messages)
+    return ParseResult(
+        messages=tuple(combined),
+        counts=ParseCounts(
+            messages_seen=mbox_parse.counts.messages_seen + li_seen,
+            messages_parsed=len(combined),
+            parse_fatal_errors=mbox_parse.counts.parse_fatal_errors,
+            parse_anomalies=mbox_parse.counts.parse_anomalies,
+            folders_failed=mbox_parse.counts.folders_failed,
+        ),
+        warnings=mbox_parse.warnings + tuple(linkedin_warnings),
+        errors=mbox_parse.errors,
+        mutated_folders=mbox_parse.mutated_folders,
+        mutation_codes=mbox_parse.mutation_codes,
     )
 
 
@@ -790,15 +947,23 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     discovery = stage_discover(config)
     aggregated.discovery = discovery
     logger.info(
-        "Digest: root=%s folders=%d lookback=%dd dry_run=%s no_ollama=%s",
+        "Digest: root=%s folders=%d linkedin=%d lookback=%dd dry_run=%s no_ollama=%s",
         config.root,
         len(discovery.folders),
+        len(discovery.linkedin_searches),
         config.lookback_days,
         run_options.dry_run,
         config.no_ollama,
     )
 
     parse_result = stage_parse(config, discovery.folders)
+    li_messages, li_warnings, linkedin_degraded = stage_parse_linkedin(
+        config,
+        discovery.linkedin_searches,
+        dry_run=run_options.dry_run,
+    )
+    parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
+    aggregated.linkedin_degraded = linkedin_degraded
     aggregated.parse = parse_result
     if parse_result.mutated_folders:
         aggregated.mbox_mutation_detected = True

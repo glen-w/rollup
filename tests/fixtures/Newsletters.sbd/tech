@@ -1,0 +1,24 @@
+From - Tue Aug 04 15:30:58 2026
+Subject: Tech Roundup
+From: tech@example.com
+To: reader@example.com
+Date: Sun, 02 Aug 2026 15:30:58 +0200
+Message-ID: <tech1@example.com>
+Content-Type: multipart/alternative;
+ boundary="===============4202118486193372857=="
+
+--===============4202118486193372857==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><h1>Links</h1><a href=3D"https://example.com/0">Link 0</a> <a hre=
+f=3D"https://example.com/1">Link 1</a> <a href=3D"https://example.com/2">Link=
+ 2</a> <a href=3D"https://example.com/3">Link 3</a> <a href=3D"https://exampl=
+e.com/4">Link 4</a> <a href=3D"https://example.com/5">Link 5</a> <a href=3D"h=
+ttps://example.com/6">Link 6</a> <a href=3D"https://example.com/7">Link 7</a>=
+ <a href=3D"https://example.com/8">Link 8</a> <a href=3D"https://example.com/=
+9">Link 9</a> <a href=3D"https://example.com/10">Link 10</a> <a href=3D"https=
+://example.com/11">Link 11</a> <p>Some prose about tech.</p></body></html>
+
+--===============4202118486193372857==--

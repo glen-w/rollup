@@ -24,7 +24,7 @@ from rollup.config_service import (
     resolve_effective,
     validate_patch,
 )
-from rollup.discovery import list_flat_mbox_names
+from rollup.discovery import list_flat_mbox_names, list_linkedin_folder_names
 from rollup.web.config import load_web_config_document
 from rollup.effort import (
     EFFORT_NAMES,
@@ -33,6 +33,7 @@ from rollup.effort import (
     effort_editor_rows,
 )
 from rollup.folder_theme import FolderThemeOverride, folder_slug, theme_for
+from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
 from rollup.output_writers import discover_writers
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import (
@@ -94,6 +95,37 @@ def _folder_themes_from_form() -> dict[str, FolderThemeOverride]:
                 order=order,
             )
     return themes
+
+
+def _linkedin_from_form() -> LinkedInConfig:
+    enabled = "1" in request.form.getlist("linkedin_enabled")
+    searches: dict[str, LinkedInSearch] = {}
+    slugs = request.form.getlist("linkedin_slug")
+    urls = request.form.getlist("linkedin_url")
+    display_names = request.form.getlist("linkedin_display_name")
+    enabled_flags = request.form.getlist("linkedin_search_enabled")
+    for i, slug_raw in enumerate(slugs):
+        slug = slug_raw.strip().lower()
+        if not slug:
+            continue
+        url = urls[i].strip() if i < len(urls) else ""
+        if not url:
+            continue
+        display = (
+            display_names[i].strip()
+            if i < len(display_names) and display_names[i].strip()
+            else None
+        )
+        search_enabled = (
+            enabled_flags[i] == "1" if i < len(enabled_flags) else True
+        )
+        searches[slug] = LinkedInSearch(
+            slug=slug,
+            url=url,
+            display_name=display,
+            enabled=search_enabled,
+        )
+    return LinkedInConfig(enabled=enabled, searches=searches)
 
 
 def _profiles_from_form() -> tuple[dict[str, dict], set[str]]:
@@ -204,6 +236,7 @@ def _patch_from_request() -> ConfigPatch:
 
     themes = _folder_themes_from_form()
     profiles, remove = _profiles_from_form()
+    linkedin = _linkedin_from_form()
     return patch_from_form_values(
         mail_root=request.form.get("mail_root"),
         root=request.form.get("root"),
@@ -228,6 +261,7 @@ def _patch_from_request() -> ConfigPatch:
         remove_profiles=remove,
         ui=_ui_from_form(),
         effort_overrides=_effort_overrides_from_form(),
+        linkedin=linkedin,
     )
 
 
@@ -297,6 +331,7 @@ def settings_index():
         flash(f"Could not load config: {exc}")
         doc = None
     effective = resolve_effective(doc.loaded) if doc else None
+    sticky = effective.sticky if effective else {}
     writers = []
     try:
         writers = sorted(discover_writers())
@@ -304,6 +339,12 @@ def settings_index():
         writers = ["xteink", "txt", "json", "epub"]
     newsletter = current_app.config.get("NEWSLETTER_ROOT")
     discovered = list_flat_mbox_names(newsletter)
+    linkedin_names = list_linkedin_folder_names(
+        doc.loaded.linkedin if doc else None,
+        include=sticky.get("folder") or (),
+        exclude=sticky.get("exclude_folder") or (),
+    )
+    discovered = discovered + [n for n in linkedin_names if n not in discovered]
     folder_rows = []
     themes = doc.loaded.folder_themes if doc else {}
     for name in discovered:
@@ -358,6 +399,7 @@ def settings_index():
         landing_pages=sorted(UI_LANDING_PAGES),
         preferred_views=sorted(UI_PREFERRED_VIEWS),
         effort_ladders=effort_editor_rows(doc.loaded.efforts if doc else {}),
+        linkedin=doc.loaded.linkedin if doc else LinkedInConfig(),
         preview_token=None,
         diff_rows=None,
         patch_summary=None,
@@ -405,6 +447,9 @@ def settings_preview():
                 if patch.effort_overrides is not None
                 else doc.loaded.efforts
             ),
+            linkedin=(
+                patch.linkedin if patch.linkedin is not None else doc.loaded.linkedin
+            ),
             sources=doc.loaded.sources,
         )
         if patch.remove_profiles:
@@ -417,6 +462,7 @@ def settings_preview():
                 profiles=profiles,
                 ui=after_loaded.ui,
                 efforts=after_loaded.efforts,
+                linkedin=after_loaded.linkedin,
                 sources=after_loaded.sources,
             )
         after = resolve_effective(after_loaded)

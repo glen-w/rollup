@@ -30,6 +30,7 @@ from rollup.effort import (
     resolve_effort_name,
     resolve_profile_set,
 )
+from rollup.linkedin.config import LinkedInConfig
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
 from rollup.render import digest_output_stem, render_stats_block
@@ -88,6 +89,13 @@ def _setup_logging(
 def _resolve_no_ollama(args: argparse.Namespace) -> bool:
     """MVP default is no Ollama unless --ollama is passed."""
     if getattr(args, "ollama", False):
+        return False
+    return True
+
+
+def _resolve_no_linkedin(args: argparse.Namespace) -> bool:
+    """Default is no LinkedIn unless --linkedin is passed."""
+    if getattr(args, "linkedin", False):
         return False
     return True
 
@@ -254,6 +262,9 @@ def _build_config(
         folder_themes=dict(folder_themes or {}),
         effort_overrides=effort_overrides,
         single_model=single_model,
+        no_linkedin=_resolve_no_linkedin(args),
+        linkedin=getattr(getattr(args, "_loaded_user_config", None), "linkedin", None)
+        or LinkedInConfig(),
     )
 
 
@@ -290,6 +301,10 @@ def _apply_loaded_config(
     sticky.update(profile.values)
     sticky.pop("profile", None)
     apply_sticky_to_namespace(args, sticky, argv)
+    if not flag_present(argv, "--linkedin") and not flag_present(argv, "--no-linkedin"):
+        if loaded.linkedin.enabled:
+            args.linkedin = True
+            args.no_linkedin = False
     return profile.name
 
 

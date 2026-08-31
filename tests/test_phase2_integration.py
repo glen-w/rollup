@@ -27,9 +27,10 @@ def test_cron_digest_writes_manifest_and_latest(tmp_path: Path) -> None:
     mail = FIXTURE_ROOT.parent
     result = _run(
         "digest",
-        "--cron",
-        "--no-ollama",
-        "--no-grouping",
+            "--cron",
+            "--no-ollama",
+            "--no-linkedin",
+            "--no-grouping",
         "--root",
         str(FIXTURE_ROOT),
         "--mail-root",

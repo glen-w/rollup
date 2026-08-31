@@ -8,6 +8,8 @@ _SECRET_PATTERNS = (
     re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE),
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r"(api[_-]?key\s*[:=]\s*)['\"]?[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"(li_at|JSESSIONID)\s*[=:]\s*['\"]?[A-Za-z0-9%._~+/=-]{8,}", re.IGNORECASE),
+    re.compile(r"Cookie:\s*[^\n]{8,}", re.IGNORECASE),
 )
 
 

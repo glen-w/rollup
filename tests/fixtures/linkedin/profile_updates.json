@@ -1,0 +1,28 @@
+{
+  "elements": [
+    {
+      "value": {
+        "com.linkedin.voyager.feed.render.UpdateV2": {
+          "actor": {
+            "name": {"text": "Jane Doe"},
+            "urn": "urn:li:fsd_profile:ACoAAAMN5aEBk7L5BGyjHbFsDr40zYqwuSB7tlw"
+          },
+          "commentary": {"text": {"text": "Shipping a new feature this week."}},
+          "updateMetadata": {"urn": "urn:li:activity:7123456789012345678"},
+          "createdAt": 1756387200000
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "actor": {
+        "name": {"text": "Alex Smith"},
+        "urn": "urn:li:fsd_profile:ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg"
+      },
+      "commentary": {"text": {"text": "Three lessons from a small team."}},
+      "updateMetadata": {"urn": "urn:li:activity:7123456789012345679"},
+      "createdAt": 1756300800000
+    }
+  ]
+}

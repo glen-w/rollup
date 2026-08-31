@@ -1,0 +1,39 @@
+From - Tue Aug 04 15:30:58 2026
+Subject: Multi Section
+From: multi@example.com
+To: reader@example.com
+Date: Sun, 02 Aug 2026 15:30:58 +0200
+Message-ID: <multi@example.com>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+## Section 0
+
+Bullet content.
+- point
+- point
+
+## Section 1
+
+Bullet content.
+- point
+- point
+
+## Section 2
+
+Bullet content.
+- point
+- point
+
+## Section 3
+
+Bullet content.
+- point
+- point
+
+## Section 4
+
+Bullet content.
+- point
+- point

@@ -21,17 +21,17 @@ from rollup.config_service import (
     build_digest_argv,
     resolve_effective,
 )
-from rollup.discovery import list_flat_mbox_names
+from rollup.discovery import list_flat_mbox_names, list_linkedin_folder_names
 from rollup.llm_client import list_ollama_models
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import UserConfigError
 from rollup.web.config import load_web_config_document
 from rollup.web.csrf import rotate_csrf_token, validate_csrf_token
+from rollup.web.run_progress import parse_run_progress
 from rollup.web.run_runner import (
     get_active_run,
     is_busy,
     start_digest_subprocess,
-    wait_until_idle,
 )
 
 bp = Blueprint("run", __name__, url_prefix="/run")
@@ -112,16 +112,21 @@ def _with_litellm_model(extra: list[str], sticky: dict) -> list[str]:
     return extra
 
 
-def _matched_folders(sticky: dict) -> list[str]:
+def _matched_folders(sticky: dict, linkedin_config=None) -> list[str]:
     root = sticky.get("root") or current_app.config.get("NEWSLETTER_ROOT")
-    if not root:
-        return []
-    path = Path(str(root)).expanduser()
-    return list_flat_mbox_names(
-        path,
-        include=sticky.get("folder") or (),
-        exclude=sticky.get("exclude_folder") or (),
+    include = sticky.get("folder") or ()
+    exclude = sticky.get("exclude_folder") or ()
+    matched: list[str] = []
+    if root:
+        path = Path(str(root)).expanduser()
+        matched = list_flat_mbox_names(path, include=include, exclude=exclude)
+    linkedin = list_linkedin_folder_names(
+        linkedin_config, include=include, exclude=exclude
     )
+    for name in linkedin:
+        if name not in matched:
+            matched.append(name)
+    return matched
 
 
 @bp.get("")
@@ -138,6 +143,8 @@ def run_studio():
             effective=None,
             profiles=[],
             matched_folders=[],
+            linkedin_enabled=False,
+            linkedin_search_count=0,
             cli_command="",
             cron_hint="",
             active=get_active_run(),
@@ -146,7 +153,12 @@ def run_studio():
             selected_single_model="",
         )
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
-    matched = _matched_folders(effective.sticky)
+    matched = _matched_folders(effective.sticky, doc.loaded.linkedin)
+    linkedin_searches = list_linkedin_folder_names(
+        doc.loaded.linkedin,
+        include=effective.sticky.get("folder") or (),
+        exclude=effective.sticky.get("exclude_folder") or (),
+    )
     argv = build_digest_argv(effective, config_path=_config_path(), dry_run=False)
     cli = "rollup " + " ".join(_shell_quote(a) for a in argv)
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
@@ -157,6 +169,8 @@ def run_studio():
         sticky=effective.sticky,
         profiles=profiles,
         matched_folders=matched,
+        linkedin_enabled=doc.loaded.linkedin.enabled,
+        linkedin_search_count=len(linkedin_searches),
         cli_command=cli,
         cron_hint=cron,
         active=get_active_run(),
@@ -186,7 +200,12 @@ def run_preview():
         flash(str(exc))
         return redirect(url_for("run.run_studio"))
     extra = _with_litellm_model(extra, effective.sticky)
-    matched = _matched_folders(effective.sticky)
+    matched = _matched_folders(effective.sticky, doc.loaded.linkedin)
+    linkedin_searches = list_linkedin_folder_names(
+        doc.loaded.linkedin,
+        include=effective.sticky.get("folder") or (),
+        exclude=effective.sticky.get("exclude_folder") or (),
+    )
     argv = build_digest_argv(
         effective, config_path=_config_path(), dry_run=False, extra=extra or None
     )
@@ -201,6 +220,8 @@ def run_preview():
         sticky=effective.sticky,
         profiles=profiles,
         matched_folders=matched,
+        linkedin_enabled=doc.loaded.linkedin.enabled,
+        linkedin_search_count=len(linkedin_searches),
         cli_command=cli,
         cron_hint=cron,
         active=get_active_run(),
@@ -232,18 +253,12 @@ def run_dry():
             effective, config_path=_config_path(), dry_run=True, extra=extra or None
         )
         start_digest_subprocess(argv, dry_run=True)
-        result = wait_until_idle(timeout=600)
     except RuntimeError as exc:
         return _busy_response(str(exc))
     except UserConfigError as exc:
         flash(str(exc))
         return redirect(url_for("run.run_studio"))
-    if result is None:
-        flash("Dry-run timed out.")
-    else:
-        flash(
-            f"Dry-run finished: status={result.status}, exit={result.exit_code}"
-        )
+    flash("Dry-run started — progress updates below.")
     return redirect(url_for("run.run_result"))
 
 
@@ -269,16 +284,12 @@ def run_start():
             effective, config_path=_config_path(), dry_run=False, extra=extra or None
         )
         start_digest_subprocess(argv, dry_run=False)
-        result = wait_until_idle(timeout=3600)
     except RuntimeError as exc:
         return _busy_response(str(exc))
     except UserConfigError as exc:
         flash(str(exc))
         return redirect(url_for("run.run_studio"))
-    if result is None:
-        flash("Digest timed out.")
-    else:
-        flash(f"Digest finished: status={result.status}, exit={result.exit_code}")
+    flash("Digest started — progress updates below.")
     return redirect(url_for("run.run_result"))
 
 
@@ -292,22 +303,30 @@ def run_ollama_models():
     return jsonify({"ok": True, "models": models})
 
 
+def _status_payload(run) -> dict:
+    import time
+
+    log = list(run.log_lines)[-80:]
+    progress = parse_run_progress(log, dry_run=run.dry_run, status=run.status)
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "exit_code": run.exit_code,
+        "dry_run": run.dry_run,
+        "log": log,
+        "argv": run.argv,
+        "error": run.error,
+        "elapsed_seconds": max(0.0, time.time() - run.started_at),
+        "progress": progress,
+    }
+
+
 @bp.get("/status")
 def run_status():
     run = get_active_run()
     if run is None:
         return jsonify({"status": "idle"})
-    return jsonify(
-        {
-            "run_id": run.run_id,
-            "status": run.status,
-            "exit_code": run.exit_code,
-            "dry_run": run.dry_run,
-            "log": list(run.log_lines)[-80:],
-            "argv": run.argv,
-            "error": run.error,
-        }
-    )
+    return jsonify(_status_payload(run))
 
 
 @bp.get("/result")

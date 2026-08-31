@@ -69,7 +69,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls**.
+No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls** unless you opt in with `--linkedin` (or `[linkedin].enabled`) or `--ollama`.
 
 Optional entry-level LLM summarisation requires `--ollama` on the CLI. By default that uses a local Ollama server; with `pip install 'rollup[llm]'` you can set `--llm-provider litellm` and a LiteLLM model string. Final review (`--final-review`) also requires `--ollama` (LLM enablement) and uses `--final-review-provider` independently. The `requests` library ships with Rollup for the Ollama path but is not loaded during default digest runs.
 
@@ -284,11 +284,18 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
    rollup web --open
    ```
 10. Enable Ollama (local loopback only by default; explicit opt-in):
-   ```bash
-   python -m rollup digest --list-summary-profiles
-   python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
-   python -m rollup digest --ollama --summary-routing-report
-   ```
+    ```bash
+    python -m rollup digest --list-summary-profiles
+    python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
+    python -m rollup digest --ollama --summary-routing-report
+    ```
+11. Optional LinkedIn author feeds (`fromMember` URL in TOML; cookies in env only):
+    ```bash
+    export ROLLUP_LINKEDIN_LI_AT='…'
+    export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
+    python -m rollup digest --linkedin --folder linkedin:watchlist
+    ```
+    See [docs/CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional) and [docs/EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
 
 ## Configuration
 
@@ -306,8 +313,10 @@ Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.to
 | `--list-profiles` | off | List run profiles and exit |
 | `--lookback-days` | from profile (`7` weekly) | Inclusive calendar-day window |
 | *(digest mode)* | **no Ollama** | Omit both `--ollama` and `--no-ollama` |
-| `--no-ollama` | implicit default | Preview summaries; no network |
+| `--no-ollama` | implicit default | Preview summaries; no LLM network |
 | `--ollama` | off | Opt-in local Ollama summarisation |
+| `--linkedin` | off (unless TOML `[linkedin].enabled`) | Opt-in LinkedIn `fromMember` fetch; needs `ROLLUP_LINKEDIN_LI_AT` + `ROLLUP_LINKEDIN_JSESSIONID` in the environment ([CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional)) |
+| `--no-linkedin` | implicit default | Disable LinkedIn fetch for this run |
 | `--effort` | `balanced` | Machine-power preset: `light` / `balanced` / `high` (models + related defaults) |
 | `--list-efforts` | off | List effort presets and exit |
 | `--summary-profile` | — | **Ollama only:** one profile for all messages |
@@ -532,11 +541,12 @@ src/rollup/web/                   # optional Flask UI ([web] extra)
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes
-docs/CONFIG.md                    # TOML, profiles, sticky ↔ CLI
+docs/CONFIG.md                    # TOML, profiles, sticky ↔ CLI, LinkedIn
 docs/WEB.md                       # local web UI
 docs/CONTRACT.md                  # product contract + publication integrity
 docs/ROADMAP.md                   # near-term follow-ups and non-goals
 docs/SOURCES.md                   # source registry
+docs/TROUBLESHOOTING.md           # failures, LinkedIn session, cron exits
 CHANGELOG.md                      # release notes
 fixtures/                         # gitignored — local real-mail copies
 output/                           # generated rollups (the rollup)

@@ -157,6 +157,66 @@ preferred_view = "html"        # html | markdown | entries
 onboarding_complete = false
 ```
 
+## LinkedIn content searches (optional)
+
+Each saved LinkedIn **content search** URL becomes a digest section named
+`linkedin:<slug>`, treated like a mailbox folder for include/exclude, themes,
+grouping, and rendering. Fetch is **opt-in network** (same idea as `--ollama`):
+off unless `[linkedin].enabled = true` and/or you pass `--linkedin`.
+
+v1 supports **faceted author lists** (`fromMember=…` on a content-search URL).
+Rollup fetches each author’s recent posts via LinkedIn’s Voyager
+`profileUpdatesV2` API using **your** logged-in session. Keyword-only content
+search, company pages, follows, and mentions are not supported yet (see
+[ROADMAP.md](ROADMAP.md)).
+
+```toml
+[linkedin]
+enabled = true   # opt-in fetch on digest; default false
+
+[linkedin.searches.watchlist]
+url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&fromMember=%5B%22ACo…%22%5D"
+display_name = "LinkedIn watchlist"
+enabled = true
+```
+
+### Session cookies (environment only)
+
+Copy both cookies from a logged-in browser (DevTools → Application/Storage →
+Cookies → `https://www.linkedin.com`). **Never** put them in TOML, Settings, or
+git.
+
+| Cookie | Environment variable | Role |
+|--------|----------------------|------|
+| `li_at` | `ROLLUP_LINKEDIN_LI_AT` | Session |
+| `JSESSIONID` | `ROLLUP_LINKEDIN_JSESSIONID` | Voyager CSRF (`ajax:…`; surrounding quotes optional) |
+
+They rotate together. If a run returns 401, refresh **both** from the same pane.
+
+```bash
+export ROLLUP_LINKEDIN_LI_AT='…'
+export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
+rollup digest --linkedin --folder linkedin:watchlist
+```
+
+For launchd/cron, pass the same variables in the job environment (plist
+`EnvironmentVariables`, or a wrapper script). Do not write them into
+`config.toml`.
+
+### Behaviour
+
+- Enable: `[linkedin].enabled = true` and/or `rollup digest --linkedin`. `--no-linkedin` turns fetch off for that run.
+- URL must be `https://www.linkedin.com/search/results/content/…` with a `fromMember` facet (author `ACo…` ids). Copy it from LinkedIn after filtering Content search by people.
+- `--folder` / `--exclude-folder` accept `linkedin:watchlist` names like mbox folders.
+- Posts are dated from LinkedIn activity ids; the digest **lookback window** still applies after ingest (older posts are skipped, not listed as undated).
+- Caps (per search): 20 authors, 2 pages × 10 posts each, 100 posts total, 2s backoff between requests.
+- Message identity is `li:activity:…`; author source key is `li:member:…` (mute with `rollup sources disable li:member:…`).
+- Fetch failure **partial** (exit 2) when mail still publishes; LinkedIn-only runs **hard-fail** (exit 1) when fetch cannot proceed.
+- `--dry-run` and web **GET** routes never contact LinkedIn (dry-run warns if cookies are missing).
+
+Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
+Settings stores URLs only. Full recipe: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+
 ## Run profiles vs effort
 
 | Lever | Controls |

@@ -213,6 +213,25 @@ def filter_folders(
     return result
 
 
+def list_linkedin_folder_names(
+    linkedin_config,
+    *,
+    include: tuple[str, ...] | list[str] = (),
+    exclude: tuple[str, ...] | list[str] = (),
+) -> list[str]:
+    """Return linkedin:<slug> folder names for enabled searches."""
+    from rollup.linkedin.config import filter_linkedin_searches
+
+    if linkedin_config is None:
+        return []
+    searches = filter_linkedin_searches(
+        linkedin_config.searches,
+        folders_include=tuple(include),
+        folders_exclude=tuple(exclude),
+    )
+    return [s.folder_name for s in searches]
+
+
 def count_messages_fast(mbox_path: Path) -> tuple[int | None, str | None]:
     """Count messages without parsing bodies."""
     try:

@@ -1,6 +1,6 @@
 # Product contract: Thunderbird filters → Rollup digest
 
-Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders.
+Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders. Optional **LinkedIn content-search** sources (opt-in network) can add digest sections equivalent to mailbox folders.
 
 ## Who owns what
 
@@ -8,6 +8,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders.
 |-------|--------|----------------|
 | Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
 | Window & folders | Rollup run profile / CLI / TOML | Which calendar days and which folders enter the digest |
+| LinkedIn searches | `[linkedin.searches.*]` in TOML + `--linkedin` | Saved **fromMember** content-search URLs; each search is one digest section (`linkedin:<slug>`). Session cookies stay in the environment (`ROLLUP_LINKEDIN_LI_AT`, `ROLLUP_LINKEDIN_JSESSIONID`) |
 | Noisy senders | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface |
 | Summaries | Optional local Ollama or LiteLLM via `--ollama` + `--effort` | Preview excerpts by default; LLM only with `--ollama` |
 
@@ -17,6 +18,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders.
 - Thunderbird add-on (XPI)
 - Multi-user or non-loopback web UI
 - Exposing classifier thresholds as user knobs
+- Official LinkedIn API integration (v1 uses your logged-in `li_at` + `JSESSIONID` from the environment; author feeds via Voyager `profileUpdatesV2`)
 
 ## Sensible defaults
 

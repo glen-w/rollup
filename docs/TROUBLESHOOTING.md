@@ -113,3 +113,24 @@ rollup digest --no-grouping
 v1 groups `notification_stream`, `daily_editions`, and `sender_batch`
 (including an auto fallback to same-source batches). Essays and long-form
 messages always stay standalone.
+
+### LinkedIn fetch failed (401 / 429 / checkpoint)
+
+`fromMember` searches use Voyager (`profileUpdatesV2`) with **your** LinkedIn
+session. Set **both** cookies before `--linkedin` or `[linkedin].enabled = true`.
+Never store them in TOML. See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
+
+```bash
+export ROLLUP_LINKEDIN_LI_AT='…'            # DevTools → Cookies → li_at
+export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'  # same pane; JSESSIONID (quotes optional)
+rollup digest --linkedin
+```
+
+- **Missing `ROLLUP_LINKEDIN_LI_AT`:** fetch refuses to start. Dry-run warns instead of calling the network.
+- **Missing `ROLLUP_LINKEDIN_JSESSIONID`:** `fromMember` searches need it as Voyager CSRF (`csrf-token`). Copy it from the same cookie pane as `li_at`.
+- **401 / session expired:** refresh **both** cookies from a logged-in browser. They rotate together; a new `li_at` with a stale `JSESSIONID` still 401s.
+- **0 posts / all undated (older builds):** current Rollup dates posts from activity ids and applies lookback after fetch. If `Messages parsed` is 0, the session may be valid HTML-only (no Voyager) — confirm the log line `Fetching LinkedIn fromMember feed (N authors) via Voyager` and that the URL has `fromMember=`.
+- **429:** rate limited — wait and retry. Mail-only digests may still publish as **partial** (exit 2).
+- **Checkpoint / authwall:** complete LinkedIn’s verification in the browser, then export fresh cookies.
+- **LinkedIn-only run (`--folder linkedin:…` and no mbox):** fetch failure is **exit 1**, not partial.
+- **Dry-run / Settings GET:** never contacts LinkedIn.

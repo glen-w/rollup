@@ -130,6 +130,8 @@ def test_run_studio_get(app) -> None:
     assert b"rollup digest" in resp.data or b"digest" in resp.data
     assert b"use_single_model" in resp.data
     assert b"Use a single model for this run" in resp.data
+    assert b"preview excerpts only (no model)" in resp.data
+    assert b"Local Ollama still counts as on" in resp.data
 
 
 def test_settings_preview_requires_csrf(app) -> None:
@@ -359,6 +361,7 @@ def test_run_dry_run_subprocess(app, monkeypatch: pytest.MonkeyPatch) -> None:
     """Dry-run POST starts subprocess path; mock runner to avoid full digest."""
     from rollup.web import run_runner
     from rollup.web.run_runner import ActiveRun
+    from rollup.web.routes import run as run_routes
 
     application, _cfg = app
     client = application.test_client()
@@ -376,10 +379,7 @@ def test_run_dry_run_subprocess(app, monkeypatch: pytest.MonkeyPatch) -> None:
         run_runner._active = run  # noqa: SLF001
         return run
 
-    monkeypatch.setattr(run_runner, "start_digest_subprocess", fake_start)
-    monkeypatch.setattr(
-        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
-    )
+    monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
     monkeypatch.setattr(run_runner, "is_busy", lambda: False)
 
     with client.session_transaction() as sess:
@@ -397,6 +397,7 @@ def test_run_dry_run_subprocess(app, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "/run/result" in (resp.headers.get("Location") or "")
     status = client.get("/run/status").get_json()
     assert status["status"] == "dry_run"
+    assert status["progress"]["phase"] == "complete"
     joined = " ".join(status.get("argv") or [])
     assert "digest" in joined
     assert "--dry-run" in joined
@@ -490,9 +491,6 @@ def test_run_studio_single_model_in_argv(app, monkeypatch: pytest.MonkeyPatch) -
         return run
 
     monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
-    monkeypatch.setattr(
-        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
-    )
     monkeypatch.setattr(run_runner, "is_busy", lambda: False)
 
     with client.session_transaction() as sess:
@@ -540,9 +538,6 @@ def test_run_studio_ignores_single_model_unless_checked(
         return run
 
     monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
-    monkeypatch.setattr(
-        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
-    )
     monkeypatch.setattr(run_runner, "is_busy", lambda: False)
 
     with client.session_transaction() as sess:
@@ -698,6 +693,28 @@ def test_run_status_idle(app) -> None:
     assert resp.get_json() == {"status": "idle"}
 
 
+def test_run_result_shows_progress_when_running(app, monkeypatch: pytest.MonkeyPatch) -> None:
+    from rollup.web.run_runner import ActiveRun
+    from rollup.web.routes import run as run_routes
+
+    application, _cfg = app
+    run = ActiveRun(
+        run_id="web-running",
+        argv=["rollup", "digest"],
+        dry_run=False,
+        started_at=0.0,
+        status="running",
+    )
+    run.log_lines.append("INFO: Parsing tech (/mail/tech.mbox)")
+    monkeypatch.setattr(run_routes, "get_active_run", lambda: run)
+    client = application.test_client()
+    resp = client.get("/run/result")
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert "run-progress-panel" in html
+    assert "run_progress.js" in html
+
+
 def test_run_result_get(app) -> None:
     application, _cfg = app
     client = application.test_client()
@@ -786,9 +803,6 @@ def test_run_studio_litellm_single_model_adds_llm_model(
         return run
 
     monkeypatch.setattr(run_routes, "start_digest_subprocess", fake_start)
-    monkeypatch.setattr(
-        run_runner, "wait_until_idle", lambda timeout=600: run_runner.get_active_run()
-    )
     monkeypatch.setattr(run_runner, "is_busy", lambda: False)
 
     token = _csrf(client, "csrf-litellm")

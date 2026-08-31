@@ -112,7 +112,14 @@ class RunIndexPayload:
 def _prefer_source_key(a: str, b: str) -> str:
     """Deterministic winner on conflict: list: before from:, then lexicographic."""
     def rank(k: str) -> tuple[int, str]:
-        prefix = 0 if k.startswith("list:") else 1 if k.startswith("from:") else 2
+        if k.startswith("list:"):
+            prefix = 0
+        elif k.startswith("from:"):
+            prefix = 1
+        elif k.startswith("li:member:"):
+            prefix = 2
+        else:
+            prefix = 3
         return (prefix, k)
 
     return a if rank(a) <= rank(b) else b

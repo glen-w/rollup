@@ -135,6 +135,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable all LLM calls (default when neither flag is passed)",
     )
+    linkedin_group = dig.add_mutually_exclusive_group()
+    linkedin_group.add_argument(
+        "--linkedin",
+        action="store_true",
+        help="Enable LinkedIn fromMember fetch (requires ROLLUP_LINKEDIN_LI_AT and ROLLUP_LINKEDIN_JSESSIONID)",
+    )
+    linkedin_group.add_argument(
+        "--no-linkedin",
+        action="store_true",
+        help="Disable LinkedIn fetch (default when neither flag is passed)",
+    )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",
