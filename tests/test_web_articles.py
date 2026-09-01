@@ -12,7 +12,9 @@ from rollup.state import init_db
 from rollup.web.app import create_app
 from rollup.web.csrf import CSRF_SESSION_KEY
 from rollup.web.run_runner import clear_finished_for_tests
-from rollup.webpage.queue import count_pending, enqueue_url, list_by_status
+from datetime import datetime, timezone
+
+from rollup.webpage.queue import count_pending, enqueue_url, list_by_status, store_fetched
 
 
 @pytest.fixture()
@@ -63,6 +65,8 @@ def test_articles_index_empty(app) -> None:
     resp = client.get("/articles")
     assert resp.status_code == 200
     assert b"No pending articles" in resp.data
+    assert b"No saved articles yet" in resp.data
+    assert b"saved within the lookback window" in resp.data
 
 
 def test_articles_add_and_remove(app) -> None:
@@ -118,3 +122,49 @@ def test_articles_retry_failed(app) -> None:
     pending = list_by_status(conn, "pending", limit=10)
     conn.close()
     assert any(p.id == item.id for p in pending)
+
+
+def test_articles_index_shows_saved(app) -> None:
+    conn = init_db(Path(app.config["STATE_DIR"]) / "rollup.db")
+    now = datetime.now(timezone.utc)
+    item = enqueue_url(
+        conn, "https://example.com/saved-page", display_title="Saved page", now=now
+    )
+    store_fetched(
+        conn,
+        item.id,
+        title="Saved page",
+        body_text="body " * 40,
+        content_hash="h",
+        message_key="web:url:saved",
+        fetched_at=now,
+    )
+    conn.close()
+    client = app.test_client()
+    resp = client.get("/articles")
+    assert resp.status_code == 200
+    assert b"Saved page" in resp.data
+    assert b"No saved articles yet" not in resp.data
+
+
+def test_run_studio_shows_saved_in_lookback(app) -> None:
+    conn = init_db(Path(app.config["STATE_DIR"]) / "rollup.db")
+    now = datetime.now(timezone.utc)
+    for i in range(3):
+        item = enqueue_url(
+            conn, f"https://example.com/in-window-{i}", display_title=f"W{i}", now=now
+        )
+        store_fetched(
+            conn,
+            item.id,
+            title=f"W{i}",
+            body_text="body " * 40,
+            content_hash="h",
+            message_key=f"web:url:{i}",
+            fetched_at=now,
+        )
+    conn.close()
+    client = app.test_client()
+    resp = client.get("/run")
+    assert resp.status_code == 200
+    assert b"3 in lookback" in resp.data

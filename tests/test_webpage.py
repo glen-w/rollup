@@ -378,3 +378,150 @@ def test_stage_parse_webpage_dry_run_still_emits_cached(tmp_path: Path) -> None:
     assert len(msgs) == 1
     assert warnings == []
     assert ingest == [(cached.id, msgs[0].message_key)]
+
+
+def test_load_for_digest_fetch_cap_keeps_cached(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "rollup.db")
+    now = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+    for i in range(3):
+        item = enqueue_url(conn, f"https://example.com/cached-{i}", now=now)
+        _cache_body(conn, item.id)
+    for i in range(5):
+        enqueue_url(conn, f"https://example.com/pending-{i}", now=now)
+    from rollup.config import compute_date_window
+
+    start, end = compute_date_window(now, 7)
+    items = load_for_digest(conn, window_start=start, window_end=end, fetch_limit=2)
+    conn.close()
+    cached = [i for i in items if i.has_cached_body]
+    pending = [i for i in items if i.status == "pending"]
+    assert len(cached) == 3
+    assert len(pending) == 2
+
+
+def test_v12_to_v13_adds_body_cache_columns(tmp_path: Path) -> None:
+    from rollup.state import WEBPAGE_QUEUE_V12, connect_db, ensure_webpage_queue_v13
+
+    db = tmp_path / "rollup.db"
+    conn = connect_db(db)
+    conn.executescript(
+        """
+        CREATE TABLE schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL
+        );
+        INSERT INTO schema_version (id, version) VALUES (1, 12);
+        """
+    )
+    conn.executescript(WEBPAGE_QUEUE_V12)
+    conn.execute(
+        """INSERT INTO webpage_queue (url, url_hash, status, created_at)
+           VALUES (?, ?, 'ingested', ?)""",
+        ("https://example.com/legacy", "deadbeef", "2026-09-01T12:00:00+00:00"),
+    )
+    conn.commit()
+    before = {r[1] for r in conn.execute("PRAGMA table_info(webpage_queue)")}
+    assert "body_text" not in before
+    ensure_webpage_queue_v13(conn)
+    assert get_schema_version(conn) == 13
+    after = {r[1] for r in conn.execute("PRAGMA table_info(webpage_queue)")}
+    assert {"fetched_title", "body_text", "content_hash", "fetched_at"} <= after
+    row = conn.execute("SELECT url, body_text FROM webpage_queue").fetchone()
+    conn.close()
+    assert row[0] == "https://example.com/legacy"
+    assert row[1] is None
+
+
+def test_run_digest_includes_cached_webpages_in_lookback(tmp_path: Path) -> None:
+    from rollup.pipeline import run_digest
+    from rollup.run_options import GroupingConfig, RunOptions
+
+    root = tmp_path / "mail" / "Newsletters.sbd"
+    root.mkdir(parents=True)
+    state = tmp_path / "state"
+    output = tmp_path / "output"
+    logs = tmp_path / "logs"
+    output.mkdir()
+    logs.mkdir()
+    conn = init_db(state / "rollup.db")
+    now = datetime.now(timezone.utc)
+    for i in range(3):
+        item = enqueue_url(
+            conn,
+            f"https://example.com/lookback-{i}",
+            display_title=f"Lookback article {i}",
+            now=now,
+        )
+        _cache_body(conn, item.id, body=f"cached body for article {i} " * 20)
+    conn.close()
+    config = _minimal_config(
+        tmp_path,
+        root=root,
+        mail_root=tmp_path / "mail",
+        output_dir=output,
+        state_dir=state,
+        log_dir=logs,
+        lookback_days=7,
+    )
+    with patch("rollup.webpage.fetch.fetch_webpage") as fetch:
+        result = run_digest(
+            config,
+            RunOptions(dry_run=False, write_manifest=False),
+            grouping=GroupingConfig(enabled=False),
+        )
+        fetch.assert_not_called()
+    assert result.status == "success"
+    assert result.md_path is not None
+    text = result.md_path.read_text(encoding="utf-8")
+    assert "Lookback article 0" in text
+    assert "Lookback article 1" in text
+    assert "Lookback article 2" in text
+    assert result.aggregated.discovery is not None
+    assert len(result.aggregated.discovery.webpage_items) == 3
+
+
+def test_run_digest_excludes_cached_webpage_outside_lookback(tmp_path: Path) -> None:
+    from rollup.pipeline import run_digest
+    from rollup.run_options import GroupingConfig, RunOptions
+
+    root = tmp_path / "mail" / "Newsletters.sbd"
+    root.mkdir(parents=True)
+    (root / "tech").write_text(
+        "From: a@b.com\nDate: Tue, 01 Sep 2026 12:00:00 +0000\nSubject: Mail item\n\nHello body\n",
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    output = tmp_path / "output"
+    logs = tmp_path / "logs"
+    output.mkdir()
+    logs.mkdir()
+    conn = init_db(state / "rollup.db")
+    old = datetime.now(timezone.utc) - timedelta(days=30)
+    item = enqueue_url(
+        conn,
+        "https://example.com/too-old",
+        display_title="Old saved article",
+        now=old,
+    )
+    _cache_body(conn, item.id)
+    conn.close()
+    config = _minimal_config(
+        tmp_path,
+        root=root,
+        mail_root=tmp_path / "mail",
+        output_dir=output,
+        state_dir=state,
+        log_dir=logs,
+        lookback_days=7,
+    )
+    with patch("rollup.webpage.fetch.fetch_webpage") as fetch:
+        result = run_digest(
+            config,
+            RunOptions(dry_run=False, write_manifest=False),
+            grouping=GroupingConfig(enabled=False),
+        )
+        fetch.assert_not_called()
+    assert result.aggregated.discovery is not None
+    assert result.aggregated.discovery.webpage_items == ()
+    if result.md_path is not None:
+        text = result.md_path.read_text(encoding="utf-8")
+        assert "Old saved article" not in text
