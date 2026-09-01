@@ -670,9 +670,8 @@ def stage_parse_reddit(
         return [], [], False
 
     from rollup.error_sanitize import sanitize_provider_message
-    from rollup.reddit.fetch import RedditFetchError, fetch_posts_for_subs
+    from rollup.reddit.fetch import fetch_posts_for_subs
     from rollup.reddit.parse import reddit_post_to_parsed_message
-    from rollup.reddit.session import RedditSessionError
 
     warnings: list[StageWarning] = []
     messages: list[ParsedMessage] = []
@@ -692,25 +691,25 @@ def stage_parse_reddit(
     when = generated_at or datetime.now().astimezone()
     window_start, window_end = compute_date_window(when, config.lookback_days)
 
-    try:
-        posts_by_sub = fetch_posts_for_subs(
-            subs,
-            config=config.reddit,
-            lookback_days=config.lookback_days,
-            client=client,
-            window_start=window_start,
-            window_end=window_end,
-        )
-    except (RedditFetchError, RedditSessionError) as exc:
+    posts_by_sub, fetch_failures = fetch_posts_for_subs(
+        subs,
+        config=config.reddit,
+        lookback_days=config.lookback_days,
+        client=client,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    if fetch_failures:
         degraded = True
-        warnings.append(
-            StageWarning(
-                code="reddit_fetch_failed",
-                message=sanitize_provider_message(str(exc)),
+        for failure in fetch_failures:
+            warnings.append(
+                StageWarning(
+                    code="reddit_fetch_failed",
+                    message=sanitize_provider_message(failure),
+                )
             )
-        )
-        logger.warning("Reddit fetch failed: %s", sanitize_provider_message(str(exc)))
-        return messages, warnings, degraded
+        if not posts_by_sub:
+            return messages, warnings, degraded
 
     for sub_name, posts in posts_by_sub.items():
         for post in posts:

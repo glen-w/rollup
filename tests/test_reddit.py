@@ -102,12 +102,13 @@ def test_fixture_fetch_posts_for_subs() -> None:
     client = FixtureRedditClient(FIXTURES)
     cfg = RedditConfig(enabled=True, sort="hot", limit=10)
     subs = (RedditSub(name="python", enabled=True),)
-    result = fetch_posts_for_subs(
+    result, failures = fetch_posts_for_subs(
         subs,
         config=cfg,
         lookback_days=3650,
         client=client,
     )
+    assert failures == []
     assert len(result["python"]) == 2
 
 
@@ -117,7 +118,7 @@ def test_rss_window_filter() -> None:
     subs = (RedditSub(name="python", enabled=True),)
     window_start = datetime(2025, 1, 1, tzinfo=timezone.utc)
     window_end = datetime(2025, 1, 2, tzinfo=timezone.utc)
-    result = fetch_posts_for_subs(
+    result, failures = fetch_posts_for_subs(
         subs,
         config=cfg,
         lookback_days=7,
@@ -125,6 +126,7 @@ def test_rss_window_filter() -> None:
         window_start=window_start,
         window_end=window_end,
     )
+    assert failures == []
     assert len(result["python"]) == 1
     assert result["python"][0].post_id == "abc123"
 
@@ -321,6 +323,44 @@ def test_evaluate_no_input_reddit_only_failure() -> None:
     reason = evaluate_no_input(folders_include=(), discovery=discovery, parse=parse)
     assert reason is not None
     assert "Reddit" in reason
+
+
+def test_fetch_posts_for_subs_partial_failure(monkeypatch) -> None:
+    monkeypatch.setattr("rollup.reddit.fetch.time.sleep", lambda _s: None)
+
+    class _FlakyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def fetch_feed(
+            self,
+            sub: str,
+            sort: str,
+            *,
+            time_filter: str | None = None,
+        ) -> str:
+            self.calls += 1
+            if sub == "bad":
+                from rollup.reddit.session import RedditSessionError
+
+                raise RedditSessionError("Reddit RSS r/bad/hot failed (429): ")
+            return FIXTURES.joinpath("hot.rss").read_text(encoding="utf-8")
+
+    cfg = RedditConfig(enabled=True, sort="hot", limit=10)
+    subs = (
+        RedditSub(name="python", enabled=True),
+        RedditSub(name="bad", enabled=True),
+    )
+    result, failures = fetch_posts_for_subs(
+        subs,
+        config=cfg,
+        lookback_days=3650,
+        client=_FlakyClient(),
+    )
+    assert len(result["python"]) == 2
+    assert "bad" not in result
+    assert len(failures) == 1
+    assert "r/bad" in failures[0]
 
 
 def test_schema_v14_reddit_catalog(tmp_path: Path) -> None:

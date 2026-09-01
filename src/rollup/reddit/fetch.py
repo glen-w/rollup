@@ -20,14 +20,15 @@ from rollup.reddit.models import RedditPost
 from rollup.reddit.session import (
     RedditClient,
     RedditSessionError,
+    RssRedditClient,
     build_reddit_client,
     rss_sort_path,
 )
 
 logger = logging.getLogger(__name__)
 
-BACKOFF_SECONDS = 1.0
-ATOM_NS = "http://www.w3.org/2005/Atom"
+# Unauthenticated Reddit RSS is ~1 request/minute; space subs accordingly.
+SUB_FETCH_BACKOFF_SECONDS = 70.0ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
 class RedditFetchError(RuntimeError):
@@ -204,10 +205,16 @@ def fetch_posts_for_subs(
     client: RedditClient | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
-) -> dict[str, list[RedditPost]]:
+) -> tuple[dict[str, list[RedditPost]], list[str]]:
     http = client or build_reddit_client()
     result: dict[str, list[RedditPost]] = {}
-    for sub in subs:
+    failures: list[str] = []
+    for index, sub in enumerate(subs):
+        if index > 0:
+            wait = SUB_FETCH_BACKOFF_SECONDS
+            if isinstance(http, RssRedditClient):
+                wait = max(wait, http.recommended_wait_seconds)
+            time.sleep(wait)
         try:
             posts = fetch_sub_posts(
                 sub,
@@ -219,6 +226,7 @@ def fetch_posts_for_subs(
             )
             result[sub.name] = posts
         except (RedditSessionError, RedditFetchError) as exc:
-            raise RedditFetchError(f"r/{sub.name}: {exc}") from exc
-        time.sleep(BACKOFF_SECONDS)
-    return result
+            message = f"r/{sub.name}: {exc}"
+            failures.append(message)
+            logger.warning("Reddit fetch failed: %s", message)
+    return result, failures

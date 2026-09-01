@@ -42,6 +42,15 @@ def test_webpage_keys():
     assert decode_opaque(encode_opaque(sk), kind="source") == sk
 
 
+def test_reddit_keys():
+    mk = "reddit:t3:1w4cy5b"
+    sk = "reddit:sub:xteink"
+    assert validate_message_key(mk) == mk
+    assert validate_source_key(sk) == sk
+    assert decode_opaque(encode_opaque(mk), kind="message") == mk
+    assert decode_opaque(encode_opaque(sk), kind="source") == sk
+
+
 def test_run_id_uuid():
     rid = "550e8400-e29b-41d4-a716-446655440000"
     assert validate_run_id(rid) == rid
