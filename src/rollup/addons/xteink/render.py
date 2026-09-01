@@ -75,6 +75,24 @@ def _render_xteink_group_md(group: DigestGroup, max_display_links: int) -> str:
     """Render a digest group in XTEINK-optimized Markdown format (no URLs)."""
     del max_display_links  # XTEINK digests omit link lists
     n = len(group.entries)
+    if group.group_type == "subreddit_digest":
+        lines = [f"## {group.display_name} — {n} posts this week", ""]
+        if group.group_summary:
+            summary = _strip_urls_for_xteink(group.group_summary.strip())
+            lines.extend(["**Roundup:**", "", _wrap_text(summary, XTEINK_LINE_LENGTH), ""])
+        for i, entry in enumerate(group.entries, start=1):
+            p = entry.classified.parsed
+            subject = _truncate(p.subject, XTEINK_SUBJECT_MAX)
+            date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+            preview = _truncate(
+                _strip_urls_for_xteink(entry.summary or p.preview or ""),
+                XTEINK_PREVIEW_MAX,
+            )
+            lines.append(f"{i}. {date} — {subject}")
+            if preview:
+                lines.append(f"   Preview: {preview}")
+            lines.append("")
+        return "\n".join(lines)
     if group.group_type == "notification_stream":
         lines = [
             f"## {group.display_name} — {n} updates this week",

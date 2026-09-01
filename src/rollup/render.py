@@ -496,6 +496,23 @@ def _truncate(text: str, max_chars: int) -> str:
 def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
     """Plain Markdown group structure — no HTML dependency."""
     n = len(group.entries)
+    if group.group_type == "subreddit_digest":
+        lines = [
+            f"### {group.display_name} — {n} posts this week",
+            "",
+        ]
+        if group.group_summary:
+            lines.extend(["**Roundup:**", "", group.group_summary.strip(), ""])
+        for i, entry in enumerate(group.entries, start=1):
+            p = entry.classified.parsed
+            subject = _truncate(p.subject, 100)
+            date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+            preview = _truncate(entry.summary or p.preview or "", 200)
+            lines.append(f"{i}. **{date}** — {subject}")
+            if preview:
+                lines.append(f"   Preview: {preview}")
+            lines.append("")
+        return "\n".join(lines)
     if group.group_type == "notification_stream":
         lines = [
             f"### {group.display_name} — {n} updates this week",
@@ -565,6 +582,37 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
 
 def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
     gid = html_module.escape(group.group_id)
+    if group.group_type == "subreddit_digest":
+        title = html_module.escape(
+            f"{group.display_name} — {len(group.entries)} posts this week"
+        )
+        parts = [
+            f"<section class='digest-group' aria-labelledby='group-{gid}' "
+            f"data-group-type='subreddit_digest'>",
+            f"<h3 id='group-{gid}'>{title}</h3>",
+            f"<p class='group-chip'>Grouped · {len(group.entries)} posts</p>",
+        ]
+        if group.group_summary:
+            parts.append(
+                f"<p class='group-summary'><strong>Roundup:</strong> "
+                f"{html_module.escape(group.group_summary.strip())}</p>"
+            )
+        parts.append("<ol class='group-entries'>")
+        for entry in group.entries:
+            p = entry.classified.parsed
+            subject = html_module.escape(_truncate(p.subject, 100))
+            date = (
+                p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+            )
+            preview = html_module.escape(
+                _truncate(entry.summary or p.preview or "", 200)
+            )
+            parts.append(f"<li><strong>{date}</strong> — {subject}")
+            if preview:
+                parts.append(f"<div class='preview'>{preview}</div>")
+            parts.append("</li>")
+        parts.append("</ol></section>")
+        return "\n".join(parts)
     title = html_module.escape(
         f"{group.display_name} — {len(group.entries)} "
         f"{'updates' if group.group_type == 'notification_stream' else 'editions'} "

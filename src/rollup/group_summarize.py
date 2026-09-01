@@ -49,7 +49,7 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 _GROUP_SUMMARY_PROMPT_PATH = PROMPTS_DIR / "group_summary.txt"
 
 _ELIGIBLE_GROUP_TYPES = frozenset(
-    {"notification_stream", "daily_editions", "sender_batch"}
+    {"notification_stream", "daily_editions", "sender_batch", "subreddit_digest"}
 )
 
 _MAX_MEMBER_SUMMARY_CHARS = 400
@@ -136,7 +136,10 @@ def _is_eligible(
 ) -> bool:
     if group.group_type not in _ELIGIBLE_GROUP_TYPES:
         return False
-    if len(group.entries) < min_group_size:
+    if group.group_type == "subreddit_digest":
+        if len(group.entries) < 2:
+            return False
+    elif len(group.entries) < min_group_size:
         return False
     if _count_usable_summaries(group) < min_usable:
         return False

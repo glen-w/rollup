@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from rollup.linkedin.config import folder_name_for_search
+from rollup.linkedin.config import linkedin_folder_for_post
 from rollup.linkedin.models import LinkedInPost
 from rollup.models import LinkItem, ParsedMessage
 from rollup.parse import compute_content_hash, compute_message_key
@@ -78,9 +78,14 @@ def linkedin_post_to_parsed_message(
     *,
     search_slug: str,
     max_body_chars: int,
+    layout: str = "feed",
     extra_warnings: tuple[str, ...] = (),
 ) -> ParsedMessage:
-    folder_name = folder_name_for_search(search_slug)
+    folder_name = linkedin_folder_for_post(
+        search_slug=search_slug,
+        layout=layout,
+        author_member_id=post.author_member_id,
+    )
     body_text = post.text.strip()
     warnings: list[str] = list(extra_warnings)
     if len(body_text) > max_body_chars:

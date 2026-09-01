@@ -1,0 +1,42 @@
+{
+  "kind": "Listing",
+  "data": {
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "id": "abc123",
+          "subreddit": "python",
+          "title": "What's new in Python 3.13",
+          "selftext": "A quick overview of the latest features.",
+          "author": "guido_fan",
+          "permalink": "/r/python/comments/abc123/whats_new_in_python_313/",
+          "url": "https://www.reddit.com/r/python/comments/abc123/whats_new_in_python_313/",
+          "score": 420,
+          "num_comments": 37,
+          "created_utc": 1735689600.0,
+          "over_18": false,
+          "is_self": true
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "def456",
+          "subreddit": "python",
+          "title": "Show HN: A new async library",
+          "selftext": "",
+          "author": "async_dev",
+          "permalink": "/r/python/comments/def456/show_hn_a_new_async_library/",
+          "url": "https://github.com/example/async-lib",
+          "score": 128,
+          "num_comments": 12,
+          "created_utc": 1735603200.0,
+          "over_18": false,
+          "is_self": false
+        }
+      }
+    ],
+    "after": null
+  }
+}

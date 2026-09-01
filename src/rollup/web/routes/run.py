@@ -26,6 +26,7 @@ from rollup.config_service import (
 from rollup.discovery import (
     list_flat_mbox_names,
     list_linkedin_folder_names,
+    list_reddit_folder_names,
     list_webpage_folder_names,
 )
 from rollup.webpage.queue import count_in_window, count_items, count_pending
@@ -135,7 +136,7 @@ def _webpage_counts(lookback_days: int | None = None) -> tuple[int, int, int]:
         return 0, 0, 0
 
 
-def _matched_folders(sticky: dict, linkedin_config=None) -> list[str]:
+def _matched_folders(sticky: dict, linkedin_config=None, reddit_config=None) -> list[str]:
     root = sticky.get("root") or current_app.config.get("NEWSLETTER_ROOT")
     include = sticky.get("folder") or ()
     exclude = sticky.get("exclude_folder") or ()
@@ -158,7 +159,25 @@ def _matched_folders(sticky: dict, linkedin_config=None) -> list[str]:
     for name in webpage:
         if name not in matched:
             matched.append(name)
+    reddit = list_reddit_folder_names(
+        reddit_config, include=include, exclude=exclude
+    )
+    for name in reddit:
+        if name not in matched:
+            matched.append(name)
     return matched
+
+
+def _reddit_sub_count(reddit_config, sticky: dict) -> int:
+    from rollup.reddit.config import filter_reddit_subs
+
+    return len(
+        filter_reddit_subs(
+            reddit_config,
+            folders_include=tuple(sticky.get("folder") or ()),
+            folders_exclude=tuple(sticky.get("exclude_folder") or ()),
+        )
+    )
 
 
 @bp.get("")
@@ -177,6 +196,8 @@ def run_studio():
             matched_folders=[],
             linkedin_enabled=False,
             linkedin_search_count=0,
+            reddit_enabled=False,
+            reddit_sub_count=0,
             webpage_pending_count=0,
             webpage_in_window_count=0,
             cli_command="",
@@ -187,12 +208,15 @@ def run_studio():
             selected_single_model="",
         )
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
-    matched = _matched_folders(effective.sticky, doc.loaded.linkedin)
+    matched = _matched_folders(
+        effective.sticky, doc.loaded.linkedin, doc.loaded.reddit
+    )
     linkedin_searches = list_linkedin_folder_names(
         doc.loaded.linkedin,
         include=effective.sticky.get("folder") or (),
         exclude=effective.sticky.get("exclude_folder") or (),
     )
+    reddit_sub_count = _reddit_sub_count(doc.loaded.reddit, effective.sticky)
     argv = build_digest_argv(effective, config_path=_config_path(), dry_run=False)
     cli = "rollup " + " ".join(_shell_quote(a) for a in argv)
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
@@ -207,6 +231,8 @@ def run_studio():
         matched_folders=matched,
         linkedin_enabled=doc.loaded.linkedin.enabled,
         linkedin_search_count=len(linkedin_searches),
+        reddit_enabled=doc.loaded.reddit.enabled,
+        reddit_sub_count=reddit_sub_count,
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,
@@ -238,12 +264,15 @@ def run_preview():
         flash(str(exc))
         return redirect(url_for("run.run_studio"))
     extra = _with_litellm_model(extra, effective.sticky)
-    matched = _matched_folders(effective.sticky, doc.loaded.linkedin)
+    matched = _matched_folders(
+        effective.sticky, doc.loaded.linkedin, doc.loaded.reddit
+    )
     linkedin_searches = list_linkedin_folder_names(
         doc.loaded.linkedin,
         include=effective.sticky.get("folder") or (),
         exclude=effective.sticky.get("exclude_folder") or (),
     )
+    reddit_sub_count = _reddit_sub_count(doc.loaded.reddit, effective.sticky)
     argv = build_digest_argv(
         effective, config_path=_config_path(), dry_run=False, extra=extra or None
     )
@@ -262,6 +291,8 @@ def run_preview():
         matched_folders=matched,
         linkedin_enabled=doc.loaded.linkedin.enabled,
         linkedin_search_count=len(linkedin_searches),
+        reddit_enabled=doc.loaded.reddit.enabled,
+        reddit_sub_count=reddit_sub_count,
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,

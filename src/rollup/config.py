@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rollup.linkedin.config import LinkedInConfig
+from rollup.reddit.config import RedditConfig
 
 if TYPE_CHECKING:
     from rollup.effort import EffortModelOverride
@@ -94,6 +95,8 @@ class Config:
     no_linkedin: bool = True
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     no_webpage: bool = False
+    no_reddit: bool = True
+    reddit: RedditConfig = field(default_factory=RedditConfig)
 
     @property
     def db_path(self) -> Path:
@@ -113,6 +116,11 @@ class Config:
     def webpage_enabled(self) -> bool:
         """True when webpage queue ingest is enabled (default; pass --no-webpage to skip)."""
         return not self.no_webpage
+
+    @property
+    def reddit_enabled(self) -> bool:
+        """True when Reddit fetch is enabled (--reddit / [reddit].enabled)."""
+        return not self.no_reddit
 
 
 def compute_date_window(

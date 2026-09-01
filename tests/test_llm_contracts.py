@@ -60,7 +60,7 @@ def _config(**kwargs) -> Config:
 
 def test_schema_v11_fresh_has_summaries_litellm(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 13
+    assert get_schema_version(conn) == SCHEMA_VERSION == 14
     cols = {
         row[1] for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
     }

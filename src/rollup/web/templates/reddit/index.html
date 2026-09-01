@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Reddit — Rollup{% endblock %}
+{% block content %}
+<h1>Reddit</h1>
+<p class="note">Add public subreddits by name for digest inclusion. Rollup fetches posts via Reddit's public RSS feeds — no account or API credentials. Sorts <code>rising</code> and <code>controversial</code> map to <code>hot</code> on RSS. Unauthenticated feeds may be rate-limited (~1 request per minute per sub).</p>
+
+<form method="post" action="{{ url_for('reddit.reddit_save') }}" class="settings-form stack-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <details class="panel" open>
+    <summary>Global defaults</summary>
+    <label>
+      <input type="hidden" name="reddit_enabled" value="0">
+      <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>
+      Enable Reddit fetch on digest
+    </label>
+    <label>Layout
+      <select name="reddit_layout">
+        {% for layout in layouts %}
+        <option value="{{ layout }}" {% if reddit.layout == layout %}selected{% endif %}>{{ layout }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Default sort
+      <select name="reddit_sort">
+        {% for sort in sorts %}
+        <option value="{{ sort }}" {% if reddit.sort == sort %}selected{% endif %}>{{ sort }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Default mode
+      <select name="reddit_mode">
+        {% for mode in modes %}
+        <option value="{{ mode }}" {% if reddit.mode == mode %}selected{% endif %}>{{ mode }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Post cap (per sub)
+      <input type="number" name="reddit_limit" min="1" max="50" value="{{ reddit.limit }}">
+    </label>
+  </details>
+
+  <details class="panel" open>
+    <summary>Subreddits</summary>
+    {% if subs %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Include</th>
+          <th>Subreddit</th>
+          <th>Mode</th>
+          <th>Sort</th>
+          <th>Cap</th>
+          <th>Remove</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sub in subs %}
+        <tr>
+          <td>
+            <input type="checkbox" name="sub_enabled_{{ sub.name }}" value="1" {% if sub.enabled %}checked{% endif %}>
+            <input type="hidden" name="sub_name" value="{{ sub.name }}">
+          </td>
+          <td>r/{{ sub.name }}</td>
+          <td>
+            <select name="sub_mode">
+              <option value="">(inherit)</option>
+              {% for mode in modes %}
+              <option value="{{ mode }}" {% if sub.mode == mode %}selected{% endif %}>{{ mode }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="sub_sort">
+              <option value="">(inherit)</option>
+              {% for sort in sorts %}
+              <option value="{{ sort }}" {% if sub.sort == sort %}selected{% endif %}>{{ sort }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input type="number" name="sub_limit" min="1" max="50" placeholder="{{ reddit.limit }}"
+              value="{{ sub.limit if sub.limit is not none else '' }}">
+          </td>
+          <td>
+            <input type="checkbox" name="sub_remove" value="{{ sub.name }}" title="Remove on save">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No subreddits yet. Add one below.</p>
+    {% endif %}
+    <label>Add subreddit
+      <input type="text" name="add_sub" placeholder="python or r/python">
+    </label>
+  </details>
+
+  <div class="panel-actions">
+    <button type="submit">Save Reddit settings</button>
+  </div>
+</form>
+{% endblock %}

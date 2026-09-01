@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from rollup.linkedin.url import validate_content_search_url
 
 LINKEDIN_FOLDER_PREFIX = "linkedin:"
+LINKEDIN_FEED_FOLDER = "linkedin:feed"
+
+LinkedInLayout = Literal["feed", "per_source", "per_search"]
+LINKEDIN_LAYOUTS = frozenset({"feed", "per_source", "per_search"})
 
 SEARCH_KEYS = frozenset({"url", "display_name", "enabled", "emoji", "accent", "order"})
 
@@ -31,6 +36,22 @@ def folder_name_for_search(slug: str) -> str:
     return f"{LINKEDIN_FOLDER_PREFIX}{slug.strip().lower()}"
 
 
+def linkedin_folder_for_post(
+    *,
+    search_slug: str,
+    layout: str,
+    author_member_id: str | None,
+) -> str:
+    if layout == "per_search":
+        return folder_name_for_search(search_slug)
+    if layout == "per_source" and author_member_id:
+        safe = author_member_id.strip().lower()
+        safe = "".join(c for c in safe if c.isalnum() or c in "_-")
+        if safe:
+            return f"{LINKEDIN_FOLDER_PREFIX}{safe[:80]}"
+    return LINKEDIN_FEED_FOLDER
+
+
 def slug_from_folder_name(folder_name: str) -> str | None:
     if not folder_name.startswith(LINKEDIN_FOLDER_PREFIX):
         return None
@@ -42,6 +63,7 @@ def slug_from_folder_name(folder_name: str) -> str | None:
 class LinkedInConfig:
     enabled: bool = False
     article_fetch: bool = True
+    layout: LinkedInLayout = "feed"
     searches: dict[str, LinkedInSearch] = field(default_factory=dict)
 
 
@@ -58,6 +80,10 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
     article_fetch = raw.get("article_fetch", True)
     if not isinstance(article_fetch, bool):
         raise ValueError(f"{path}: [linkedin].article_fetch must be a boolean")
+
+    layout = raw.get("layout", "feed")
+    if layout not in LINKEDIN_LAYOUTS:
+        raise ValueError(f"{path}: [linkedin].layout must be feed, per_source, or per_search")
 
     searches_raw = raw.get("searches")
     searches: dict[str, LinkedInSearch] = {}
@@ -119,7 +145,12 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
                 order=order,
             )
 
-    return LinkedInConfig(enabled=enabled, article_fetch=article_fetch, searches=searches)
+    return LinkedInConfig(
+        enabled=enabled,
+        article_fetch=article_fetch,
+        layout=layout,  # type: ignore[arg-type]
+        searches=searches,
+    )
 
 
 def filter_linkedin_searches(
@@ -127,13 +158,21 @@ def filter_linkedin_searches(
     *,
     folders_include: tuple[str, ...],
     folders_exclude: tuple[str, ...],
+    layout: str = "feed",
 ) -> tuple[LinkedInSearch, ...]:
     """Return enabled searches after folder include/exclude filters."""
     result = [s for s in searches.values() if s.enabled]
     if folders_include:
         include_set = set(folders_include)
-        result = [s for s in result if s.folder_name in include_set]
+        if layout == "feed":
+            if LINKEDIN_FEED_FOLDER not in include_set:
+                result = [s for s in result if s.folder_name in include_set]
+        else:
+            result = [s for s in result if s.folder_name in include_set]
     if folders_exclude:
         exclude_set = set(folders_exclude)
-        result = [s for s in result if s.folder_name not in exclude_set]
+        if layout == "feed" and LINKEDIN_FEED_FOLDER in exclude_set:
+            result = []
+        else:
+            result = [s for s in result if s.folder_name not in exclude_set]
     return tuple(sorted(result, key=lambda s: s.slug))

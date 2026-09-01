@@ -31,6 +31,7 @@ from rollup.effort import (
     resolve_profile_set,
 )
 from rollup.linkedin.config import LinkedInConfig
+from rollup.reddit.config import RedditConfig
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
 from rollup.render import digest_output_stem, render_stats_block
@@ -105,6 +106,18 @@ def _resolve_no_webpage(args: argparse.Namespace) -> bool:
     if getattr(args, "no_webpage", False):
         return True
     return False
+
+
+def _resolve_no_reddit(args: argparse.Namespace) -> bool:
+    """Default is no Reddit unless --reddit is passed."""
+    if getattr(args, "reddit", False):
+        return False
+    return True
+
+
+def _resolve_reddit_config(args: argparse.Namespace):
+    loaded = getattr(args, "_loaded_user_config", None)
+    return getattr(loaded, "reddit", None) or RedditConfig()
 
 
 def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
@@ -282,6 +295,8 @@ def _build_config(
         no_linkedin=_resolve_no_linkedin(args),
         linkedin=_resolve_linkedin_config(args),
         no_webpage=_resolve_no_webpage(args),
+        no_reddit=_resolve_no_reddit(args),
+        reddit=_resolve_reddit_config(args),
     )
 
 
@@ -322,6 +337,10 @@ def _apply_loaded_config(
         if loaded.linkedin.enabled:
             args.linkedin = True
             args.no_linkedin = False
+    if not flag_present(argv, "--reddit") and not flag_present(argv, "--no-reddit"):
+        if loaded.reddit.enabled:
+            args.reddit = True
+            args.no_reddit = False
     return profile.name
 
 

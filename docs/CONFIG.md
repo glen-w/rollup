@@ -235,6 +235,43 @@ For launchd/cron, pass the same variables in the job environment (plist
 Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
 Settings stores URLs only. How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
+`[linkedin].layout` controls TOC sections: `feed` (default, one `linkedin:feed` section), `per_source` (one section per author), or `per_search` (legacy `linkedin:<slug>` per saved search).
+
+## Reddit subreddits (optional)
+
+Opt-in like LinkedIn: off unless `[reddit].enabled = true` and/or `--reddit`.
+
+Rollup fetches **public RSS feeds** (`https://www.reddit.com/r/{sub}/{sort}.rss`). No Reddit account, OAuth app, or environment credentials. Sorts `rising` and `controversial` map to `hot` on RSS. Unauthenticated feeds are often rate-limited (~1 request per minute per sub); Reddit may restrict RSS further in future.
+
+```toml
+[reddit]
+enabled = true
+layout = "feed"          # feed | per_source
+sort = "hot"             # hot | new | top | rising | controversial
+limit = 10
+mode = "summary"         # summary | posts
+
+[reddit.subs.python]
+enabled = true
+
+[reddit.subs.machinelearning]
+enabled = true
+mode = "posts"
+limit = 5
+```
+
+### Behaviour
+
+- Enable: `[reddit].enabled = true` and/or `rollup digest --reddit`. `--no-reddit` turns fetch off for that run.
+- **Reddit** page (`/reddit`): add subreddit names, checkbox which subs to include, per-sub overrides for mode/sort/cap. Selections saved in TOML.
+- `layout = feed`: all posts in `reddit:feed`; summary-mode subs become `subreddit_digest` groups, per-post subs stay standalone.
+- `layout = per_source`: one folder `reddit:<sub>` per enabled sub.
+- Global defaults apply when per-sub keys are omitted.
+- Caps: 10 posts/sub default (max 50), max 100 enabled subs, 1s backoff between subs (429 → wait 60s, retry once).
+- Message identity `reddit:t3:<id>`; source key `reddit:sub:<name>` (mute with `rollup sources disable reddit:sub:…`).
+- Fetch failure **partial** (exit 2) when mail still publishes; Reddit-only runs **hard-fail** (exit 1).
+- `--dry-run` and web **GET** never contact Reddit.
+
 ## Webpage articles (optional)
 
 HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs from the web **Articles** page (`/articles`). The next digest fetches pending rows once into folder `webpage:queue` and stores the extracted body. Later runs **reuse that cache** (no refetch) and include an article when it was **saved within the lookback window**, the same date rule as mbox messages. `date_parsed` is the save time (`created_at`). Failed fetches are retryable from the GUI. Pass `--no-webpage` to skip. Caps: 50 fetches per run, 1s backoff, 2MB per page. Message identity is `web:url:<sha256(canonical_url)>`; source key is `web:host:<netloc>`.

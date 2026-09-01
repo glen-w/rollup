@@ -9,7 +9,9 @@ Each message gets an optional `source_key`:
 1. `list:` + normalised `List-ID` when present
 2. else `from:` + normalised From address
 3. else `li:member:` + LinkedIn member id for LinkedIn posts (`li:activity:` is the per-post `message_key`)
-4. else unidentifiable (`source_key` is null) — still digested, not stored in the registry
+4. else `reddit:sub:` + subreddit name for Reddit posts (`reddit:t3:` is the per-post `message_key`)
+5. else `web:host:` + netloc for webpage articles
+6. else unidentifiable (`source_key` is null) — still digested, not stored in the registry
 
 Folder is **not** part of identity. Subject / Reply-To / Return-Path / Sender are not used as keys.
 

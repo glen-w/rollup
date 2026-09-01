@@ -10,6 +10,7 @@ from typing import Literal
 
 from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
 from rollup.linkedin.config import LINKEDIN_FOLDER_PREFIX
+from rollup.reddit.config import REDDIT_FOLDER_PREFIX, RedditConfig, sub_from_folder_name
 from rollup.webpage.config import WEBPAGE_FOLDER_PREFIX
 from rollup.run_options import GroupingConfig
 from rollup.source_identity import normalize_email as normalize_email
@@ -22,6 +23,7 @@ ReasonCode = Literal[
     "FORMED_NOTIFICATION_STREAM",
     "FORMED_DAILY_EDITIONS",
     "FORMED_SENDER_BATCH",
+    "FORMED_SUBREDDIT_DIGEST",
     "SOURCE_BATCH_TOO_SMALL",
 ]
 
@@ -115,18 +117,41 @@ def apply_grouping(
     undated_entries: tuple[DigestEntry, ...],
     config: GroupingConfig,
     snapshot=None,
+    reddit_config: RedditConfig | None = None,
 ) -> GroupingApplyResult:
     """Group dated entries; undated remain standalone in v1."""
+    decisions: list[GroupingDecision] = []
+    reddit_entries: list[DigestEntry] = []
+    other_dated: list[DigestEntry] = []
+    for entry in dated_entries:
+        if entry.classified.parsed.folder_name.startswith(REDDIT_FOLDER_PREFIX):
+            reddit_entries.append(entry)
+        else:
+            other_dated.append(entry)
+
+    reddit_items: list[DigestItem] = []
+    reddit_groups: list[DigestGroup] = []
+    if reddit_entries and reddit_config is not None:
+        reddit_items, reddit_groups, reddit_decisions = _apply_reddit_grouping(
+            reddit_entries, reddit_config, snapshot=snapshot
+        )
+        decisions.extend(reddit_decisions)
+
     if not config.enabled:
+        dated_items = list(other_dated) + reddit_items
         return GroupingApplyResult(
-            dated_items=dated_entries, undated_items=undated_entries
+            dated_items=tuple(dated_items),
+            undated_items=undated_entries,
+            groups=tuple(reddit_groups),
+            reason_codes=tuple(decisions),
         )
 
-    decisions: list[GroupingDecision] = []
     dated_items, groups, dated_decisions = _group_entry_list(
-        list(dated_entries), config, snapshot=snapshot
+        other_dated, config, snapshot=snapshot
     )
     decisions.extend(dated_decisions)
+    dated_items = list(dated_items) + reddit_items
+    groups = list(groups) + reddit_groups
 
     # Undated: no grouping in v1.
     for entry in undated_entries:
@@ -144,6 +169,97 @@ def apply_grouping(
         groups=tuple(groups),
         reason_codes=tuple(decisions),
     )
+
+
+def _subreddit_name_from_entry(entry: DigestEntry, reddit_config: RedditConfig) -> str:
+    source_key = entry.classified.parsed.source_key or ""
+    if source_key.startswith("reddit:sub:"):
+        return source_key[len("reddit:sub:") :]
+    folder_sub = sub_from_folder_name(entry.classified.parsed.folder_name)
+    if folder_sub:
+        return folder_sub
+    return "unknown"
+
+
+def _resolved_reddit_mode(sub_name: str, reddit_config: RedditConfig) -> str:
+    sub = reddit_config.subs.get(sub_name)
+    if sub is not None:
+        return sub.resolved_mode(reddit_config.mode)
+    return reddit_config.mode
+
+
+def _make_subreddit_digest_group(
+    sub_name: str,
+    entries: list[DigestEntry],
+    folder: str,
+    snapshot=None,
+) -> DigestGroup:
+    from rollup.reddit.summary import deterministic_subreddit_blurb
+
+    entries_sorted = sorted(
+        entries,
+        key=lambda e: (
+            -(e.classified.parsed.date_parsed.timestamp()
+              if e.classified.parsed.date_parsed else 0),
+            e.classified.parsed.subject.lower(),
+        ),
+    )
+    sender = f"r/{sub_name}"
+    family = sub_name
+    group = DigestGroup(
+        group_id=_group_id("subreddit_digest", sender, folder, family),
+        group_type="subreddit_digest",
+        display_name=f"r/{sub_name}",
+        sender_normalized=sender,
+        folder_name=folder,
+        entries=tuple(entries_sorted),
+        group_summary=deterministic_subreddit_blurb(entries_sorted),
+        group_summary_source="preview_fallback",
+        render_mode="expandable",
+    )
+    return group
+
+
+def _apply_reddit_grouping(
+    entries: list[DigestEntry],
+    reddit_config: RedditConfig,
+    snapshot=None,
+) -> tuple[list[DigestItem], list[DigestGroup], list[GroupingDecision]]:
+    decisions: list[GroupingDecision] = []
+    items: list[DigestItem] = []
+    groups: list[DigestGroup] = []
+    buckets: dict[tuple[str, str], list[DigestEntry]] = {}
+    for entry in entries:
+        sub_name = _subreddit_name_from_entry(entry, reddit_config)
+        folder = entry.classified.parsed.folder_name
+        buckets.setdefault((sub_name, folder), []).append(entry)
+
+    for (sub_name, folder), bucket in sorted(buckets.items()):
+        mode = _resolved_reddit_mode(sub_name, reddit_config)
+        if mode == "posts":
+            for entry in bucket:
+                decisions.append(
+                    GroupingDecision(
+                        reason_code="LONG_FORM_STANDALONE",
+                        message_key=entry.classified.parsed.message_key,
+                        detail="reddit_mode=posts",
+                    )
+                )
+                items.append(entry)
+            continue
+        if not bucket:
+            continue
+        group = _make_subreddit_digest_group(sub_name, bucket, folder, snapshot=snapshot)
+        groups.append(group)
+        items.append(group)
+        decisions.append(
+            GroupingDecision(
+                reason_code="FORMED_SUBREDDIT_DIGEST",
+                group_id=group.group_id,
+                detail=f"sub=r/{sub_name} n={len(bucket)}",
+            )
+        )
+    return items, groups, decisions
 
 
 def _group_entry_list(

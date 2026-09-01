@@ -12,6 +12,7 @@ This is guidance for contributors, not a commitment calendar.
 - Shared `sticky_flags` registry (sticky ↔ CLI argv/argparse); `cli_parser` extraction; `run_digest` phase helpers
 - Optional LinkedIn `fromMember` folders (`[linkedin]` + `--linkedin`; Voyager `profileUpdatesV2`; session cookies from env; default-on article fetch for link posts)
 - **Webpage articles** (`/articles` GUI + SQLite `webpage_queue`): add HTTPS URLs; digest fetches once into `webpage:queue`, caches the body, and includes pages saved within the lookback window; `--no-webpage` skips ingest
+- **Reddit subreddits** (`/reddit` GUI + `[reddit]` TOML): public RSS fetch (no credentials); add sub names in GUI; per-sub or global sort/cap/mode; `summary` → `subreddit_digest` groups, `posts` → standalone items; shared `feed` / `per_source` layout with LinkedIn
 
 ## Near-term (product)
 

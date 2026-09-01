@@ -42,6 +42,23 @@ def _render_entry_txt(entry: DigestEntry) -> str:
 
 def _render_group_txt(group: DigestGroup) -> str:
     n = len(group.entries)
+    if group.group_type == "subreddit_digest":
+        lines = [f"{group.display_name} — {n} posts this week", ""]
+        if group.group_summary:
+            summary = strip_urls_for_offline(group.group_summary.strip())
+            lines.extend(["Roundup:", "", wrap_text(summary, OFFLINE_LINE_LENGTH), ""])
+        for i, entry in enumerate(group.entries, start=1):
+            p = entry.classified.parsed
+            subject = truncate_with_ellipsis(p.subject, 100)
+            date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
+            preview = strip_urls_for_offline(
+                truncate_with_ellipsis(entry.summary or p.preview or "", 200)
+            )
+            lines.append(f"{i}. {date} — {subject}")
+            if preview:
+                lines.append(f"   Preview: {preview}")
+            lines.append("")
+        return "\n".join(lines)
     if group.group_type == "notification_stream":
         lines = [
             f"{group.display_name} — {n} updates this week",

@@ -27,7 +27,9 @@ rollup digest \
   --log-dir /tmp/rollup-cloud-demo/logs \
   --lookback-days 3650 \
   --no-ollama \
-  --no-linkedin
+  --no-linkedin \
+  --no-reddit \
+  --no-webpage
 rollup web \
   --host 127.0.0.1 \
   --port 8765 \

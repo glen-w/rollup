@@ -51,9 +51,13 @@ Guided digest composer: pick a profile or temporary overrides, inspect the effec
 
 Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each new page at runtime (folder `webpage:queue`), caches the body, and includes the article when it was **saved within the lookback window** (same caching pattern as mail). Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip. SSRF checks apply to user-supplied URLs.
 
+## Reddit (`/reddit`)
+
+Add public subreddit names, checkbox which subs to roll up, and set global or per-sub sort/cap/mode. Fetches use Reddit's public RSS feeds (no credentials). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count with a Manage link.
+
 ## Read-only GET contract
 
-Every web **GET** (Archive, Quality, Registry, Admin, Settings, Run, Articles, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes.
+Every web **GET** (Archive, Quality, Registry, Admin, Settings, Run, Articles, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes.
 
 Admin deep diagnostics are **POST-only** (`POST /admin/deep-check` with CSRF). Deep-check opens **no write connection** — mutation routes open a short-lived mutator only after CSRF and form validation.
 

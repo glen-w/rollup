@@ -23,6 +23,7 @@ GroupType = Literal[
     "notification_stream",
     "daily_editions",
     "sender_batch",
+    "subreddit_digest",
 ]
 GroupRenderMode = Literal["compact", "expandable"]
 FinalReviewIssueType = Literal[

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from rollup.linkedin.config import LinkedInSearch
     from rollup.linkedin.fetch import LinkedInClient
+    from rollup.reddit.config import RedditSub
     from rollup.webpage.models import WebpageQueueItem
 
 from rollup.clock import Clock, DEFAULT_CLOCK
@@ -96,6 +97,7 @@ class FilterCounts:
 class DiscoveryResult:
     folders: tuple[MboxFolder, ...]
     linkedin_searches: tuple[LinkedInSearch, ...] = ()
+    reddit_subs: tuple["RedditSub", ...] = ()
     webpage_items: tuple[WebpageQueueItem, ...] = ()
     warnings: tuple[StageWarning, ...] = ()
 
@@ -215,6 +217,7 @@ class AggregatedResults:
     writer_artifacts: list[Path] = field(default_factory=list)
     mbox_mutation_detected: bool = False
     linkedin_degraded: bool = False
+    reddit_degraded: bool = False
     webpage_degraded: bool = False
     webpage_queue_ingest: list[tuple[int, str]] = field(default_factory=list)
     no_input_reason: str | None = None
@@ -312,6 +315,9 @@ def derive_run_status(
     if aggregated.linkedin_degraded:
         return "partial"
 
+    if aggregated.reddit_degraded:
+        return "partial"
+
     if aggregated.webpage_degraded:
         return "partial"
 
@@ -339,17 +345,18 @@ def evaluate_no_input(
     """Return a hard-failure reason when the run has no usable input, else None."""
     has_mbox = bool(discovery.folders)
     has_linkedin = bool(discovery.linkedin_searches)
+    has_reddit = bool(discovery.reddit_subs)
     has_webpage = bool(discovery.webpage_items)
 
-    if folders_include and not has_mbox and not has_linkedin and not has_webpage:
+    if folders_include and not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
         return (
             "No folders matched explicit include "
             f"({', '.join(folders_include)}); refusing to publish"
         )
-    if not has_mbox and not has_linkedin and not has_webpage:
+    if not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
         return (
-            "No readable mbox folders, LinkedIn searches, or webpage queue items; "
-            "refusing to publish"
+            "No readable mbox folders, LinkedIn searches, Reddit subs, or webpage "
+            "queue items; refusing to publish"
         )
 
     if has_mbox:
@@ -387,6 +394,17 @@ def evaluate_no_input(
                 "refusing to publish"
             )
 
+    if not has_mbox and not has_linkedin and not has_webpage and has_reddit and parse.counts.messages_parsed == 0:
+        reddit_failed = any(
+            w.code.startswith("reddit_") and w.code != "reddit_dry_run"
+            for w in parse.warnings
+        )
+        if reddit_failed:
+            return (
+                "Reddit fetch failed and no other input sources; "
+                "refusing to publish"
+            )
+
     return None
 
 
@@ -394,6 +412,7 @@ def stage_discover(
     config: Config, *, generated_at: datetime | None = None
 ) -> DiscoveryResult:
     from rollup.linkedin.config import filter_linkedin_searches
+    from rollup.reddit.config import filter_reddit_subs
     from rollup.webpage.config import MAX_WEBPAGE_FETCHES, WEBPAGE_FOLDER_NAME
     from rollup.webpage.queue import load_for_digest
 
@@ -403,6 +422,14 @@ def stage_discover(
     if config.linkedin_enabled and config.linkedin.searches:
         linkedin_searches = filter_linkedin_searches(
             config.linkedin.searches,
+            folders_include=config.folders_include,
+            folders_exclude=config.folders_exclude,
+            layout=config.linkedin.layout,
+        )
+    reddit_subs: tuple = ()
+    if config.reddit_enabled and config.reddit.subs:
+        reddit_subs = filter_reddit_subs(
+            config.reddit,
             folders_include=config.folders_include,
             folders_exclude=config.folders_exclude,
         )
@@ -437,6 +464,7 @@ def stage_discover(
     return DiscoveryResult(
         folders=tuple(folders),
         linkedin_searches=linkedin_searches,
+        reddit_subs=reddit_subs,
         webpage_items=webpage_items,
     )
 
@@ -607,6 +635,7 @@ def stage_parse_linkedin(
                         post,
                         search_slug=search.slug,
                         max_body_chars=config.max_body_chars,
+                        layout=config.linkedin.layout,
                         extra_warnings=post_warnings,
                     )
                 )
@@ -626,6 +655,99 @@ def stage_parse_linkedin(
             )
 
     return messages, warnings, degraded
+
+
+def stage_parse_reddit(
+    config: Config,
+    subs: tuple,
+    *,
+    dry_run: bool,
+    generated_at: datetime | None = None,
+    client=None,
+) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
+    """Fetch Reddit subs and map to ParsedMessage. Returns (msgs, warnings, degraded)."""
+    if not subs:
+        return [], [], False
+
+    from rollup.error_sanitize import sanitize_provider_message
+    from rollup.reddit.fetch import RedditFetchError, fetch_posts_for_subs
+    from rollup.reddit.parse import reddit_post_to_parsed_message
+    from rollup.reddit.session import RedditSessionError
+
+    warnings: list[StageWarning] = []
+    messages: list[ParsedMessage] = []
+    degraded = False
+
+    if dry_run:
+        for sub in subs:
+            warnings.append(
+                StageWarning(
+                    code="reddit_dry_run",
+                    message=f"Would fetch r/{sub.name} via public RSS",
+                    folder=config.reddit.layout,
+                )
+            )
+        return messages, warnings, degraded
+
+    when = generated_at or datetime.now().astimezone()
+    window_start, window_end = compute_date_window(when, config.lookback_days)
+
+    try:
+        posts_by_sub = fetch_posts_for_subs(
+            subs,
+            config=config.reddit,
+            lookback_days=config.lookback_days,
+            client=client,
+            window_start=window_start,
+            window_end=window_end,
+        )
+    except (RedditFetchError, RedditSessionError) as exc:
+        degraded = True
+        warnings.append(
+            StageWarning(
+                code="reddit_fetch_failed",
+                message=sanitize_provider_message(str(exc)),
+            )
+        )
+        logger.warning("Reddit fetch failed: %s", sanitize_provider_message(str(exc)))
+        return messages, warnings, degraded
+
+    for sub_name, posts in posts_by_sub.items():
+        for post in posts:
+            messages.append(
+                reddit_post_to_parsed_message(
+                    post,
+                    layout=config.reddit.layout,
+                    max_body_chars=config.max_body_chars,
+                )
+            )
+    return messages, warnings, degraded
+
+
+def merge_reddit_parse(
+    prior: ParseResult,
+    reddit_messages: list[ParsedMessage],
+    reddit_warnings: list[StageWarning],
+) -> ParseResult:
+    """Combine prior parse results with Reddit messages."""
+    if not reddit_messages and not reddit_warnings:
+        return prior
+    combined = list(prior.messages) + reddit_messages
+    reddit_seen = len(reddit_messages)
+    return ParseResult(
+        messages=tuple(combined),
+        counts=ParseCounts(
+            messages_seen=prior.counts.messages_seen + reddit_seen,
+            messages_parsed=len(combined),
+            parse_fatal_errors=prior.counts.parse_fatal_errors,
+            parse_anomalies=prior.counts.parse_anomalies,
+            folders_failed=prior.counts.folders_failed,
+        ),
+        warnings=prior.warnings + tuple(reddit_warnings),
+        errors=prior.errors,
+        mutated_folders=prior.mutated_folders,
+        mutation_codes=prior.mutation_codes,
+    )
 
 
 def merge_linkedin_parse(
@@ -844,9 +966,12 @@ def stage_group(
     undated_entries: tuple[DigestEntry, ...],
     grouping: GroupingConfig,
     snapshot=None,
+    reddit_config=None,
 ) -> GroupingResult:
     """Apply grouping when enabled; otherwise pass entries through as items."""
-    if not grouping.enabled:
+    from rollup.reddit.config import RedditConfig
+
+    if not grouping.enabled and reddit_config is None:
         return GroupingResult(
             dated_items=dated_entries,
             undated_items=undated_entries,
@@ -854,7 +979,11 @@ def stage_group(
     from rollup.grouping import apply_grouping
 
     applied = apply_grouping(
-        dated_entries, undated_entries, grouping, snapshot=snapshot
+        dated_entries,
+        undated_entries,
+        grouping,
+        snapshot=snapshot,
+        reddit_config=reddit_config if isinstance(reddit_config, RedditConfig) else None,
     )
     return GroupingResult(
         dated_items=applied.dated_items,
@@ -1152,10 +1281,11 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     discovery = stage_discover(config, generated_at=generated_at)
     aggregated.discovery = discovery
     logger.info(
-        "Digest: root=%s folders=%d linkedin=%d webpage=%d lookback=%dd dry_run=%s no_ollama=%s",
+        "Digest: root=%s folders=%d linkedin=%d reddit=%d webpage=%d lookback=%dd dry_run=%s no_ollama=%s",
         config.root,
         len(discovery.folders),
         len(discovery.linkedin_searches),
+        len(discovery.reddit_subs),
         len(discovery.webpage_items),
         config.lookback_days,
         run_options.dry_run,
@@ -1170,6 +1300,14 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     )
     parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
     aggregated.linkedin_degraded = linkedin_degraded
+    rd_messages, rd_warnings, reddit_degraded = stage_parse_reddit(
+        config,
+        discovery.reddit_subs,
+        dry_run=run_options.dry_run,
+        generated_at=generated_at,
+    )
+    parse_result = merge_reddit_parse(parse_result, rd_messages, rd_warnings)
+    aggregated.reddit_degraded = reddit_degraded
     wp_messages, wp_warnings, webpage_degraded, wp_ingest = stage_parse_webpage(
         config,
         discovery.webpage_items,
@@ -1269,6 +1407,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         filter_result.undated_entries,
         grouping,
         snapshot=snapshot,
+        reddit_config=config.reddit if config.reddit_enabled else None,
     )
     aggregated.grouping = grouping_result
 

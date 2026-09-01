@@ -108,7 +108,12 @@ def _render_entry_xhtml(entry: DigestEntry) -> str:
 
 def _render_group_xhtml(group: DigestGroup) -> str:
     n = len(group.entries)
-    if group.group_type == "notification_stream":
+    if group.group_type == "subreddit_digest":
+        title = f"{group.display_name} — {n} posts this week"
+        summary_label = "Roundup"
+        fallback = f"Grouped subreddit digest ({n} posts)."
+        compact = True
+    elif group.group_type == "notification_stream":
         title = f"{group.display_name} — {n} updates this week"
         summary_label = "This week"
         fallback = f"Grouped notification stream ({n} messages). Newest first."

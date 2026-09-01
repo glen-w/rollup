@@ -39,6 +39,7 @@ from rollup.effort import (
 )
 from rollup.folder_theme import FolderThemeOverride, folder_slug, theme_for
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
+from rollup.reddit.config import RedditConfig
 from rollup.webpage.queue import count_items
 from rollup.output_writers import discover_writers
 from rollup.run_profiles import list_run_profiles
@@ -106,6 +107,9 @@ def _folder_themes_from_form() -> dict[str, FolderThemeOverride]:
 def _linkedin_from_form() -> LinkedInConfig:
     enabled = "1" in request.form.getlist("linkedin_enabled")
     article_fetch = "1" in request.form.getlist("linkedin_article_fetch")
+    layout = request.form.get("linkedin_layout", "feed")
+    if layout not in ("feed", "per_source", "per_search"):
+        layout = "feed"
     searches: dict[str, LinkedInSearch] = {}
     slugs = request.form.getlist("linkedin_slug")
     urls = request.form.getlist("linkedin_url")
@@ -132,7 +136,25 @@ def _linkedin_from_form() -> LinkedInConfig:
             display_name=display,
             enabled=search_enabled,
         )
-    return LinkedInConfig(enabled=enabled, article_fetch=article_fetch, searches=searches)
+    return LinkedInConfig(
+        enabled=enabled,
+        article_fetch=article_fetch,
+        layout=layout,  # type: ignore[arg-type]
+        searches=searches,
+    )
+
+
+def _reddit_enabled_from_form(base: RedditConfig) -> RedditConfig:
+    enabled = "1" in request.form.getlist("reddit_enabled")
+    return RedditConfig(
+        enabled=enabled,
+        layout=base.layout,
+        sort=base.sort,
+        limit=base.limit,
+        mode=base.mode,
+        time_filter=base.time_filter,
+        subs=base.subs,
+    )
 
 
 def _profiles_from_form() -> tuple[dict[str, dict], set[str]]:
@@ -244,6 +266,11 @@ def _patch_from_request() -> ConfigPatch:
     themes = _folder_themes_from_form()
     profiles, remove = _profiles_from_form()
     linkedin = _linkedin_from_form()
+    try:
+        base_reddit = _load_doc().loaded.reddit
+    except Exception:
+        base_reddit = RedditConfig()
+    reddit = _reddit_enabled_from_form(base_reddit)
     return patch_from_form_values(
         mail_root=request.form.get("mail_root"),
         root=request.form.get("root"),
@@ -269,6 +296,7 @@ def _patch_from_request() -> ConfigPatch:
         ui=_ui_from_form(),
         effort_overrides=_effort_overrides_from_form(),
         linkedin=linkedin,
+        reddit=reddit,
     )
 
 
@@ -413,6 +441,7 @@ def settings_index():
         preferred_views=sorted(UI_PREFERRED_VIEWS),
         effort_ladders=effort_editor_rows(doc.loaded.efforts if doc else {}),
         linkedin=doc.loaded.linkedin if doc else LinkedInConfig(),
+        reddit=doc.loaded.reddit if doc else RedditConfig(),
         preview_token=None,
         diff_rows=None,
         patch_summary=None,
@@ -463,6 +492,7 @@ def settings_preview():
             linkedin=(
                 patch.linkedin if patch.linkedin is not None else doc.loaded.linkedin
             ),
+            reddit=patch.reddit if patch.reddit is not None else doc.loaded.reddit,
             sources=doc.loaded.sources,
         )
         if patch.remove_profiles:
@@ -476,6 +506,7 @@ def settings_preview():
                 ui=after_loaded.ui,
                 efforts=after_loaded.efforts,
                 linkedin=after_loaded.linkedin,
+                reddit=after_loaded.reddit,
                 sources=after_loaded.sources,
             )
         after = resolve_effective(after_loaded)

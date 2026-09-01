@@ -219,8 +219,8 @@ def list_linkedin_folder_names(
     include: tuple[str, ...] | list[str] = (),
     exclude: tuple[str, ...] | list[str] = (),
 ) -> list[str]:
-    """Return linkedin:<slug> folder names for enabled searches."""
-    from rollup.linkedin.config import filter_linkedin_searches
+    """Return linkedin folder names for enabled searches."""
+    from rollup.linkedin.config import LINKEDIN_FEED_FOLDER, filter_linkedin_searches
 
     if linkedin_config is None:
         return []
@@ -228,8 +228,16 @@ def list_linkedin_folder_names(
         linkedin_config.searches,
         folders_include=tuple(include),
         folders_exclude=tuple(exclude),
+        layout=linkedin_config.layout,
     )
-    return [s.folder_name for s in searches]
+    if not searches:
+        return []
+    if linkedin_config.layout == "feed":
+        return [LINKEDIN_FEED_FOLDER]
+    if linkedin_config.layout == "per_search":
+        return [s.folder_name for s in searches]
+    # per_source: folder names depend on fetched authors; expose feed as fallback
+    return [LINKEDIN_FEED_FOLDER]
 
 
 def list_webpage_folder_names(
@@ -252,6 +260,17 @@ def list_webpage_folder_names(
     if include_set and WEBPAGE_FOLDER_NAME not in include_set:
         return []
     return [WEBPAGE_FOLDER_NAME]
+
+
+def list_reddit_folder_names(
+    reddit_config,
+    *,
+    include: tuple[str, ...] | list[str] = (),
+    exclude: tuple[str, ...] | list[str] = (),
+) -> list[str]:
+    from rollup.reddit.config import list_reddit_folder_names as _list
+
+    return _list(reddit_config, include=include, exclude=exclude)
 
 
 def count_messages_fast(mbox_path: Path) -> tuple[int | None, str | None]:

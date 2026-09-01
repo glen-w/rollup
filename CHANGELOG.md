@@ -4,6 +4,11 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Reddit subreddits** (`/reddit` GUI + `[reddit]` TOML): public RSS fetch (no credentials); add sub names in GUI; global/per-sub sort, cap, and mode (`summary` → `subreddit_digest` group, `posts` → standalone items); layout `feed` (default) or `per_source`.
+- **LinkedIn TOC layout** (`[linkedin].layout`): `feed` (default), `per_source` (per author), or `per_search` (legacy per saved search).
+
 ## 0.8.7 — 2026-09-01
 
 ### Added

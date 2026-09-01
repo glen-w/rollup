@@ -171,6 +171,13 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       <input type="checkbox" name="linkedin_article_fetch" value="1" {% if linkedin.article_fetch %}checked{% endif %}>
       Fetch linked article bodies for link posts (extra HTTP; default on)
     </label>
+    <label>TOC layout
+      <select name="linkedin_layout">
+        <option value="feed" {% if linkedin.layout == 'feed' %}selected{% endif %}>feed (one section)</option>
+        <option value="per_source" {% if linkedin.layout == 'per_source' %}selected{% endif %}>per_source (per author)</option>
+        <option value="per_search" {% if linkedin.layout == 'per_search' %}selected{% endif %}>per_search (per saved search)</option>
+      </select>
+    </label>
     <div class="linkedin-search-grid">
       {% for slug, search in linkedin.searches.items() %}
       <div class="linkedin-search-row">
@@ -200,6 +207,16 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
       </div>
       {% endfor %}
     </div>
+  </section>
+
+  <section class="card-section">
+    <h2>Reddit</h2>
+    <p class="note">Manage subreddits on the <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a> page. Public RSS feeds — no credentials required.</p>
+    <label>
+      <input type="hidden" name="reddit_enabled" value="0">
+      <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>
+      Enable Reddit fetch on digest runs
+    </label>
   </section>
 
   <section class="card-section">

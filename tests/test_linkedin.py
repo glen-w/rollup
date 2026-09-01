@@ -248,7 +248,7 @@ def test_fixture_to_parsed_message() -> None:
     posts = client.fetch_search(search, lookback_days=7)
     assert len(posts) == 2
     msg = linkedin_post_to_parsed_message(
-        posts[0], search_slug="watchlist", max_body_chars=50_000
+        posts[0], search_slug="watchlist", max_body_chars=50_000, layout="per_search"
     )
     assert msg.folder_name == "linkedin:watchlist"
     assert msg.message_key.startswith("li:activity:")

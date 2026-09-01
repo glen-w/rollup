@@ -17,6 +17,7 @@ from tomlkit.items import Table
 from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
+from rollup.reddit.config import RedditConfig, RedditSub
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
     UnknownRunProfileError,
@@ -79,6 +80,7 @@ class EffectiveConfigView:
     writers: list[str]
     effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
+    reddit: RedditConfig = field(default_factory=RedditConfig)
 
 
 @dataclass
@@ -93,6 +95,7 @@ class ConfigPatch:
     ui: UiPreferences | None = None
     effort_overrides: dict[str, EffortModelOverride] | None = None
     linkedin: LinkedInConfig | None = None
+    reddit: RedditConfig | None = None
 
 
 def compute_revision(path: Path) -> str:
@@ -178,6 +181,7 @@ def resolve_effective(
         writers=writers,
         effort_overrides=dict(loaded.efforts),
         linkedin=loaded.linkedin,
+        reddit=loaded.reddit,
     )
 
 
@@ -244,6 +248,9 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 "linkedin": _linkedin_to_raw(
                     patch.linkedin if patch.linkedin is not None else base.linkedin
                 ),
+                "reddit": _reddit_to_raw(
+                    patch.reddit if patch.reddit is not None else base.reddit
+                ),
             },
             path=Path("<patch>"),
         )
@@ -281,6 +288,7 @@ def _linkedin_to_raw(linkedin: LinkedInConfig) -> dict[str, Any]:
     body: dict[str, Any] = {
         "enabled": linkedin.enabled,
         "article_fetch": linkedin.article_fetch,
+        "layout": linkedin.layout,
     }
     if linkedin.searches:
         searches: dict[str, dict[str, Any]] = {}
@@ -296,6 +304,39 @@ def _linkedin_to_raw(linkedin: LinkedInConfig) -> dict[str, Any]:
                 row["order"] = search.order
             searches[slug] = row
         body["searches"] = searches
+    return body
+
+
+def _reddit_to_raw(reddit: RedditConfig) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "enabled": reddit.enabled,
+        "layout": reddit.layout,
+        "sort": reddit.sort,
+        "limit": reddit.limit,
+        "mode": reddit.mode,
+    }
+    if reddit.time_filter:
+        body["time_filter"] = reddit.time_filter
+    if reddit.subs:
+        subs: dict[str, dict[str, Any]] = {}
+        for name, sub in sorted(reddit.subs.items()):
+            row: dict[str, Any] = {"enabled": sub.enabled}
+            if sub.mode is not None:
+                row["mode"] = sub.mode
+            if sub.sort is not None:
+                row["sort"] = sub.sort
+            if sub.limit is not None:
+                row["limit"] = sub.limit
+            if sub.display_name:
+                row["display_name"] = sub.display_name
+            if sub.emoji:
+                row["emoji"] = sub.emoji
+            if sub.accent:
+                row["accent"] = sub.accent
+            if sub.order is not None:
+                row["order"] = sub.order
+            subs[name] = row
+        body["subs"] = subs
     return body
 
 
@@ -519,6 +560,7 @@ def _apply_patch_to_doc(
         linkedin_table = tomlkit.table()
         linkedin_table["enabled"] = patch.linkedin.enabled
         linkedin_table["article_fetch"] = patch.linkedin.article_fetch
+        linkedin_table["layout"] = patch.linkedin.layout
         if patch.linkedin.searches:
             searches_table = tomlkit.table()
             for slug, search in sorted(patch.linkedin.searches.items()):
@@ -538,6 +580,38 @@ def _apply_patch_to_doc(
         doc["linkedin"] = linkedin_table
     elif patch.linkedin is None and "linkedin" in doc and patch.clear_values:
         pass
+
+    if patch.reddit is not None:
+        reddit_table = tomlkit.table()
+        reddit_table["enabled"] = patch.reddit.enabled
+        reddit_table["layout"] = patch.reddit.layout
+        reddit_table["sort"] = patch.reddit.sort
+        reddit_table["limit"] = patch.reddit.limit
+        reddit_table["mode"] = patch.reddit.mode
+        if patch.reddit.time_filter:
+            reddit_table["time_filter"] = patch.reddit.time_filter
+        if patch.reddit.subs:
+            subs_table = tomlkit.table()
+            for name, sub in sorted(patch.reddit.subs.items()):
+                row = tomlkit.table()
+                row["enabled"] = sub.enabled
+                if sub.mode is not None:
+                    row["mode"] = sub.mode
+                if sub.sort is not None:
+                    row["sort"] = sub.sort
+                if sub.limit is not None:
+                    row["limit"] = sub.limit
+                if sub.display_name:
+                    row["display_name"] = sub.display_name
+                if sub.emoji:
+                    row["emoji"] = sub.emoji
+                if sub.accent:
+                    row["accent"] = sub.accent
+                if sub.order is not None:
+                    row["order"] = sub.order
+                subs_table[name] = row
+            reddit_table["subs"] = subs_table
+        doc["reddit"] = reddit_table
 
 
 def _to_toml_value(value: Any) -> Any:
@@ -610,6 +684,7 @@ def patch_from_form_values(
     ui: UiPreferences | None = None,
     effort_overrides: dict[str, EffortModelOverride] | None = None,
     linkedin: LinkedInConfig | None = None,
+    reddit: RedditConfig | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
     values: dict[str, Any] = {}
@@ -666,6 +741,7 @@ def patch_from_form_values(
         ui=ui,
         effort_overrides=effort_overrides,
         linkedin=linkedin,
+        reddit=reddit,
     )
 
 
@@ -690,6 +766,10 @@ def build_digest_argv(
         argv.append("--no-linkedin")
     if not effective.linkedin.article_fetch:
         argv.append("--no-linkedin-article-fetch")
+    if effective.reddit.enabled:
+        argv.append("--reddit")
+    else:
+        argv.append("--no-reddit")
     if dry_run:
         argv.append("--dry-run")
     if extra:

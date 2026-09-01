@@ -16,6 +16,7 @@ from rollup.effort import (
 )
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
+from rollup.reddit.config import RedditConfig, parse_reddit_config
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -56,7 +57,7 @@ UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
 TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
-    {"folders", "profiles", "ui", "efforts", "linkedin"}
+    {"folders", "profiles", "ui", "efforts", "linkedin", "reddit"}
 )
 
 FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
@@ -81,6 +82,7 @@ class LoadedUserConfig:
     efforts: dict[str, EffortModelOverride] = field(default_factory=dict)
     ui: UiPreferences = field(default_factory=UiPreferences)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
+    reddit: RedditConfig = field(default_factory=RedditConfig)
     sources: tuple[Path, ...] = ()
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -409,6 +411,10 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         linkedin = parse_linkedin_config(data.get("linkedin"), path=path)
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
+    try:
+        reddit = parse_reddit_config(data.get("reddit"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
@@ -416,6 +422,7 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         efforts=efforts,
         ui=ui,
         linkedin=linkedin,
+        reddit=reddit,
         sources=(path,),
     )
 
@@ -447,6 +454,7 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
     # Later file wins for [ui] wholesale (same as sticky values).
     ui = overlay.ui if overlay.sources else base.ui
     linkedin = overlay.linkedin if overlay.sources else base.linkedin
+    reddit = overlay.reddit if overlay.sources else base.reddit
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
@@ -454,6 +462,7 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         efforts=_merge_effort_overrides(base.efforts, overlay.efforts),
         ui=ui,
         linkedin=linkedin,
+        reddit=reddit,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )
 
