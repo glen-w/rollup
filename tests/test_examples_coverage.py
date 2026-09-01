@@ -61,6 +61,8 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("web reindex", "rollup web reindex"),
     ("web settings centre", "/settings"),
     ("web run studio", "/run"),
+    ("web articles queue", "/articles"),
+    ("webpage queue cli", "--no-webpage"),
     ("web config path", "rollup web --config"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),

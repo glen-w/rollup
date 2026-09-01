@@ -9,6 +9,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders. Op
 | Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
 | Window & folders | Rollup run profile / CLI / TOML | Which calendar days and which folders enter the digest |
 | LinkedIn searches | `[linkedin.searches.*]` in TOML + `--linkedin` | Saved **fromMember** content-search URLs; each search is one digest section (`linkedin:<slug>`). Session cookies stay in the environment (`ROLLUP_LINKEDIN_LI_AT`, `ROLLUP_LINKEDIN_JSESSIONID`). Link-post article bodies are fetched by default (`[linkedin].article_fetch`) |
+| Webpage article queue | SQLite `webpage_queue` + `/articles` GUI | One-shot HTTPS article URLs; fetched at digest time into `webpage:queue`; marked ingested after publication. Pass `--no-webpage` to skip. Not stored in TOML |
 | Noisy senders | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface |
 | Summaries | Optional local Ollama or LiteLLM via `--ollama` + `--effort` | Preview excerpts by default; LLM only with `--ollama` |
 

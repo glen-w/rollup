@@ -580,6 +580,55 @@ def _check_full_sample(config: Config) -> list[DoctorCheck]:
     return checks
 
 
+def _check_linkedin_session(config: Config) -> DoctorCheck | None:
+    """Warn when LinkedIn is enabled but session cookies are missing."""
+    if not config.linkedin_enabled or not config.linkedin.enabled:
+        return None
+    if not config.linkedin.searches:
+        return None
+    from rollup.env_file import default_env_file_path, resolve_env_file_paths
+    from rollup.linkedin.session import (
+        JSESSIONID_ENV,
+        LI_AT_ENV,
+        jsession_id_configured,
+        linkedin_cookie_configured,
+    )
+
+    env_path = default_env_file_path()
+    has_file = any(p.expanduser().is_file() for p in resolve_env_file_paths())
+    li_at = linkedin_cookie_configured()
+    jsession = jsession_id_configured()
+    if li_at and jsession:
+        source = f" (from {env_path})" if has_file else ""
+        return DoctorCheck(
+            id="linkedin_session",
+            status="pass",
+            message=f"LinkedIn session cookies configured{source}",
+        )
+    missing: list[str] = []
+    if not li_at:
+        missing.append(LI_AT_ENV)
+    if not jsession:
+        missing.append(JSESSIONID_ENV)
+    fix = (
+        f"Set {', '.join(missing)} in the environment or in "
+        f"{env_path} (chmod 600; never TOML). "
+        "See docs/CONFIG.md#session-cookies-environment-only."
+    )
+    if has_file:
+        fix = (
+            f"Update {env_path} with {', '.join(missing)} "
+            "(refresh both cookies together after 401). "
+            "See docs/CONFIG.md#session-cookies-environment-only."
+        )
+    return DoctorCheck(
+        id="linkedin_session",
+        status="warn",
+        message=f"LinkedIn enabled but missing: {', '.join(missing)}",
+        fix=fix,
+    )
+
+
 def _check_mail_path_discovery(config: Config) -> DoctorCheck:
     """Advise when defaults are missing and Thunderbird discovery finds candidates."""
     from rollup.config import DEFAULT_NEWSLETTER_ROOT
@@ -660,6 +709,10 @@ def run_doctor(
     litellm_check = _check_litellm_config(config)
     if litellm_check:
         checks.append(litellm_check)
+
+    linkedin_check = _check_linkedin_session(config)
+    if linkedin_check:
+        checks.append(linkedin_check)
 
     do_network = network or (not config.no_ollama)
     if do_network:

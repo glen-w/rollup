@@ -196,6 +196,19 @@ git.
 
 They rotate together. If a run returns 401, refresh **both** from the same pane.
 
+**Persistent env file (recommended on your machine):** put the variables in
+`~/.config/rollup/env` (mode `600`). Rollup loads this file at startup and does
+not override variables already set in the shell. Override the path with
+`ROLLUP_ENV_FILE` if needed. Still never commit this file or put cookies in TOML.
+
+```bash
+# ~/.config/rollup/env
+ROLLUP_LINKEDIN_LI_AT=…
+ROLLUP_LINKEDIN_JSESSIONID=ajax:…
+```
+
+One-off shell exports still work:
+
 ```bash
 export ROLLUP_LINKEDIN_LI_AT='…'
 export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
@@ -221,6 +234,10 @@ For launchd/cron, pass the same variables in the job environment (plist
 
 Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
 Settings stores URLs only. How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+
+## Webpage article queue (optional)
+
+One-shot HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs from the web **Articles** page (`/articles`). The next digest fetches pending rows into folder `webpage:queue`, assigns `date_parsed` at ingest time (so lookback cannot drop user-queued items), and marks each row **ingested** only after publication. Failed fetches are retryable from the GUI. Pass `--no-webpage` to skip queue ingest. Caps: 50 fetches per run, 1s backoff, 2MB per page. Message identity is `web:url:<sha256(canonical_url)>`; source key is `web:host:<netloc>`.
 
 ## Run profiles vs effort
 

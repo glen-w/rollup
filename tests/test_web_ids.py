@@ -33,6 +33,15 @@ def test_reject_path_chars():
         validate_source_key("from:a@b.com/../x")
 
 
+def test_webpage_keys():
+    mk = "web:url:" + "a" * 64
+    sk = "web:host:example.com"
+    assert validate_message_key(mk) == mk
+    assert validate_source_key(sk) == sk
+    assert decode_opaque(encode_opaque(mk), kind="message") == mk
+    assert decode_opaque(encode_opaque(sk), kind="source") == sk
+
+
 def test_run_id_uuid():
     rid = "550e8400-e29b-41d4-a716-446655440000"
     assert validate_run_id(rid) == rid

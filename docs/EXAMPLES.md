@@ -171,6 +171,43 @@ For launchd/cron, put the same two variables in the job environment (plist
 If fetch fails, see
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
+## Webpage article queue (opt-in network)
+
+One-shot HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs
+from the web **Articles** page (`/articles`) or enqueue programmatically. The next
+digest fetches pending rows into folder `webpage:queue`, assigns `date_parsed` at
+ingest time (so lookback cannot drop user-queued items), and marks each row
+**ingested** only after publication. Failed fetches stay **failed** for retry.
+Pass `--no-webpage` to skip queue ingest. Reference: [CONFIG.md](CONFIG.md#webpage-article-queue-optional).
+
+### Web UI
+
+```bash
+python -m rollup web --open
+# Articles → add HTTPS URL → Run Studio → run digest
+```
+
+### CLI
+
+Digest with fixture mail plus any pending queue URLs (network fetch for pending rows):
+
+```bash
+python -m rollup digest \
+  --root tests/fixtures/Newsletters.sbd \
+  --mail-root tests/fixtures \
+  --lookback-days 3650 \
+  --no-ollama
+
+python -m rollup digest --no-webpage   # skip webpage queue even when pending rows exist
+python -m rollup digest --folder webpage:queue --no-ollama   # queue only
+```
+
+Mute a noisy site in the source registry:
+
+```bash
+python -m rollup sources disable web:host:example.com
+```
+
 ## Doctor
 
 ```bash

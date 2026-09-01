@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 if TYPE_CHECKING:
     from rollup.linkedin.config import LinkedInSearch
     from rollup.linkedin.fetch import LinkedInClient
+    from rollup.webpage.models import WebpageQueueItem
 
 from rollup.clock import Clock, DEFAULT_CLOCK
 from rollup.config import Config, compute_date_window
@@ -95,6 +96,7 @@ class FilterCounts:
 class DiscoveryResult:
     folders: tuple[MboxFolder, ...]
     linkedin_searches: tuple[LinkedInSearch, ...] = ()
+    webpage_items: tuple[WebpageQueueItem, ...] = ()
     warnings: tuple[StageWarning, ...] = ()
 
 
@@ -213,6 +215,8 @@ class AggregatedResults:
     writer_artifacts: list[Path] = field(default_factory=list)
     mbox_mutation_detected: bool = False
     linkedin_degraded: bool = False
+    webpage_degraded: bool = False
+    webpage_queue_ingest: list[tuple[int, str]] = field(default_factory=list)
     no_input_reason: str | None = None
     messages_included: int = 0
 
@@ -308,6 +312,9 @@ def derive_run_status(
     if aggregated.linkedin_degraded:
         return "partial"
 
+    if aggregated.webpage_degraded:
+        return "partial"
+
     if aggregated.required_writer_failed:
         return "failure"
 
@@ -332,15 +339,16 @@ def evaluate_no_input(
     """Return a hard-failure reason when the run has no usable input, else None."""
     has_mbox = bool(discovery.folders)
     has_linkedin = bool(discovery.linkedin_searches)
+    has_webpage = bool(discovery.webpage_items)
 
-    if folders_include and not has_mbox and not has_linkedin:
+    if folders_include and not has_mbox and not has_linkedin and not has_webpage:
         return (
             "No folders matched explicit include "
             f"({', '.join(folders_include)}); refusing to publish"
         )
-    if not has_mbox and not has_linkedin:
+    if not has_mbox and not has_linkedin and not has_webpage:
         return (
-            "No readable mbox folders or LinkedIn searches configured; "
+            "No readable mbox folders, LinkedIn searches, or webpage queue items; "
             "refusing to publish"
         )
 
@@ -368,11 +376,26 @@ def evaluate_no_input(
                 "refusing to publish"
             )
 
+    if not has_mbox and not has_linkedin and has_webpage and parse.counts.messages_parsed == 0:
+        webpage_failed = any(
+            w.code.startswith("webpage_") and w.code != "webpage_dry_run"
+            for w in parse.warnings
+        )
+        if webpage_failed:
+            return (
+                "Webpage fetch failed and no other input sources; "
+                "refusing to publish"
+            )
+
     return None
 
 
-def stage_discover(config: Config) -> DiscoveryResult:
+def stage_discover(
+    config: Config, *, generated_at: datetime | None = None
+) -> DiscoveryResult:
     from rollup.linkedin.config import filter_linkedin_searches
+    from rollup.webpage.config import MAX_WEBPAGE_FETCHES, WEBPAGE_FOLDER_NAME
+    from rollup.webpage.queue import load_for_digest
 
     folders = list(iter_mbox_files(config.root))
     folders = filter_folders(folders, config.folders_include, config.folders_exclude)
@@ -383,9 +406,38 @@ def stage_discover(config: Config) -> DiscoveryResult:
             folders_include=config.folders_include,
             folders_exclude=config.folders_exclude,
         )
+    webpage_items: tuple[WebpageQueueItem, ...] = ()
+    if config.webpage_enabled:
+        exclude = set(config.folders_exclude)
+        include = set(config.folders_include)
+        webpage_allowed = WEBPAGE_FOLDER_NAME not in exclude and (
+            not include or WEBPAGE_FOLDER_NAME in include
+        )
+        if webpage_allowed:
+            db_path = config.db_path
+            if db_path.is_file():
+                from datetime import timezone
+
+                from rollup.state import connect_db_mutator
+
+                when = generated_at or datetime.now(timezone.utc)
+                window_start, window_end = compute_date_window(
+                    when, config.lookback_days
+                )
+                conn = connect_db_mutator(db_path)
+                try:
+                    webpage_items = load_for_digest(
+                        conn,
+                        window_start=window_start,
+                        window_end=window_end,
+                        fetch_limit=MAX_WEBPAGE_FETCHES,
+                    )
+                finally:
+                    conn.close()
     return DiscoveryResult(
         folders=tuple(folders),
         linkedin_searches=linkedin_searches,
+        webpage_items=webpage_items,
     )
 
 
@@ -599,6 +651,140 @@ def merge_linkedin_parse(
         errors=mbox_parse.errors,
         mutated_folders=mbox_parse.mutated_folders,
         mutation_codes=mbox_parse.mutation_codes,
+    )
+
+
+def stage_parse_webpage(
+    config: Config,
+    items: tuple["WebpageQueueItem", ...],
+    *,
+    dry_run: bool,
+    generated_at: datetime,
+) -> tuple[list[ParsedMessage], list[StageWarning], bool, list[tuple[int, str]]]:
+    """Map webpage queue items to ParsedMessage, fetching only on cache miss."""
+    if not items:
+        return [], [], False, []
+
+    from rollup.error_sanitize import sanitize_provider_message
+    from rollup.parse import compute_content_hash
+    from rollup.state import init_db
+    from rollup.webpage.config import WEBPAGE_FOLDER_NAME
+    from rollup.webpage.fetch import WebpageFetchError, fetch_webpage
+    from rollup.webpage.parse import webpage_to_parsed_message
+    from rollup.webpage.queue import mark_failed, store_fetched
+
+    warnings: list[StageWarning] = []
+    messages: list[ParsedMessage] = []
+    ingest_map: list[tuple[int, str]] = []
+    degraded = False
+
+    conn = init_db(config.db_path)
+    try:
+        for item in items:
+            if item.has_cached_body:
+                msg = webpage_to_parsed_message(
+                    url=item.url,
+                    title=item.fetched_title or None,
+                    body_text=item.body_text or "",
+                    saved_at=item.created_at,
+                    display_title=item.display_title,
+                    max_body_chars=config.max_body_chars,
+                )
+                messages.append(msg)
+                ingest_map.append((item.id, msg.message_key))
+                continue
+
+            if dry_run:
+                warnings.append(
+                    StageWarning(
+                        code="webpage_dry_run",
+                        message=f"Would fetch webpage queue item {item.url}",
+                        folder=WEBPAGE_FOLDER_NAME,
+                    )
+                )
+                continue
+
+            try:
+                result = fetch_webpage(item.url)
+            except WebpageFetchError as exc:
+                degraded = True
+                mark_failed(
+                    conn,
+                    item.id,
+                    error_code=exc.code,
+                    error_message=exc.message,
+                )
+                warnings.append(
+                    StageWarning(
+                        code=exc.code,
+                        message=sanitize_provider_message(exc.message),
+                        folder=WEBPAGE_FOLDER_NAME,
+                    )
+                )
+                logger.warning(
+                    "Webpage fetch failed for %s: %s",
+                    item.url[:80],
+                    sanitize_provider_message(exc.message),
+                )
+                continue
+
+            msg = webpage_to_parsed_message(
+                url=result.url,
+                title=result.title or None,
+                body_text=result.body_text,
+                saved_at=item.created_at,
+                display_title=item.display_title,
+                max_body_chars=config.max_body_chars,
+                extra_warnings=result.warnings,
+            )
+            store_fetched(
+                conn,
+                item.id,
+                title=result.title or None,
+                body_text=result.body_text,
+                content_hash=compute_content_hash(msg.body_text),
+                message_key=msg.message_key,
+                fetched_at=generated_at,
+            )
+            messages.append(msg)
+            ingest_map.append((item.id, msg.message_key))
+            for code in result.warnings:
+                warnings.append(
+                    StageWarning(
+                        code=code,
+                        message=code,
+                        folder=WEBPAGE_FOLDER_NAME,
+                    )
+                )
+    finally:
+        conn.close()
+
+    return messages, warnings, degraded, ingest_map
+
+
+def merge_webpage_parse(
+    parse_result: ParseResult,
+    webpage_messages: list[ParsedMessage],
+    webpage_warnings: list[StageWarning],
+) -> ParseResult:
+    """Combine mbox/LinkedIn and webpage parse results."""
+    if not webpage_messages and not webpage_warnings:
+        return parse_result
+    combined = list(parse_result.messages) + webpage_messages
+    web_seen = len(webpage_messages)
+    return ParseResult(
+        messages=tuple(combined),
+        counts=ParseCounts(
+            messages_seen=parse_result.counts.messages_seen + web_seen,
+            messages_parsed=len(combined),
+            parse_fatal_errors=parse_result.counts.parse_fatal_errors,
+            parse_anomalies=parse_result.counts.parse_anomalies,
+            folders_failed=parse_result.counts.folders_failed,
+        ),
+        warnings=parse_result.warnings + tuple(webpage_warnings),
+        errors=parse_result.errors,
+        mutated_folders=parse_result.mutated_folders,
+        mutation_codes=parse_result.mutation_codes,
     )
 
 
@@ -964,13 +1150,14 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         get_canonical_newsletter_types(),
     )
 
-    discovery = stage_discover(config)
+    discovery = stage_discover(config, generated_at=generated_at)
     aggregated.discovery = discovery
     logger.info(
-        "Digest: root=%s folders=%d linkedin=%d lookback=%dd dry_run=%s no_ollama=%s",
+        "Digest: root=%s folders=%d linkedin=%d webpage=%d lookback=%dd dry_run=%s no_ollama=%s",
         config.root,
         len(discovery.folders),
         len(discovery.linkedin_searches),
+        len(discovery.webpage_items),
         config.lookback_days,
         run_options.dry_run,
         config.no_ollama,
@@ -984,6 +1171,15 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     )
     parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
     aggregated.linkedin_degraded = linkedin_degraded
+    wp_messages, wp_warnings, webpage_degraded, wp_ingest = stage_parse_webpage(
+        config,
+        discovery.webpage_items,
+        dry_run=run_options.dry_run,
+        generated_at=generated_at,
+    )
+    parse_result = merge_webpage_parse(parse_result, wp_messages, wp_warnings)
+    aggregated.webpage_degraded = webpage_degraded
+    aggregated.webpage_queue_ingest = wp_ingest
     aggregated.parse = parse_result
     if parse_result.mutated_folders:
         aggregated.mbox_mutation_detected = True
@@ -1483,6 +1679,39 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                 str(seen_exc),
                 level="error",
             )
+
+        if (
+            aggregated.webpage_queue_ingest
+            and aggregated.dated_outputs_written
+            and summarize_result is not None
+        ):
+            from rollup.webpage.queue import mark_ingested as mark_webpage_ingested
+
+            included_keys = {
+                e.classified.parsed.message_key
+                for e in summarize_result.dated_entries
+            } | {
+                e.classified.parsed.message_key
+                for e in summarize_result.undated_entries
+            }
+            to_mark = [
+                (qid, mk, session.ctx.run_id)
+                for qid, mk in aggregated.webpage_queue_ingest
+                if mk in included_keys
+            ]
+            if to_mark:
+                try:
+                    mark_webpage_ingested(
+                        session.conn, to_mark, ingested_at=generated_at
+                    )
+                except Exception as web_exc:
+                    aggregated.webpage_degraded = True
+                    logger.error("Webpage queue mark-ingested failed: %s", web_exc)
+                    ctx.add_event(
+                        "webpage_queue_ingest_failed",
+                        str(web_exc),
+                        level="error",
+                    )
 
     session.status = derive_run_status(aggregated, dry_run=False)
     if session.manifest_builder is not None:

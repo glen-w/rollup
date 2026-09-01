@@ -232,6 +232,28 @@ def list_linkedin_folder_names(
     return [s.folder_name for s in searches]
 
 
+def list_webpage_folder_names(
+    *,
+    pending_count: int | None = None,
+    item_count: int | None = None,
+    include: tuple[str, ...] | list[str] = (),
+    exclude: tuple[str, ...] | list[str] = (),
+) -> list[str]:
+    """Return webpage:queue when saved/pending items exist and folder filters allow it."""
+    from rollup.webpage.config import WEBPAGE_FOLDER_NAME
+
+    visible = item_count if item_count is not None else (pending_count or 0)
+    if visible <= 0:
+        return []
+    include_set = set(include)
+    exclude_set = set(exclude)
+    if WEBPAGE_FOLDER_NAME in exclude_set:
+        return []
+    if include_set and WEBPAGE_FOLDER_NAME not in include_set:
+        return []
+    return [WEBPAGE_FOLDER_NAME]
+
+
 def count_messages_fast(mbox_path: Path) -> tuple[int | None, str | None]:
     """Count messages without parsing bodies."""
     try:

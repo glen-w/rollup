@@ -16,12 +16,19 @@ from flask import (
     url_for,
 )
 
-from rollup.config import DEFAULT_OLLAMA_URL
+from datetime import datetime, timezone
+
+from rollup.config import DEFAULT_LOOKBACK_DAYS, DEFAULT_OLLAMA_URL, compute_date_window
 from rollup.config_service import (
     build_digest_argv,
     resolve_effective,
 )
-from rollup.discovery import list_flat_mbox_names, list_linkedin_folder_names
+from rollup.discovery import (
+    list_flat_mbox_names,
+    list_linkedin_folder_names,
+    list_webpage_folder_names,
+)
+from rollup.webpage.queue import count_in_window, count_items, count_pending
 from rollup.llm_client import list_ollama_models
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import UserConfigError
@@ -112,6 +119,22 @@ def _with_litellm_model(extra: list[str], sticky: dict) -> list[str]:
     return extra
 
 
+def _webpage_counts(lookback_days: int | None = None) -> tuple[int, int, int]:
+    """Return (pending, saved, in_window)."""
+    from rollup.web.db import require_ro
+
+    try:
+        conn = require_ro()
+        pending = count_pending(conn)
+        saved = count_items(conn)
+        days = lookback_days or DEFAULT_LOOKBACK_DAYS
+        start, end = compute_date_window(datetime.now(timezone.utc), int(days))
+        in_window = count_in_window(conn, window_start=start, window_end=end)
+        return pending, saved, in_window
+    except Exception:
+        return 0, 0, 0
+
+
 def _matched_folders(sticky: dict, linkedin_config=None) -> list[str]:
     root = sticky.get("root") or current_app.config.get("NEWSLETTER_ROOT")
     include = sticky.get("folder") or ()
@@ -124,6 +147,15 @@ def _matched_folders(sticky: dict, linkedin_config=None) -> list[str]:
         linkedin_config, include=include, exclude=exclude
     )
     for name in linkedin:
+        if name not in matched:
+            matched.append(name)
+    pending, saved, _in_window = _webpage_counts()
+    webpage = list_webpage_folder_names(
+        item_count=saved or pending,
+        include=include,
+        exclude=exclude,
+    )
+    for name in webpage:
         if name not in matched:
             matched.append(name)
     return matched
@@ -145,6 +177,8 @@ def run_studio():
             matched_folders=[],
             linkedin_enabled=False,
             linkedin_search_count=0,
+            webpage_pending_count=0,
+            webpage_in_window_count=0,
             cli_command="",
             cron_hint="",
             active=get_active_run(),
@@ -162,6 +196,8 @@ def run_studio():
     argv = build_digest_argv(effective, config_path=_config_path(), dry_run=False)
     cli = "rollup " + " ".join(_shell_quote(a) for a in argv)
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
+    lookback = effective.sticky.get("lookback_days") or DEFAULT_LOOKBACK_DAYS
+    webpage_pending, _saved, webpage_in_window = _webpage_counts(lookback)
     return render_template(
         "run/index.html",
         doc=doc,
@@ -171,6 +207,8 @@ def run_studio():
         matched_folders=matched,
         linkedin_enabled=doc.loaded.linkedin.enabled,
         linkedin_search_count=len(linkedin_searches),
+        webpage_pending_count=webpage_pending,
+        webpage_in_window_count=webpage_in_window,
         cli_command=cli,
         cron_hint=cron,
         active=get_active_run(),
@@ -212,6 +250,8 @@ def run_preview():
     cli = "rollup " + " ".join(_shell_quote(a) for a in argv)
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
+    lookback = effective.sticky.get("lookback_days") or DEFAULT_LOOKBACK_DAYS
+    webpage_pending, _saved, webpage_in_window = _webpage_counts(lookback)
     flash("Effective run updated (not saved to TOML unless you use Settings).")
     return render_template(
         "run/index.html",
@@ -222,6 +262,8 @@ def run_preview():
         matched_folders=matched,
         linkedin_enabled=doc.loaded.linkedin.enabled,
         linkedin_search_count=len(linkedin_searches),
+        webpage_pending_count=webpage_pending,
+        webpage_in_window_count=webpage_in_window,
         cli_command=cli,
         cron_hint=cron,
         active=get_active_run(),

@@ -23,6 +23,8 @@
     <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
     <dt>LinkedIn</dt>
     <dd>{% if linkedin_enabled %}<span class="hint-badge ollama">enabled</span> — {{ linkedin_search_count }} search{{ 'es' if linkedin_search_count != 1 else '' }}{% else %}<span class="hint-badge local">off</span>{% endif %}</dd>
+    <dt>Article queue</dt>
+    <dd>{% if webpage_pending_count %}<span class="hint-badge ollama">{{ webpage_pending_count }} pending</span> — <a href="{{ url_for('articles.articles_index') }}">Manage</a>{% else %}<span class="hint-badge local">empty</span>{% endif %}</dd>
     {% if use_single_model and selected_single_model %}
     <dt>Single model</dt>
     <dd><code>{{ selected_single_model }}</code> <span class="muted">(this run only)</span></dd>

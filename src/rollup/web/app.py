@@ -195,6 +195,7 @@ def create_app(
     from rollup.web.routes.sources import bp as sources_bp
     from rollup.web.routes.settings import bp as settings_bp
     from rollup.web.routes.run import bp as run_bp
+    from rollup.web.routes.articles import bp as articles_bp
 
     app.register_blueprint(rollups_bp)
     app.register_blueprint(sources_bp)
@@ -203,6 +204,7 @@ def create_app(
     app.register_blueprint(admin_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(run_bp)
+    app.register_blueprint(articles_bp)
 
     @app.get("/branding/<name>")
     def branding(name: str):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 13
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -419,6 +419,33 @@ CREATE TABLE IF NOT EXISTS final_review_generations (
 );
 """
 
+WEBPAGE_QUEUE_V12 = """
+CREATE TABLE IF NOT EXISTS webpage_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    url_hash TEXT NOT NULL UNIQUE,
+    display_title TEXT,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'failed', 'ingested')),
+    error_code TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    ingested_at TEXT,
+    ingested_message_key TEXT,
+    ingested_run_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_webpage_queue_status_created
+    ON webpage_queue(status, created_at);
+"""
+
+_V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("fetched_title", "TEXT"),
+    ("body_text", "TEXT"),
+    ("content_hash", "TEXT"),
+    ("fetched_at", "TEXT"),
+)
+_V13_WEBPAGE_COLUMN_NAMES = frozenset(name for name, _typ in _V13_WEBPAGE_COLUMNS)
+
+
 _SUMMARIES_COMPOSITE_PK = (
     "primary key (message_key, content_hash, newsletter_type, model)"
 )
@@ -448,6 +475,7 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "rating_reason_codes",
         "message_rating_reasons",
         "message_reader_bodies",
+        "webpage_queue",
     }
 )
 
@@ -1043,6 +1071,68 @@ def ensure_message_reader_bodies_v10(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_webpage_queue_v12(conn: sqlite3.Connection) -> None:
+    """Schema v12: webpage reading queue."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    if ver >= 12 and "webpage_queue" in _existing_tables(conn):
+        return
+    if ver < 11:
+        ensure_summaries_litellm_v11(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, WEBPAGE_QUEUE_V12)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after webpage_queue v12: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 12)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def ensure_webpage_queue_v13(conn: sqlite3.Connection) -> None:
+    """Schema v13: persist fetched webpage bodies for lookback re-inclusion."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    cols = (
+        _table_columns(conn, "webpage_queue")
+        if "webpage_queue" in _existing_tables(conn)
+        else set()
+    )
+    if ver >= 13 and _V13_WEBPAGE_COLUMN_NAMES.issubset(cols):
+        return
+    if ver < 12:
+        ensure_webpage_queue_v12(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = _table_columns(conn, "webpage_queue")
+        for col, typ in _V13_WEBPAGE_COLUMNS:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE webpage_queue ADD COLUMN {col} {typ}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_webpage_queue_created "
+            "ON webpage_queue(created_at)"
+        )
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after webpage_queue v13: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 13)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -1052,6 +1142,8 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_message_reader_bodies_v9(conn)
     ensure_message_reader_bodies_v10(conn)
     ensure_summaries_litellm_v11(conn)
+    ensure_webpage_queue_v12(conn)
+    ensure_webpage_queue_v13(conn)
     validate_canonical_schema(conn)
 
 

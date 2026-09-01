@@ -6,10 +6,9 @@ import logging
 import time
 from urllib.parse import urlparse
 
-import html2text
 import requests
-from bs4 import BeautifulSoup
 
+from rollup.article_html import extract_article_text_from_html
 from rollup.error_sanitize import sanitize_provider_message
 from rollup.linkedin.models import LinkedInPost
 
@@ -19,9 +18,6 @@ REQUEST_TIMEOUT = 20
 MAX_BYTES = 2_000_000
 MAX_ARTICLE_FETCHES = 50
 BACKOFF_SECONDS = 1.0
-MIN_ARTICLE_CHARS = 200
-MIN_OG_DESCRIPTION_CHARS = 80
-LINKEDIN_HOSTS = frozenset({"linkedin.com", "www.linkedin.com"})
 ARTICLE_SEPARATOR = "\n\n---\n\n"
 
 
@@ -31,49 +27,6 @@ def _is_safe_https_url(url: str) -> bool:
     except ValueError:
         return False
     return parsed.scheme == "https" and bool(parsed.netloc)
-
-
-def extract_article_text_from_html(html: str) -> str:
-    """Best-effort article body from HTML (external blogs, Pulse pages)."""
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript", "iframe", "nav", "footer", "header"]):
-        tag.decompose()
-
-    best = ""
-    for selector in ("article", "main", "[role=main]"):
-        node = soup.select_one(selector)
-        if node is None:
-            continue
-        text = _html_node_to_text(node)
-        if len(text) >= MIN_ARTICLE_CHARS:
-            return text
-        if len(text) > len(best):
-            best = text
-
-    if len(best) >= MIN_ARTICLE_CHARS:
-        return best
-
-    body = soup.body or soup
-    text = _html_node_to_text(body)
-    if len(text) >= MIN_ARTICLE_CHARS:
-        return text
-
-    meta = soup.find("meta", attrs={"property": "og:description"})
-    if meta is not None:
-        content = meta.get("content")
-        if isinstance(content, str) and len(content.strip()) >= MIN_OG_DESCRIPTION_CHARS:
-            return content.strip()
-
-    return text if len(text) >= MIN_ARTICLE_CHARS else ""
-
-
-def _html_node_to_text(node) -> str:
-    converter = html2text.HTML2Text()
-    converter.ignore_links = True
-    converter.ignore_images = True
-    converter.ignore_tables = False
-    converter.body_width = 0
-    return converter.handle(str(node)).strip()
 
 
 def fetch_article_text(url: str, session: requests.Session) -> tuple[str, list[str]]:

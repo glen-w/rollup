@@ -151,6 +151,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable fetching linked article bodies for LinkedIn link posts",
     )
+    webpage_group = dig.add_mutually_exclusive_group()
+    webpage_group.add_argument(
+        "--webpage",
+        action="store_true",
+        help="Enable webpage queue ingest (default when neither flag is passed)",
+    )
+    webpage_group.add_argument(
+        "--no-webpage",
+        action="store_true",
+        help="Skip fetching pending webpage queue URLs",
+    )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",

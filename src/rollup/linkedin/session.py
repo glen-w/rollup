@@ -25,11 +25,16 @@ def jsession_id_configured() -> bool:
 
 
 def normalize_jsession_id(raw: str) -> str:
-    """Strip surrounding quotes from ajax:… values."""
+    """Strip surrounding quotes and common DevTools copy artifacts from ajax:… values."""
     text = raw.strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
-        return text[1:-1]
-    return text
+        text = text[1:-1].strip()
+    # DevTools sometimes copies JSESSIONID as :"ajax:…" or :ajax:…
+    if text.startswith(':"'):
+        text = text[2:]
+    elif text.startswith(":"):
+        text = text[1:]
+    return text.strip().strip('"').strip("'")
 
 
 def voyager_headers(session: requests.Session) -> dict[str, str]:

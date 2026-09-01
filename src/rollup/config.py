@@ -93,6 +93,7 @@ class Config:
     llm_api_base: str | None = None
     no_linkedin: bool = True
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
+    no_webpage: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -107,6 +108,11 @@ class Config:
     def linkedin_enabled(self) -> bool:
         """True when LinkedIn content-search fetch is enabled (--linkedin / [linkedin].enabled)."""
         return not self.no_linkedin
+
+    @property
+    def webpage_enabled(self) -> bool:
+        """True when webpage queue ingest is enabled (default; pass --no-webpage to skip)."""
+        return not self.no_webpage
 
 
 def compute_date_window(

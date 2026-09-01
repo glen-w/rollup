@@ -100,6 +100,13 @@ def _resolve_no_linkedin(args: argparse.Namespace) -> bool:
     return True
 
 
+def _resolve_no_webpage(args: argparse.Namespace) -> bool:
+    """Default is webpage ingest on unless --no-webpage is passed."""
+    if getattr(args, "no_webpage", False):
+        return True
+    return False
+
+
 def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
     loaded = getattr(args, "_loaded_user_config", None)
     linkedin = getattr(loaded, "linkedin", None) or LinkedInConfig()
@@ -274,6 +281,7 @@ def _build_config(
         single_model=single_model,
         no_linkedin=_resolve_no_linkedin(args),
         linkedin=_resolve_linkedin_config(args),
+        no_webpage=_resolve_no_webpage(args),
     )
 
 
@@ -886,6 +894,9 @@ from rollup.cli_parser import build_parser
 
 
 def main(argv: list[str] | None = None) -> None:
+    from rollup.env_file import load_rollup_env
+
+    load_rollup_env()
     raw = list(argv) if argv is not None else sys.argv[1:]
     try:
         config_path, _ = extract_config_path(raw)

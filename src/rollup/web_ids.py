@@ -10,8 +10,8 @@ from typing import Literal
 
 # Keys are mid:/fb:/li:activity: or list:/from:/li:member: — bounded for URL safety.
 MAX_KEY_LEN = 512
-_MESSAGE_KEY_RE = re.compile(r"^(mid|fb|li:activity|li:fb):[^\s/\\]+$")
-_SOURCE_KEY_RE = re.compile(r"^(list|from|li:member):[^\s/\\]+$")
+_MESSAGE_KEY_RE = re.compile(r"^(mid|fb|li:activity|li:fb|web:url):[^\s/\\]+$")
+_SOURCE_KEY_RE = re.compile(r"^(list|from|li:member|web:host):[^\s/\\]+$")
 _PATH_UNSAFE = re.compile(r"[/\\]|\.\.")
 
 

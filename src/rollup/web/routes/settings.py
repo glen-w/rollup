@@ -8,6 +8,7 @@ from flask import (
     Blueprint,
     current_app,
     flash,
+    g,
     redirect,
     render_template,
     request,
@@ -24,7 +25,11 @@ from rollup.config_service import (
     resolve_effective,
     validate_patch,
 )
-from rollup.discovery import list_flat_mbox_names, list_linkedin_folder_names
+from rollup.discovery import (
+    list_flat_mbox_names,
+    list_linkedin_folder_names,
+    list_webpage_folder_names,
+)
 from rollup.web.config import load_web_config_document
 from rollup.effort import (
     EFFORT_NAMES,
@@ -34,6 +39,7 @@ from rollup.effort import (
 )
 from rollup.folder_theme import FolderThemeOverride, folder_slug, theme_for
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
+from rollup.webpage.queue import count_items
 from rollup.output_writers import discover_writers
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import (
@@ -345,7 +351,13 @@ def settings_index():
         include=sticky.get("folder") or (),
         exclude=sticky.get("exclude_folder") or (),
     )
+    webpage_names = list_webpage_folder_names(
+        item_count=count_items(g.db_ro) if doc else 0,
+        include=sticky.get("folder") or (),
+        exclude=sticky.get("exclude_folder") or (),
+    )
     discovered = discovered + [n for n in linkedin_names if n not in discovered]
+    discovered = discovered + [n for n in webpage_names if n not in discovered]
     folder_rows = []
     themes = doc.loaded.folder_themes if doc else {}
     for name in discovered:

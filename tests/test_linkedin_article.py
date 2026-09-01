@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from rollup.article_html import extract_article_text_from_html
 from rollup.linkedin.article import (
     ARTICLE_SEPARATOR,
     enrich_post_with_article,
     enrich_posts_with_articles,
-    extract_article_text_from_html,
     fetch_article_text,
     MAX_ARTICLE_FETCHES,
 )

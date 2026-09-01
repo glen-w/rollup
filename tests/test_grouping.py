@@ -129,6 +129,27 @@ def test_linkedin_folder_entries_stay_standalone() -> None:
     )
 
 
+def test_webpage_folder_entries_stay_standalone() -> None:
+    entries = tuple(
+        _entry(
+            subject=f"Queued article {i}",
+            sender="https://example.com/article",
+            folder="webpage:queue",
+            body="long form article body " * 30,
+            newsletter_type="essay",
+            days_ago=i,
+        )
+        for i in range(3)
+    )
+    result = apply_grouping(entries, (), GroupingConfig(enabled=True, min_group_size=3))
+    groups = [i for i in result.dated_items if isinstance(i, DigestGroup)]
+    assert groups == []
+    assert len(result.dated_items) == 3
+    assert any(
+        d.detail == "webpage_folder=standalone" for d in result.reason_codes
+    )
+
+
 def test_daily_editions_group() -> None:
     entries = tuple(
         _entry(

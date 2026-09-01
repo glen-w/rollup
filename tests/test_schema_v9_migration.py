@@ -21,7 +21,7 @@ from rollup.state import (
 def test_fresh_db_schema_version(tmp_path: Path):
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 11
+    assert get_schema_version(conn) == SCHEMA_VERSION == 12
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()
@@ -43,10 +43,12 @@ def test_v8_to_v9_migration(tmp_path: Path):
     assert get_schema_version(conn) == 9
     ensure_message_reader_bodies_v10(conn)
     assert get_schema_version(conn) == 10
-    from rollup.state import ensure_summaries_litellm_v11
+    from rollup.state import ensure_summaries_litellm_v11, ensure_webpage_queue_v12
 
     ensure_summaries_litellm_v11(conn)
     assert get_schema_version(conn) == 11
+    ensure_webpage_queue_v12(conn)
+    assert get_schema_version(conn) == 12
     cols = {
         row[1]
         for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
@@ -68,9 +70,13 @@ def test_repair_schema_version_without_reader_bodies_table(tmp_path: Path):
     conn.commit()
     conn.close()
     conn = init_db(db)
-    assert get_schema_version(conn) == 11
+    assert get_schema_version(conn) == 12
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
+    ).fetchone()
+    assert row is not None
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='webpage_queue'"
     ).fetchone()
     assert row is not None
     conn.close()

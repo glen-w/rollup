@@ -160,7 +160,7 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
   <section class="card-section">
     <h2>LinkedIn searches</h2>
     <p class="hint-badge ollama">network opt-in</p>
-    <p class="note">Each saved <strong>fromMember</strong> content-search URL becomes a digest section (<code>linkedin:&lt;slug&gt;</code>), like a mailbox folder. Set <code>ROLLUP_LINKEDIN_LI_AT</code> and <code>ROLLUP_LINKEDIN_JSESSIONID</code> in the environment — never stored in TOML. Keyword-only search is not supported yet. See docs/CONFIG.md.</p>
+    <p class="note">Each saved <strong>fromMember</strong> content-search URL becomes a digest section (<code>linkedin:&lt;slug&gt;</code>), like a mailbox folder. Set <code>ROLLUP_LINKEDIN_LI_AT</code> and <code>ROLLUP_LINKEDIN_JSESSIONID</code> in <code>~/.config/rollup/env</code> or the process environment — never stored in TOML. Keyword-only search is not supported yet. See docs/CONFIG.md.</p>
     <label>
       <input type="hidden" name="linkedin_enabled" value="0">
       <input type="checkbox" name="linkedin_enabled" value="1" {% if linkedin.enabled %}checked{% endif %}>

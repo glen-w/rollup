@@ -749,6 +749,32 @@ table.data th {
   font-family: inherit;
   font-size: 0.9rem;
 }
+.article-queue-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.article-queue-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.article-queue-list .inline-form {
+  display: inline;
+  margin: 0;
+}
+.stack-form label {
+  display: block;
+  margin: 0.5rem 0;
+}
+.stack-form input[type="url"],
+.stack-form input[type="text"] {
+  width: 100%;
+  max-width: 40rem;
+}
 .placeholder-card {
   margin-top: 0.5rem;
   padding: 0.75rem 1rem;

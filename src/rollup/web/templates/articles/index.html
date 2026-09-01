@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Articles — Rollup{% endblock %}
+{% block content %}
+<h1>Article queue</h1>
+<p class="note">Add HTTPS article URLs here. The next digest fetches them at runtime (folder <code>webpage:queue</code>), then marks them ingested after publication. Use <a href="{{ url_for('run.run_studio') }}">Run Studio</a> to run a digest. Pass <code>--no-webpage</code> on the CLI to skip the queue.</p>
+
+<section class="card-section">
+  <h2>Add article</h2>
+  <form method="post" action="{{ url_for('articles.articles_add') }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>URL
+      <input type="url" name="url" required placeholder="https://example.com/article">
+    </label>
+    <label>Display title <span class="muted">(optional)</span>
+      <input type="text" name="display_title" maxlength="280" placeholder="Override subject line">
+    </label>
+    <button type="submit" class="primary">Add to queue</button>
+  </form>
+</section>
+
+<section class="card-section">
+  <h2>Pending <span class="hint-badge">{{ pending|length }}</span></h2>
+  {% if pending %}
+  <ul class="article-queue-list">
+    {% for item in pending %}
+    <li>
+      <a href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.display_title or item.url }}</a>
+      <span class="muted">{{ item.url }}</span>
+      <form method="post" action="{{ url_for('articles.articles_remove', item_id=item.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No pending articles.</p>
+  {% endif %}
+</section>
+
+<section class="card-section">
+  <h2>Failed</h2>
+  {% if failed %}
+  <ul class="article-queue-list">
+    {% for item in failed %}
+    <li>
+      <a href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.display_title or item.url }}</a>
+      <span class="muted">{{ item.error_code or 'failed' }}{% if item.error_message %}: {{ item.error_message }}{% endif %}</span>
+      <form method="post" action="{{ url_for('articles.articles_retry', item_id=item.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Retry</button>
+      </form>
+      <form method="post" action="{{ url_for('articles.articles_remove', item_id=item.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No failed fetches.</p>
+  {% endif %}
+</section>
+
+<section class="card-section">
+  <h2>Recently ingested</h2>
+  {% if ingested %}
+  <ul class="article-queue-list">
+    {% for item in ingested %}
+    <li>
+      <a href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.display_title or item.url }}</a>
+      {% if item.ingested_at %}<span class="muted">ingested {{ item.ingested_at|human_datetime }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">Nothing ingested yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

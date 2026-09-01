@@ -11,6 +11,7 @@ This is guidance for contributors, not a commitment calendar.
 - Configuration Centre (`/settings`) and Run Studio (`/run`) on the real TOML + CLI digest path
 - Shared `sticky_flags` registry (sticky ↔ CLI argv/argparse); `cli_parser` extraction; `run_digest` phase helpers
 - Optional LinkedIn `fromMember` folders (`[linkedin]` + `--linkedin`; Voyager `profileUpdatesV2`; session cookies from env; default-on article fetch for link posts)
+- **Webpage article queue** (`/articles` GUI + SQLite `webpage_queue`): add HTTPS URLs; next digest fetches them into `webpage:queue`; `--no-webpage` skips ingest
 
 ## Near-term (product)
 

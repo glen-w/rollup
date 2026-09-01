@@ -10,6 +10,7 @@ from typing import Literal
 
 from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
 from rollup.linkedin.config import LINKEDIN_FOLDER_PREFIX
+from rollup.webpage.config import WEBPAGE_FOLDER_PREFIX
 from rollup.run_options import GroupingConfig
 from rollup.source_identity import normalize_email as normalize_email
 
@@ -167,6 +168,16 @@ def _group_entry_list(
                     reason_code="LONG_FORM_STANDALONE",
                     message_key=parsed.message_key,
                     detail="linkedin_folder=standalone",
+                )
+            )
+            standalone.append(entry)
+            continue
+        if parsed.folder_name.startswith(WEBPAGE_FOLDER_PREFIX):
+            decisions.append(
+                GroupingDecision(
+                    reason_code="LONG_FORM_STANDALONE",
+                    message_key=parsed.message_key,
+                    detail="webpage_folder=standalone",
                 )
             )
             standalone.append(entry)
