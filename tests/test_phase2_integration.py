@@ -26,11 +26,15 @@ def test_cron_digest_writes_manifest_and_latest(tmp_path: Path) -> None:
     logs = tmp_path / "logs"
     mail = FIXTURE_ROOT.parent
     result = _run(
+        "--config",
+        str(PROJECT_ROOT / "tests" / "fixtures" / "empty_config.toml"),
         "digest",
-            "--cron",
-            "--no-ollama",
-            "--no-linkedin",
-            "--no-grouping",
+        "--cron",
+        "--no-ollama",
+        "--no-linkedin",
+        "--no-reddit",
+        "--no-webpage",
+        "--no-grouping",
         "--root",
         str(FIXTURE_ROOT),
         "--mail-root",

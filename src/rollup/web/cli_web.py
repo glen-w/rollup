@@ -51,7 +51,12 @@ def cmd_web(args: argparse.Namespace) -> int:
 
     try:
         assert_safe_write_paths(mail_root, state_dir, output_dir, log_dir)
-        host = validate_bind_host(args.host)
+        host = validate_bind_host(
+            args.host,
+            allow_non_loopback=bool(
+                getattr(args, "allow_non_loopback_bind", False)
+            ),
+        )
     except (SafetyError, BindError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -77,7 +82,12 @@ def cmd_web(args: argparse.Namespace) -> int:
 
     refresh_config_derived(app)
     url = f"http://{host}:{args.port}/"
-    print(f"Rollup web listening on {url} (loopback only)", file=sys.stderr)
+    bind_note = (
+        "port-mapping bind"
+        if getattr(args, "allow_non_loopback_bind", False)
+        else "loopback only"
+    )
+    print(f"Rollup web listening on {url} ({bind_note})", file=sys.stderr)
     if args.open:
         webbrowser.open(url)
     # Local development server only — Ctrl-C stops the process.
@@ -116,6 +126,11 @@ def register_web_parser(sub: argparse._SubParsersAction) -> None:
     )
     web_sub = web.add_subparsers(dest="web_command", required=False)
     web.add_argument("--host", default="127.0.0.1", help="Bind host (loopback only)")
+    web.add_argument(
+        "--allow-non-loopback-bind",
+        action="store_true",
+        help="Allow 0.0.0.0/:: bind for Docker port mapping (Host header stays loopback)",
+    )
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR))
     web.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))

@@ -1,0 +1,7 @@
+# Minimal config for docker-compose.dev.yml fixture smoke tests.
+root = "/data/mail/Newsletters.sbd"
+mail_root = "/data/mail"
+output_dir = "/data/output"
+state_dir = "/data/state"
+log_dir = "/data/logs"
+lookback_days = 3650

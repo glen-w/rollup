@@ -28,11 +28,15 @@ Incremental follow-ups from the post–0.6.3 refactor audit — **behavior-prese
 4. **`render.py` MD/HTML twin paths** — shared structure + thin formatters if a new output surface needs them
 5. ~~Optional rename of `cron_helpers.build_digest_argv`~~ → `build_scheduled_digest_argv` (done; different jobs; do not merge with `config_service.build_digest_argv`)
 
+## Post 1.0
+
+- **Gmail integration** — optional Gmail API (OAuth) backend as an alternative to local mbox; read-only ingest aligned with the [product contract](CONTRACT.md); Thunderbird mbox remains the primary path through 1.0
+
 ## Product non-goals (still)
 
-From [CONTRACT.md](CONTRACT.md) — not planned unless the contract changes:
+From [CONTRACT.md](CONTRACT.md) — not planned for 1.0 unless the contract changes:
 
-- IMAP / Gmail API / Maildir backends
+- IMAP / Maildir backends (Gmail API → post-1.0 above)
 - Thunderbird add-on (XPI)
 - Multi-user or non-loopback web UI
 - Exposing classifier thresholds as user knobs
@@ -52,5 +56,6 @@ From [CONTRACT.md](CONTRACT.md) — not planned unless the contract changes:
 | [CONTRACT.md](CONTRACT.md) | Product shape and publication integrity |
 | [CONFIG.md](CONFIG.md) | TOML, profiles, sticky ↔ CLI |
 | [WEB.md](WEB.md) | Loopback UI surfaces |
+| [DOCKER.md](DOCKER.md) | Optional container setup |
 | [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
 | [CHANGELOG.md](../CHANGELOG.md) | What shipped |

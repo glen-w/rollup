@@ -281,3 +281,10 @@ def test_bind_rejects_wildcard():
         validate_bind_host("::")
     assert validate_bind_host("127.0.0.1") == "127.0.0.1"
     assert validate_bind_host("::1") == "::1"
+
+
+def test_bind_allows_wildcard_when_opt_in():
+    from rollup.web.bind import validate_bind_host
+
+    assert validate_bind_host("0.0.0.0", allow_non_loopback=True) == "0.0.0.0"
+    assert validate_bind_host("::", allow_non_loopback=True) == "::"

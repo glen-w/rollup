@@ -317,5 +317,6 @@ If `root` / `mail_root` are not set in config or CLI:
 - Product contract: [CONTRACT.md](CONTRACT.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Web UI (Settings + Run Studio): [WEB.md](WEB.md)
+- Docker (optional): [DOCKER.md](DOCKER.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)

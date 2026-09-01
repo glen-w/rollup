@@ -19,9 +19,9 @@ source .venv/bin/activate
 ```
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
-Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md). Roadmap: [ROADMAP.md](ROADMAP.md).
+Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md). Roadmap: [ROADMAP.md](ROADMAP.md). Docker: [DOCKER.md](DOCKER.md).
 
-**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML). Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
+**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
 If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
 
@@ -30,6 +30,17 @@ is the normal no-Ollama digest; `--ollama` enables entry LLM summaries;
 `--final-review` runs whole-digest QA and can use Ollama even without `--ollama`;
 `--final-review-mode report` writes advisory QA only, while `apply` applies
 validated summary-only fixes.
+
+## Install
+
+| Method | Command |
+|--------|---------|
+| PyPI (when published) | `pip install rollup` |
+| Git checkout | `pip install .` |
+| Editable + tests | `pip install -e ".[dev,web]"` |
+| Web UI only | `pip install 'rollup[web]'` |
+| uv | `uv sync --extra dev --extra web` |
+| Docker | [DOCKER.md](DOCKER.md) |
 
 ## Inventory
 
@@ -45,7 +56,7 @@ python -m rollup inventory
 
 ## Digest without Ollama (default)
 
-Preview and generate digests with no Ollama server and no network calls (unless LinkedIn is enabled). `--no-ollama` is optional — it is the default when neither `--ollama` nor `--no-ollama` is passed.
+Preview and generate digests with no Ollama server and no network calls (unless LinkedIn, Reddit, or webpage fetch is enabled). `--no-ollama` is optional — it is the default when neither `--ollama` nor `--no-ollama` is passed.
 
 ```bash
 python -m rollup digest
@@ -170,6 +181,55 @@ For launchd/cron, put the same two variables in the job environment (plist
 `EnvironmentVariables`, or a wrapper script). See [CRON.md](CRON.md#environment-variables-linkedin).
 If fetch fails, see
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+
+## Reddit subreddits (opt-in network)
+
+Public RSS feeds (`https://www.reddit.com/r/{sub}/{sort}.rss`) — no Reddit account,
+OAuth app, or environment credentials. Sections land in `reddit:feed` or
+`reddit:<sub>` depending on `layout`. Reference:
+[CONFIG.md](CONFIG.md#reddit-subreddits-optional).
+
+### TOML
+
+```toml
+[reddit]
+enabled = true
+layout = "feed"          # feed | per_source
+sort = "hot"
+
+[reddit.subs.python]
+enabled = true
+
+[reddit.subs.machinelearning]
+enabled = true
+mode = "posts"
+limit = 5
+```
+
+Or use **Configuration Centre → Reddit** (`/reddit`) to add subs, toggle inclusion,
+and set per-sub mode/sort/cap (saved in TOML).
+
+### CLI
+
+Dry-run first (no Reddit HTTP):
+
+```bash
+python -m rollup digest --reddit --dry-run
+```
+
+Then fetch. `--reddit` is required unless `[reddit].enabled = true` in TOML:
+
+```bash
+python -m rollup digest --reddit --lookback-days 7
+python -m rollup digest --reddit --folder reddit:feed
+python -m rollup digest --no-reddit          # mail only, even if TOML enables Reddit
+```
+
+Mute a noisy subreddit:
+
+```bash
+rollup sources disable reddit:sub:python
+```
 
 ## Webpage articles (opt-in network)
 
@@ -537,7 +597,7 @@ rollup sources import --from /tmp/sources.json --state-dir /tmp/rollup-state
 
 ## Local web UI
 
-Browse indexed rollups, rate emails, and review newsletter quality. Binds to **loopback only** (`127.0.0.1` by default). Requires the optional Flask extra.
+Browse indexed rollups, rate emails, and review newsletter quality. Binds to **loopback only** (`127.0.0.1` by default). Pass `--allow-non-loopback-bind` only for Docker port mapping. Requires the optional Flask extra.
 
 Bring-up (install → digest that indexes into state → start the UI):
 
@@ -554,11 +614,31 @@ Variants:
 ```bash
 python -m rollup web
 python -m rollup web --host 127.0.0.1 --port 8765 --open
+python -m rollup web --host 0.0.0.0 --port 8765 --allow-non-loopback-bind   # Docker only
 python -m rollup web --config ~/.config/rollup/config.toml --open
 python -m rollup web reindex --state-dir ./state --output-dir ./output
 ```
 
 See [WEB.md](WEB.md) for security model, Settings / Run Studio, quality score, and backup notes.
+
+## Docker (optional)
+
+Run web + digest in one container while sharing the same config, state, output, and mail paths as native CLI. See [DOCKER.md](DOCKER.md).
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d --build
+open http://localhost:8765
+```
+
+The image binds with `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container; access from the host still uses `http://localhost:8765` (Host-header loopback checks unchanged).
+
+Fixture smoke test without real mail:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+curl -fsS http://127.0.0.1:8765/rollups
+```
 
 ## Benchmark local models
 

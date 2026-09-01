@@ -39,9 +39,11 @@ def is_loopback_host(host: str) -> bool:
     return True
 
 
-def validate_bind_host(host: str) -> str:
+def validate_bind_host(host: str, *, allow_non_loopback: bool = False) -> str:
     text = (host or "").strip()
     if text in {"0.0.0.0", "::", "[::]"}:
+        if allow_non_loopback:
+            return text
         raise BindError(f"refusing non-loopback bind address {text!r}")
     if not is_loopback_host(text):
         raise BindError(

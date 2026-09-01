@@ -67,11 +67,15 @@ def test_digest_dry_run_does_not_modify_fixture_tree() -> None:
 def test_full_digest_write_does_not_modify_fixture_tree(tmp_path: Path) -> None:
     before = _snapshot_tree(FIXTURE_ROOT)
     result = _run(
+        "--config",
+        str(PROJECT_ROOT / "tests" / "fixtures" / "empty_config.toml"),
         "digest",
         "--root",
         str(FIXTURE_ROOT),
         "--no-ollama",
         "--no-linkedin",
+        "--no-reddit",
+        "--no-webpage",
         "--no-grouping",
         "--output-dir",
         str(tmp_path / "output"),

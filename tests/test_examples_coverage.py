@@ -62,8 +62,13 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("web settings centre", "/settings"),
     ("web run studio", "/run"),
     ("web articles queue", "/articles"),
+    ("reddit digest", "--reddit"),
+    ("no reddit", "--no-reddit"),
+    ("reddit config ref", "CONFIG.md#reddit-subreddits"),
     ("webpage queue cli", "--no-webpage"),
     ("web config path", "rollup web --config"),
+    ("docker compose", "docker compose up"),
+    ("docker non-loopback bind", "--allow-non-loopback-bind"),
     ("benchmark script", "scripts/benchmark_ollama_models.py"),
     ("regenerate fixtures", "tests/generate_fixtures.py"),
 )

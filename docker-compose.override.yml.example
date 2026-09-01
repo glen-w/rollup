@@ -1,0 +1,10 @@
+# Copy to docker-compose.override.yml (gitignored) and edit paths if needed.
+services:
+  rollup:
+    volumes:
+      - ${HOME}/.config/rollup/config.toml:/data/config/config.toml
+      - ${HOME}/.config/rollup/env:/data/config/env:ro
+      - ${HOME}/Documents/rollup-outputs:/data/output
+      - ./state:/data/state
+      - ./logs:/data/logs
+      - ${HOME}/email/gmail:/data/mail:ro

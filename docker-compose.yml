@@ -1,0 +1,10 @@
+services:
+  rollup:
+    build: .
+    ports:
+      - "8765:8765"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      ROLLUP_ENV_FILE: /data/config/env

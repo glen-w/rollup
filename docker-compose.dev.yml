@@ -1,0 +1,15 @@
+# Smoke-test profile with synthetic fixtures (no real mail).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  rollup:
+    volumes:
+      - ./tests/fixtures:/data/mail:ro
+      - dev-state:/data/state
+      - dev-output:/data/output
+      - dev-logs:/data/logs
+      - ./docker/dev-config.toml:/data/config/config.toml:ro
+
+volumes:
+  dev-state:
+  dev-output:
+  dev-logs:

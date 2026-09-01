@@ -27,9 +27,25 @@ rollup web --open
 
 Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — see [docs/CONFIG.md](docs/CONFIG.md).
 
-See [docs/WEB.md](docs/WEB.md).
+See [docs/WEB.md](docs/WEB.md). Optional Docker setup: [docs/DOCKER.md](docs/DOCKER.md).
 
-More runnable examples: [docs/EXAMPLES.md](docs/EXAMPLES.md) · product shape: [docs/CONTRACT.md](docs/CONTRACT.md) · roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md)
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Docker) |
+| [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage settings |
+| [docs/WEB.md](docs/WEB.md) | Local web UI (Archive, Settings, Run Studio, Articles, Reddit) |
+| [docs/DOCKER.md](docs/DOCKER.md) | Docker Compose setup sharing host config/state/output |
+| [docs/CRON.md](docs/CRON.md) | launchd / crontab scheduling |
+| [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
+| [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
+| [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Doctor, LinkedIn session, exit codes |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Shipped features and non-goals |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+
+Quick picks: [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md) · [DOCKER](docs/DOCKER.md)
 
 ## Safety guarantee
 
@@ -47,20 +63,24 @@ All output, state, and logs are written outside the mail store.
 
 ## Install
 
-From a built wheel or PyPI (when published):
+| Method | Command |
+|--------|---------|
+| PyPI (when published) | `pip install rollup` |
+| Git checkout | `pip install .` |
+| Editable dev checkout | `pip install -e ".[dev]"` |
+| Web UI (Flask) | `pip install 'rollup[web]'` or `pip install -e '.[web]'` |
+| LiteLLM providers | `pip install 'rollup[llm]'` |
+| EPUB writer | `pip install 'rollup[epub]'` |
+| Dev + web + tests | `pip install -e ".[dev,web]"` |
+| uv (from checkout) | `uv sync --extra dev --extra web` |
+| Docker (web + digest) | [docs/DOCKER.md](docs/DOCKER.md) |
 
-```bash
-pip install rollup
-```
+From a git checkout, activate the venv then run `rollup` (or `python -m rollup`).
 
-From a git checkout:
+For the local browser UI, see [Quick start (digest + web UI)](#quick-start-digest--web-ui) and [docs/WEB.md](docs/WEB.md).
 
-```bash
-pip install .
-```
+For rich EPUB digests (`--output epub`), install the `[epub]` extra (included in `[dev]`).
 
-For the local browser UI (Flask), install the optional web extra: `pip install 'rollup[web]'` or `pip install -e '.[web]'` from a checkout. See [Quick start (digest + web UI)](#quick-start-digest--web-ui) and [docs/WEB.md](docs/WEB.md).
-For rich EPUB digests (`--output epub`), install `pip install 'rollup[epub]'` (or `.[epub]` / `.[dev]` which includes ebooklib).
 ## Development setup
 
 ```bash
@@ -69,7 +89,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls** unless you opt in with `--linkedin` (or `[linkedin].enabled`) or `--ollama`.
+No Ollama server is required. The default `rollup digest` run uses preview excerpts only and makes **no network calls** unless you opt in with `--linkedin` (or `[linkedin].enabled`), `--reddit` (or `[reddit].enabled`), webpage queue fetches, or `--ollama`.
 
 Optional entry-level LLM summarisation requires `--ollama` on the CLI. By default that uses a local Ollama server; with `pip install 'rollup[llm]'` you can set `--llm-provider litellm` and a LiteLLM model string. Final review (`--final-review`) also requires `--ollama` (LLM enablement) and uses `--final-review-provider` independently. The `requests` library ships with Rollup for the Ollama path but is not loaded during default digest runs.
 
@@ -85,6 +105,14 @@ See [docs/WEB.md](docs/WEB.md).
 ## Network policy
 
 **Default digest performs no network calls.** LLM summarisation is off unless you pass `--ollama` (enablement flag; not Ollama-only).
+
+Opt-in **network sources** (each can be enabled in TOML or on the CLI):
+
+| Source | Enable | Credentials |
+|--------|--------|-------------|
+| LinkedIn `fromMember` | `--linkedin` or `[linkedin].enabled` | `ROLLUP_LINKEDIN_*` in `~/.config/rollup/env` (never TOML) |
+| Reddit RSS | `--reddit` or `[reddit].enabled` | None |
+| Webpage articles | default on; `--no-webpage` to skip | None (HTTPS fetch at digest time) |
 
 When `--ollama` is set, Rollup uses the configured provider (`--llm-provider`, default `ollama`):
 
@@ -299,9 +327,15 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
     ```
     See also [docs/CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional).
 
+12. Optional Reddit RSS (no credentials; rate limits apply):
+    ```bash
+    python -m rollup digest --reddit --lookback-days 7
+    ```
+    Configure subs in TOML or **Configuration Centre → Reddit**. See [docs/CONFIG.md](docs/CONFIG.md#reddit-subreddits-optional) and [docs/EXAMPLES.md](docs/EXAMPLES.md#reddit-subreddits-opt-in-network).
+
 ## Configuration
 
-Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.toml`, `./rollup.toml`, or `--config`), run `--profile`, then explicit CLI flags (CLI wins). No `.env` file is required. Full reference: [docs/CONFIG.md](docs/CONFIG.md).
+Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.toml`, `./rollup.toml`, or `--config`), run `--profile`, then explicit CLI flags (CLI wins). LinkedIn cookies live in `~/.config/rollup/env` (or `ROLLUP_ENV_FILE`), never in TOML. Full reference: [docs/CONFIG.md](docs/CONFIG.md).
 
 | Flag | Default | Notes |
 |------|---------|-------|
@@ -317,9 +351,17 @@ Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.to
 | *(digest mode)* | **no Ollama** | Omit both `--ollama` and `--no-ollama` |
 | `--no-ollama` | implicit default | Preview summaries; no LLM network |
 | `--ollama` | off | Opt-in local Ollama summarisation |
+| `--llm-provider` | `ollama` | `ollama` or `litellm` (needs `[llm]` extra for LiteLLM) |
+| `--llm-model` | from effort / profile | Override model for entry summaries |
+| `--single-model` | off | One-shot: force all summary + review models to one tag |
+| `--allow-remote-ollama` | off | Permit non-loopback Ollama / LiteLLM endpoints |
 | `--linkedin` | off (unless TOML `[linkedin].enabled`) | Opt-in LinkedIn `fromMember` fetch; needs `ROLLUP_LINKEDIN_LI_AT` + `ROLLUP_LINKEDIN_JSESSIONID` in the environment ([EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network)) |
 | `--no-linkedin` | implicit default | Disable LinkedIn fetch for this run |
 | `--no-linkedin-article-fetch` | off | Skip fetching linked article bodies (default is to fetch when LinkedIn is on) |
+| `--reddit` | off (unless TOML `[reddit].enabled`) | Opt-in Reddit RSS fetch; no credentials ([CONFIG.md](docs/CONFIG.md#reddit-subreddits-optional)) |
+| `--no-reddit` | implicit default | Disable Reddit fetch for this run |
+| `--webpage` | default on | Include pending webpage queue URLs in digest |
+| `--no-webpage` | off | Skip webpage queue fetch for this run |
 | `--effort` | `balanced` | Machine-power preset: `light` / `balanced` / `high` (models + related defaults) |
 | `--list-efforts` | off | List effort presets and exit |
 | `--summary-profile` | — | **Ollama only:** one profile for all messages |
@@ -344,6 +386,8 @@ Settings come from built-in defaults, optional TOML (`~/.config/rollup/config.to
 | `--grouping-report` | off | Print grouping reason codes |
 | `--xteink` | (see `--output`) | Write XTEINK e-ink Markdown (alias for `--output xteink`; `--x3` still works; replaces default-all) |
 | `--output NAME` | **all writers** | Named writer addon (repeatable; built-ins: `xteink`, `txt`, `json`, `epub`). Pass `none` for Markdown/HTML only |
+
+**Web-only flags** (`rollup web`): `--host`, `--port`, `--open`, `--allow-non-loopback-bind` (Docker port mapping only), `--state-dir`, `--output-dir`, `--mail-root`, `--log-dir`, `--config`. See [docs/WEB.md](docs/WEB.md) and [docs/DOCKER.md](docs/DOCKER.md).
 
 Final review does **not** require `--ollama`. It calls Ollama independently when enabled. Digest content is not mutated in report mode; a short QA summary appears in the collapsed run-details section. See [docs/EXAMPLES.md](docs/EXAMPLES.md#final-review-editorial-qa).
 
@@ -544,8 +588,9 @@ src/rollup/web/                   # optional Flask UI ([web] extra)
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 assets/                           # logo and favicon (also in package)
 docs/EXAMPLES.md                  # runnable command recipes
-docs/CONFIG.md                    # TOML, profiles, sticky ↔ CLI, LinkedIn
+docs/CONFIG.md                    # TOML, profiles, sticky ↔ CLI, LinkedIn / Reddit
 docs/WEB.md                       # local web UI
+docs/DOCKER.md                    # optional Docker Compose setup
 docs/CONTRACT.md                  # product contract + publication integrity
 docs/ROADMAP.md                   # near-term follow-ups and non-goals
 docs/SOURCES.md                   # source registry

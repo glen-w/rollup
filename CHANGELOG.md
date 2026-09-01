@@ -4,10 +4,18 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.8.9 — 2026-09-01
+
 ### Added
 
+- **Docker**: `Dockerfile`, `docker-compose.yml`, gitignored override pattern, and [docs/DOCKER.md](docs/DOCKER.md) for running web + digest in one container with shared host paths.
+- **`rollup web --allow-non-loopback-bind`**: opt-in `0.0.0.0`/`::` bind for Docker port mapping; Host-header loopback checks unchanged.
 - **Reddit subreddits** (`/reddit` GUI + `[reddit]` TOML): public RSS fetch (no credentials); add sub names in GUI; global/per-sub sort, cap, and mode (`summary` → `subreddit_digest` group, `posts` → standalone items); layout `feed` (default) or `per_source`.
 - **LinkedIn TOC layout** (`[linkedin].layout`): `feed` (default), `per_source` (per author), or `per_search` (legacy per saved search).
+
+### Changed
+
+- Documentation pass: install methods table, flags coverage (Reddit/webpage/Docker), and cross-links across README, EXAMPLES, CONFIG, WEB, and ROADMAP.
 
 ## 0.8.7 — 2026-09-01
 
