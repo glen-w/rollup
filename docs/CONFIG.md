@@ -235,9 +235,9 @@ For launchd/cron, pass the same variables in the job environment (plist
 Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
 Settings stores URLs only. How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
-## Webpage article queue (optional)
+## Webpage articles (optional)
 
-One-shot HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs from the web **Articles** page (`/articles`). The next digest fetches pending rows into folder `webpage:queue`, assigns `date_parsed` at ingest time (so lookback cannot drop user-queued items), and marks each row **ingested** only after publication. Failed fetches are retryable from the GUI. Pass `--no-webpage` to skip queue ingest. Caps: 50 fetches per run, 1s backoff, 2MB per page. Message identity is `web:url:<sha256(canonical_url)>`; source key is `web:host:<netloc>`.
+HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs from the web **Articles** page (`/articles`). The next digest fetches pending rows once into folder `webpage:queue` and stores the extracted body. Later runs **reuse that cache** (no refetch) and include an article when it was **saved within the lookback window**, the same date rule as mbox messages. `date_parsed` is the save time (`created_at`). Failed fetches are retryable from the GUI. Pass `--no-webpage` to skip. Caps: 50 fetches per run, 1s backoff, 2MB per page. Message identity is `web:url:<sha256(canonical_url)>`; source key is `web:host:<netloc>`.
 
 ## Run profiles vs effort
 

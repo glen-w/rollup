@@ -418,13 +418,13 @@ def stage_discover(
             if db_path.is_file():
                 from datetime import timezone
 
-                from rollup.state import connect_db_mutator
+                from rollup.state import init_db
 
                 when = generated_at or datetime.now(timezone.utc)
                 window_start, window_end = compute_date_window(
                     when, config.lookback_days
                 )
-                conn = connect_db_mutator(db_path)
+                conn = init_db(db_path)
                 try:
                     webpage_items = load_for_digest(
                         conn,
@@ -666,7 +666,6 @@ def stage_parse_webpage(
         return [], [], False, []
 
     from rollup.error_sanitize import sanitize_provider_message
-    from rollup.parse import compute_content_hash
     from rollup.state import init_db
     from rollup.webpage.config import WEBPAGE_FOLDER_NAME
     from rollup.webpage.fetch import WebpageFetchError, fetch_webpage
@@ -742,7 +741,7 @@ def stage_parse_webpage(
                 item.id,
                 title=result.title or None,
                 body_text=result.body_text,
-                content_hash=compute_content_hash(msg.body_text),
+                content_hash=msg.content_hash,
                 message_key=msg.message_key,
                 fetched_at=generated_at,
             )

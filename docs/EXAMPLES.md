@@ -171,14 +171,14 @@ For launchd/cron, put the same two variables in the job environment (plist
 If fetch fails, see
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
-## Webpage article queue (opt-in network)
+## Webpage articles (opt-in network)
 
-One-shot HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs
+HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs
 from the web **Articles** page (`/articles`) or enqueue programmatically. The next
-digest fetches pending rows into folder `webpage:queue`, assigns `date_parsed` at
-ingest time (so lookback cannot drop user-queued items), and marks each row
-**ingested** only after publication. Failed fetches stay **failed** for retry.
-Pass `--no-webpage` to skip queue ingest. Reference: [CONFIG.md](CONFIG.md#webpage-article-queue-optional).
+digest fetches pending rows once into folder `webpage:queue` and caches the body.
+Later digests reuse that cache and include an article when it was **saved within
+the lookback window** (same rule as email dates). Failed fetches stay **failed**
+for retry. Pass `--no-webpage` to skip. Reference: [CONFIG.md](CONFIG.md#webpage-articles-optional).
 
 ### Web UI
 

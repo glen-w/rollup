@@ -8,7 +8,7 @@ All notable changes to Rollup are documented in this file.
 
 ### Added
 
-- **Webpage article queue**: add HTTPS URLs in the web UI (`/articles`); SQLite `webpage_queue`; digest fetches at runtime into `webpage:queue`; `--no-webpage` skips ingest; SSRF-checked HTTPS fetch with shared HTML extraction.
+- **Webpage articles**: add HTTPS URLs in the web UI (`/articles`); SQLite `webpage_queue`; digest fetches once into `webpage:queue`, caches the body, and includes articles saved within the lookback window (same date rule as mail); `--no-webpage` skips ingest; SSRF-checked HTTPS fetch with shared HTML extraction.
 - **LinkedIn article fetch** (default on): link posts enrich commentary with fetched article HTML (`[linkedin].article_fetch`, `--no-linkedin-article-fetch`). Cookie copy and run: [EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
 - **Persistent LinkedIn env file**: `~/.config/rollup/env` (or `ROLLUP_ENV_FILE`) auto-loaded at CLI startup; doctor warns when LinkedIn is enabled but cookies are missing.
 

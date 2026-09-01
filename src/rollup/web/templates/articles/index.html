@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Articles — Rollup{% endblock %}
 {% block content %}
-<h1>Article queue</h1>
-<p class="note">Add HTTPS article URLs here. The next digest fetches them at runtime (folder <code>webpage:queue</code>), then marks them ingested after publication. Use <a href="{{ url_for('run.run_studio') }}">Run Studio</a> to run a digest. Pass <code>--no-webpage</code> on the CLI to skip the queue.</p>
+<h1>Saved articles</h1>
+<p class="note">Add HTTPS article URLs here. The next digest fetches new pages once (folder <code>webpage:queue</code>) and stores the body. Later digests reuse that cache, like mail in an mbox, and include an article when it was <strong>saved within the lookback window</strong>. Failed fetches are retryable. Pass <code>--no-webpage</code> on the CLI to skip. Use <a href="{{ url_for('run.run_studio') }}">Run Studio</a> to run a digest.</p>
 
 <section class="card-section">
   <h2>Add article</h2>
@@ -14,12 +14,12 @@
     <label>Display title <span class="muted">(optional)</span>
       <input type="text" name="display_title" maxlength="280" placeholder="Override subject line">
     </label>
-    <button type="submit" class="primary">Add to queue</button>
+    <button type="submit" class="primary">Save article</button>
   </form>
 </section>
 
 <section class="card-section">
-  <h2>Pending <span class="hint-badge">{{ pending|length }}</span></h2>
+  <h2>Pending fetch <span class="hint-badge">{{ pending|length }}</span></h2>
   {% if pending %}
   <ul class="article-queue-list">
     {% for item in pending %}
@@ -63,18 +63,22 @@
 </section>
 
 <section class="card-section">
-  <h2>Recently ingested</h2>
+  <h2>Saved <span class="hint-badge">{{ ingested|length }}</span></h2>
   {% if ingested %}
   <ul class="article-queue-list">
     {% for item in ingested %}
     <li>
-      <a href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.display_title or item.url }}</a>
-      {% if item.ingested_at %}<span class="muted">ingested {{ item.ingested_at|human_datetime }}</span>{% endif %}
+      <a href="{{ item.url }}" rel="noopener noreferrer" target="_blank">{{ item.display_title or item.fetched_title or item.url }}</a>
+      <span class="muted">saved {{ item.created_at|human_datetime }}</span>
+      <form method="post" action="{{ url_for('articles.articles_remove', item_id=item.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Remove</button>
+      </form>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="empty">Nothing ingested yet.</p>
+  <p class="empty">No saved articles yet.</p>
   {% endif %}
 </section>
 {% endblock %}

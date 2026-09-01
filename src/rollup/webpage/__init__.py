@@ -1,4 +1,4 @@
-"""Webpage article queue: user-added HTTPS URLs ingested at digest time."""
+"""Webpage articles: user-saved HTTPS URLs fetched once and included by lookback."""
 
 from rollup.webpage.config import WEBPAGE_FOLDER_NAME, WEBPAGE_FOLDER_PREFIX
 from rollup.webpage.models import WebpageQueueItem

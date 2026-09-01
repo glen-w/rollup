@@ -87,7 +87,7 @@ def articles_remove(item_id: int):
     if not removed:
         flash("Queue item not found.")
     else:
-        flash("Removed from queue.")
+        flash("Removed.")
     return redirect(url_for("articles.articles_index"))
 
 

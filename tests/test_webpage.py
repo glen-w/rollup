@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -24,11 +24,14 @@ from rollup.webpage.parse import webpage_to_parsed_message
 from rollup.webpage.queue import (
     count_pending,
     enqueue_url,
+    get_by_id,
     list_by_status,
+    load_for_digest,
     mark_failed,
     mark_ingested,
     remove_item,
     retry_item,
+    store_fetched,
 )
 from rollup.webpage.url import (
     canonicalize_https_url,
@@ -72,14 +75,14 @@ def _minimal_config(tmp_path: Path, **overrides) -> Config:
     return Config(**base)
 
 
-def test_schema_v12_webpage_queue(tmp_path: Path) -> None:
+def test_schema_v13_webpage_body_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 12
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='webpage_queue'"
-    ).fetchone()
-    assert row is not None
+    assert get_schema_version(conn) == SCHEMA_VERSION == 13
+    cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(webpage_queue)").fetchall()
+    }
+    assert {"fetched_title", "body_text", "content_hash", "fetched_at"} <= cols
     conn.close()
 
 
@@ -127,7 +130,8 @@ def test_queue_crud(tmp_path: Path) -> None:
     ingested = list_by_status(conn, "ingested")[0]
     assert ingested.status == "ingested"
     requeued = enqueue_url(conn, "https://example.com/article-one")
-    assert requeued.status == "pending"
+    assert requeued.status == "ingested"
+    assert requeued.id == item.id
     remove_item(conn, requeued.id)
     assert count_pending(conn) == 0
     conn.close()
@@ -141,14 +145,14 @@ def test_extract_title_from_fixture() -> None:
     assert len(body) >= 200
 
 
-def test_webpage_to_parsed_message_uses_ingest_date() -> None:
+def test_webpage_to_parsed_message_uses_save_date() -> None:
     when = datetime(2019, 1, 15, 12, 0, tzinfo=timezone.utc)
     url = "https://example.com/old-essay"
     msg = webpage_to_parsed_message(
         url=url,
         title="Old essay",
         body_text="word " * 50,
-        ingested_at=when,
+        saved_at=when,
         max_body_chars=50_000,
     )
     assert msg.folder_name == WEBPAGE_FOLDER_NAME
@@ -271,3 +275,106 @@ def test_merge_webpage_parse() -> None:
     msg = MagicMock(spec=ParsedMessage)
     merged = merge_webpage_parse(mbox, [msg], [])
     assert len(merged.messages) == 1
+
+
+def _cache_body(conn, item_id: int, *, body: str = "cached article body " * 20) -> None:
+    store_fetched(
+        conn,
+        item_id,
+        title="Cached title",
+        body_text=body,
+        content_hash="hash",
+        message_key="web:url:test",
+        fetched_at=datetime.now(timezone.utc),
+    )
+
+
+def test_load_for_digest_includes_cached_in_window(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "rollup.db")
+    now = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+    for i in range(3):
+        item = enqueue_url(
+            conn,
+            f"https://example.com/article-{i}",
+            now=now,
+        )
+        _cache_body(conn, item.id)
+    from rollup.config import compute_date_window
+
+    start, end = compute_date_window(now, 7)
+    items = load_for_digest(conn, window_start=start, window_end=end, fetch_limit=50)
+    conn.close()
+    assert len(items) == 3
+    assert all(i.has_cached_body for i in items)
+
+
+def test_load_for_digest_skips_cached_outside_window(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "rollup.db")
+    now = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+    old = now - timedelta(days=30)
+    item = enqueue_url(conn, "https://example.com/old", now=old)
+    _cache_body(conn, item.id)
+    from rollup.config import compute_date_window
+
+    start, end = compute_date_window(now, 7)
+    items = load_for_digest(conn, window_start=start, window_end=end, fetch_limit=50)
+    conn.close()
+    assert items == ()
+
+
+def test_stage_discover_loads_cached_in_lookback(tmp_path: Path) -> None:
+    root = tmp_path / "Newsletters.sbd"
+    root.mkdir()
+    state = tmp_path / "state"
+    conn = init_db(state / "rollup.db")
+    now = datetime.now(timezone.utc)
+    for i in range(3):
+        item = enqueue_url(conn, f"https://example.com/cached-{i}", now=now)
+        _cache_body(conn, item.id)
+    conn.close()
+    config = _minimal_config(tmp_path, root=root, state_dir=state, lookback_days=7)
+    discovery = stage_discover(config, generated_at=now)
+    assert len(discovery.webpage_items) == 3
+
+
+def test_stage_parse_webpage_uses_cached_body_without_fetch(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "state" / "rollup.db")
+    item = enqueue_url(conn, "https://example.com/cached")
+    _cache_body(conn, item.id, body="word " * 80)
+    cached = get_by_id(conn, item.id)
+    conn.close()
+    assert cached is not None
+    config = _minimal_config(tmp_path)
+    with patch("rollup.webpage.fetch.fetch_webpage") as fetch:
+        msgs, warnings, degraded, ingest = stage_parse_webpage(
+            config,
+            (cached,),
+            dry_run=False,
+            generated_at=datetime.now(timezone.utc),
+        )
+        fetch.assert_not_called()
+    assert len(msgs) == 1
+    assert msgs[0].date_parsed == cached.created_at
+    assert "word" in msgs[0].body_text
+    assert degraded is False
+    assert ingest == [(cached.id, msgs[0].message_key)]
+    assert warnings == []
+
+
+def test_stage_parse_webpage_dry_run_still_emits_cached(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "state" / "rollup.db")
+    item = enqueue_url(conn, "https://example.com/cached-dry")
+    _cache_body(conn, item.id, body="word " * 80)
+    cached = get_by_id(conn, item.id)
+    conn.close()
+    assert cached is not None
+    config = _minimal_config(tmp_path)
+    msgs, warnings, degraded, ingest = stage_parse_webpage(
+        config,
+        (cached,),
+        dry_run=True,
+        generated_at=datetime.now(timezone.utc),
+    )
+    assert len(msgs) == 1
+    assert warnings == []
+    assert ingest == [(cached.id, msgs[0].message_key)]

@@ -60,7 +60,7 @@ def _config(**kwargs) -> Config:
 
 def test_schema_v11_fresh_has_summaries_litellm(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 12
+    assert get_schema_version(conn) == SCHEMA_VERSION == 13
     cols = {
         row[1] for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
     }
@@ -72,7 +72,7 @@ def test_schema_v11_idempotent(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
     ensure_summaries_litellm_v11(conn)
     ensure_summaries_litellm_v11(conn)
-    assert get_schema_version(conn) == 12
+    assert get_schema_version(conn) == SCHEMA_VERSION
     conn.close()
 
 

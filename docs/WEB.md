@@ -43,13 +43,13 @@ Saves are previewed as an effective-config diff, confirmed with a one-time maint
 
 ## Run Studio (`/run`)
 
-Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, LinkedIn search count when enabled, **article queue pending count**, writers, LLM enablement / provider privacy hints), dry-run discovery, then run a real digest as a **background subprocess** (single in-memory active-run slot — not a scheduler). The result page shows a live progress bar and log tail via polling `GET /run/status`; when the run finishes, the page refreshes to artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`), including `--linkedin` when `[linkedin].enabled` is set. The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
+Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, LinkedIn search count when enabled, **articles in lookback**, writers, LLM enablement / provider privacy hints), dry-run discovery, then run a real digest as a **background subprocess** (single in-memory active-run slot — not a scheduler). The result page shows a live progress bar and log tail via polling `GET /run/status`; when the run finishes, the page refreshes to artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`), including `--linkedin` when `[linkedin].enabled` is set. The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
 
 **Single-model run:** Compose includes a checkbox that forces every summary profile (plus group/fallback and final review) onto one model for that run only (`--single-model`, not sticky). When the LLM provider is Ollama, the dropdown is filled from local tags via `POST /run/ollama-models` (CSRF). GET `/run` never contacts Ollama. If Ollama is unreachable, the control falls back to a text field. LiteLLM uses a text field. Checking the box also enables LLM summaries (`--ollama`).
 
-## Article queue (`/articles`)
+## Article library (`/articles`)
 
-Add HTTPS article URLs for one-shot digest inclusion. Pending URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each page at runtime (folder `webpage:queue`), processes it like other sources, and marks the row **ingested** only after publication. Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip the queue. SSRF checks apply to user-supplied URLs.
+Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each new page at runtime (folder `webpage:queue`), caches the body, and includes the article when it was **saved within the lookback window** (same caching pattern as mail). Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip. SSRF checks apply to user-supplied URLs.
 
 ## Read-only GET contract
 
