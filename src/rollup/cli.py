@@ -300,6 +300,8 @@ def _build_config(
         no_webpage=_resolve_no_webpage(args),
         no_reddit=_resolve_no_reddit(args),
         reddit=_resolve_reddit_config(args),
+        reddit_refresh=getattr(args, "reddit_refresh", False),
+        linkedin_refresh=getattr(args, "linkedin_refresh", False),
     )
 
 

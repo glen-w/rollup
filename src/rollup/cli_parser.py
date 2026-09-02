@@ -173,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable Reddit fetch (default when neither flag is passed)",
     )
+    dig.add_argument(
+        "--reddit-refresh",
+        action="store_true",
+        help="Force fresh Reddit RSS fetch (bypass listing cache for this run)",
+    )
+    dig.add_argument(
+        "--linkedin-refresh",
+        action="store_true",
+        help="Force fresh LinkedIn fetch (bypass listing cache for this run)",
+    )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",

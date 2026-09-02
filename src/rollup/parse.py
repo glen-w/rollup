@@ -16,7 +16,7 @@ import html2text
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 
-from rollup.links import clean_href
+from rollup.links import clean_href, is_http_href
 from rollup.models import LinkItem, ParsedMessage
 from rollup.reader_bodies import normalize_plaintext_layout
 from rollup.source_identity import compute_source_key, normalize_list_id
@@ -278,7 +278,7 @@ def _extract_links_from_html(html: str) -> list[LinkItem]:
         if not href_attr:
             continue
         href = clean_href(str(href_attr).strip())
-        if href.startswith("http"):
+        if is_http_href(href):
             anchor_text = _context_snippet(tag.get_text(" ", strip=True), max_len=80)
             links.append(
                 LinkItem(
@@ -304,6 +304,8 @@ def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[Li
         text = str(node)
         for match in URL_RE.finditer(text):
             href = clean_href(match.group(0))
+            if not is_http_href(href):
+                continue
             links.append(
                 LinkItem(
                     href=href,
@@ -320,8 +322,11 @@ def _extract_raw_urls_from_html_text(html: str, start_index: int = 0) -> list[Li
 
 def _extract_links_from_plain_text(text: str, start_index: int = 0) -> list[LinkItem]:
     links: list[LinkItem] = []
-    for offset, match in enumerate(URL_RE.finditer(text)):
+    offset = 0
+    for match in URL_RE.finditer(text):
         href = clean_href(match.group(0))
+        if not is_http_href(href):
+            continue
         links.append(
             LinkItem(
                 href=href,
@@ -332,6 +337,7 @@ def _extract_links_from_plain_text(text: str, start_index: int = 0) -> list[Link
                 source_index=start_index + offset,
             )
         )
+        offset += 1
     return links
 
 

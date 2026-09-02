@@ -296,6 +296,30 @@ def test_clean_href_strips_trailing_paren_and_bracket() -> None:
     assert clean_href("https://x.com/a]") == "https://x.com/a"
 
 
+def test_clean_href_strips_trailing_bracket_after_host() -> None:
+    """Prose-captured ``]`` on the host used to raise Invalid IPv6 URL."""
+    assert clean_href("https://publicai.network]") == "https://publicai.network"
+    assert clean_href("http://www.blueactionfund.org]") == (
+        "http://www.blueactionfund.org"
+    )
+    assert clean_href("https://sea-lion.ai],") == "https://sea-lion.ai"
+
+
+def test_clean_href_does_not_raise_on_unparseable_ipv6_host() -> None:
+    leftover = "http://[not-an-ipv6"
+    assert clean_href(leftover) == leftover
+
+
+def test_classify_links_skips_unparseable_href() -> None:
+    classified = classify_links(
+        [
+            LinkItem("http://[not-an-ipv6", "Bad", None, 0),
+            LinkItem("https://example.com/ok", "Ok", None, 1),
+        ]
+    )
+    assert [item.href for item in classified] == ["https://example.com/ok"]
+
+
 def test_clean_href_preserves_valid_path_and_extension() -> None:
     assert clean_href("https://x.com/report.pdf") == "https://x.com/report.pdf"
     assert clean_href("https://en.wikipedia.org/wiki/Foo_(bar)") == (

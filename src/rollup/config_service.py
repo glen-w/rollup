@@ -289,6 +289,7 @@ def _linkedin_to_raw(linkedin: LinkedInConfig) -> dict[str, Any]:
         "enabled": linkedin.enabled,
         "article_fetch": linkedin.article_fetch,
         "layout": linkedin.layout,
+        "fetch_ttl_hours": linkedin.fetch_ttl_hours,
     }
     if linkedin.searches:
         searches: dict[str, dict[str, Any]] = {}
@@ -314,6 +315,7 @@ def _reddit_to_raw(reddit: RedditConfig) -> dict[str, Any]:
         "sort": reddit.sort,
         "limit": reddit.limit,
         "mode": reddit.mode,
+        "fetch_ttl_hours": reddit.fetch_ttl_hours,
     }
     if reddit.time_filter:
         body["time_filter"] = reddit.time_filter
@@ -561,6 +563,7 @@ def _apply_patch_to_doc(
         linkedin_table["enabled"] = patch.linkedin.enabled
         linkedin_table["article_fetch"] = patch.linkedin.article_fetch
         linkedin_table["layout"] = patch.linkedin.layout
+        linkedin_table["fetch_ttl_hours"] = patch.linkedin.fetch_ttl_hours
         if patch.linkedin.searches:
             searches_table = tomlkit.table()
             for slug, search in sorted(patch.linkedin.searches.items()):
@@ -588,6 +591,7 @@ def _apply_patch_to_doc(
         reddit_table["sort"] = patch.reddit.sort
         reddit_table["limit"] = patch.reddit.limit
         reddit_table["mode"] = patch.reddit.mode
+        reddit_table["fetch_ttl_hours"] = patch.reddit.fetch_ttl_hours
         if patch.reddit.time_filter:
             reddit_table["time_filter"] = patch.reddit.time_filter
         if patch.reddit.subs:

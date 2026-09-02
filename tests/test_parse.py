@@ -316,6 +316,33 @@ def test_parse_extracts_bare_urls_from_html_text_nodes() -> None:
     assert len(parsed.link_items) == 2
 
 
+def test_parse_trailing_bracket_on_host_is_not_fatal() -> None:
+    """A ``]`` glued onto the host must not drop the whole message."""
+    msg = EmailMessage()
+    msg["Subject"] = "CRYPTO-GRAM"
+    msg["From"] = "schneier@schneier.com"
+    msg["Message-ID"] = "<crypto@example.com>"
+    msg.set_content("See https://publicai.network] for the write-up.")
+    parsed = parse_message(msg, "brainfood", "brainfood", 200_000, 8)
+    assert parsed.subject == "CRYPTO-GRAM"
+    assert "https://publicai.network" in parsed.links
+    assert all("]" not in href for href in parsed.links)
+
+
+def test_parse_unparseable_ipv6_href_skips_link_not_message() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Odd href"
+    msg["From"] = "a@example.com"
+    msg["Message-ID"] = "<odd@example.com>"
+    html = (
+        '<a href="http://[not-an-ipv6">broken</a>'
+        '<a href="https://example.com/ok">ok</a>'
+    )
+    msg.add_alternative(f"<html><body>{html}</body></html>", subtype="html")
+    parsed = parse_message(msg, "t", "t", 200_000, 8)
+    assert parsed.links == ("https://example.com/ok",)
+
+
 def test_parse_error_on_first_message_does_not_abort_folder(tmp_path: Path) -> None:
     import mailbox
     from unittest.mock import patch

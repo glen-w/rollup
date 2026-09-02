@@ -32,6 +32,9 @@
       </select>
     </label>
     <p class="note">Use <strong>per_search</strong> so names like General and BBNJ stay separate in the digest.</p>
+    <label>Listing cache TTL (hours, 0 = always fetch)
+      <input type="number" name="linkedin_fetch_ttl_hours" min="0" max="168" value="{{ linkedin.fetch_ttl_hours }}">
+    </label>
   </details>
 
   <details class="panel" open>

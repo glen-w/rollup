@@ -4,6 +4,10 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Reddit + LinkedIn listing cache** (SQLite schema v15): persist network listings in `rollup.db`; skip RSS/Voyager when `[reddit].fetch_ttl_hours` / `[linkedin].fetch_ttl_hours` (default 24) has not elapsed. `--reddit-refresh` and `--linkedin-refresh` force a live pull for one run. LinkedIn article bodies cache independently by URL. Stale snapshots are reused on fetch failure (`reddit_cache_stale`, `linkedin_cache_stale`). Web UI exposes TTL on `/reddit` and `/linkedin`; Run Studio ETA counts only subs that would hit the network.
+
 ## 0.9.0 — 2026-09-02
 
 ### Added

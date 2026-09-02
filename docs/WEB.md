@@ -56,11 +56,11 @@ Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage
 
 ## LinkedIn (`/linkedin`)
 
-Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, and choose TOC layout (`feed` / `per_source` / `per_search`). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
+Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, choose TOC layout (`feed` / `per_source` / `per_search`), and set `fetch_ttl_hours` (default 24). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
 
 ## Reddit (`/reddit`)
 
-Add public subreddit names, checkbox which subs to roll up, and set global or per-sub sort/cap/mode. Fetches use Reddit's public RSS feeds (no credentials). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for the enabled sub count. Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
+Add public subreddit names, checkbox which subs to roll up, set global or per-sub sort/cap/mode, and set `fetch_ttl_hours` (default 24). Fetches use Reddit's public RSS feeds (no credentials). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for subs that would hit the network (cached subs show **cached**). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
 
 ## Read-only GET contract
 

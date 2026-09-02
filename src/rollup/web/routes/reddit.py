@@ -14,7 +14,10 @@ from rollup.config_service import (
     validate_patch,
 )
 from rollup.reddit.config import RedditConfig, RedditSub, normalize_sub_name
+from rollup.reddit.cache import count_subs_needing_fetch
+from rollup.reddit.config import filter_reddit_subs
 from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
+from rollup.state import connect_db_mutator
 from rollup.web.config import load_web_config_document
 from rollup.web.csrf import validate_csrf_token as csrf_ok
 
@@ -35,11 +38,17 @@ def _reddit_from_form(base: RedditConfig) -> RedditConfig:
     sort = request.form.get("reddit_sort", base.sort)
     mode = request.form.get("reddit_mode", base.mode)
     limit_raw = request.form.get("reddit_limit", str(base.limit)).strip()
+    ttl_raw = request.form.get("reddit_fetch_ttl_hours", str(base.fetch_ttl_hours)).strip()
     try:
         limit = int(limit_raw)
     except ValueError:
         limit = base.limit
     limit = max(1, min(50, limit))
+    try:
+        fetch_ttl_hours = int(ttl_raw)
+    except ValueError:
+        fetch_ttl_hours = base.fetch_ttl_hours
+    fetch_ttl_hours = max(0, min(168, fetch_ttl_hours))
 
     names = request.form.getlist("sub_name")
     mode_overrides = request.form.getlist("sub_mode")
@@ -99,6 +108,7 @@ def _reddit_from_form(base: RedditConfig) -> RedditConfig:
         limit=limit,
         mode=mode,  # type: ignore[arg-type]
         time_filter=base.time_filter,
+        fetch_ttl_hours=fetch_ttl_hours,
         subs=subs,
     )
 
@@ -111,7 +121,35 @@ def reddit_index():
     except Exception:
         reddit = RedditConfig()
     subs_sorted = sorted(reddit.subs.values(), key=lambda s: s.name)
-    enabled_sub_count = sum(1 for s in reddit.subs.values() if s.enabled)
+    enabled_subs = filter_reddit_subs(
+        reddit,
+        folders_include=(),
+        folders_exclude=(),
+    )
+    enabled_sub_count = len(enabled_subs)
+    fetch_count = enabled_sub_count
+    try:
+        from datetime import datetime
+
+        from flask import current_app
+
+        db_path = Path(current_app.config["DB_PATH"])
+        if db_path.is_file():
+            conn = connect_db_mutator(db_path)
+            try:
+                fetch_count = count_subs_needing_fetch(
+                    conn,
+                    enabled_subs,
+                    config=reddit,
+                    lookback_days=7,
+                    ttl_hours=reddit.fetch_ttl_hours,
+                    refresh=False,
+                    now=datetime.now().astimezone(),
+                )
+            finally:
+                conn.close()
+    except Exception:
+        fetch_count = enabled_sub_count
     return render_template(
         "reddit/index.html",
         reddit=reddit,
@@ -120,7 +158,7 @@ def reddit_index():
         modes=REDDIT_MODES,
         layouts=REDDIT_LAYOUTS,
         enabled_sub_count=enabled_sub_count,
-        reddit_fetch_eta=reddit_fetch_eta_phrase(enabled_sub_count),
+        reddit_fetch_eta=reddit_fetch_eta_phrase(fetch_count),
         reddit_backoff_seconds=int(SUB_FETCH_BACKOFF_SECONDS),
     )
 

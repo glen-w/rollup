@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import re
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import ParseResult, parse_qsl, urlencode, urlparse, urlunparse
 
 from rollup.models import ClassifiedLink, LinkCategory, LinkItem, LinkRenderBundle
 
@@ -187,26 +187,54 @@ def clean_anchor_text(text: str | None) -> str | None:
     return cleaned
 
 
+def _try_urlparse(href: str) -> ParseResult | None:
+    """urlparse that returns None for malformed hosts (e.g. ``https://example.com]``)."""
+    try:
+        return urlparse(href)
+    except ValueError:
+        return None
+
+
+def _strip_one_trailing_url_punct(href: str) -> str | None:
+    """Strip one trailing punctuation character, or None if there is nothing to strip."""
+    if not href:
+        return None
+    last = href[-1]
+    if last == ")":
+        if href.count("(") < href.count(")"):
+            return href[:-1]
+        return None
+    if last in TRAILING_URL_PUNCT_CHARS:
+        return href[:-1]
+    return None
+
+
 def clean_href(href: str) -> str:
-    """Strip prose-captured trailing punctuation from a URL without altering encodings."""
+    """Strip prose-captured trailing punctuation from a URL without altering encodings.
+
+    Newsletter prose often captures a closing ``]`` onto the host
+    (``https://example.com]``). urllib then raises ``ValueError: Invalid IPv6 URL``.
+    Treat that as punctuation to strip rather than a fatal parse error.
+    """
     href = href.strip()
     if not href:
         return href
     while href:
-        path = urlparse(href).path
-        if _FILE_EXT_RE.search(path):
+        parsed = _try_urlparse(href)
+        if parsed is not None and _FILE_EXT_RE.search(parsed.path):
             break
-        last = href[-1]
-        if last == ")":
-            if href.count("(") < href.count(")"):
-                href = href[:-1]
-                continue
+        stripped = _strip_one_trailing_url_punct(href)
+        if stripped is None:
             break
-        if last in TRAILING_URL_PUNCT_CHARS:
-            href = href[:-1]
-            continue
-        break
+        href = stripped
     return href
+
+
+def is_http_href(href: str) -> bool:
+    """True when *href* is http(s) and urllib can parse the host."""
+    if not href.startswith("http"):
+        return False
+    return _try_urlparse(href) is not None
 
 
 def is_raw_url_text(text: str | None) -> bool:
@@ -466,6 +494,8 @@ def classify_links(links: list[LinkItem]) -> list[ClassifiedLink]:
     classified: list[ClassifiedLink] = []
     for item in links:
         href = clean_href(item.href)
+        if _try_urlparse(href) is None:
+            continue
         category = classify_link(href, text=item.text, context=item.context)
         classified.append(
             ClassifiedLink(

@@ -33,6 +33,14 @@ def _linkedin_from_form(base: LinkedInConfig) -> LinkedInConfig:
     enabled = "1" in request.form.getlist("linkedin_enabled")
     article_fetch = "1" in request.form.getlist("linkedin_article_fetch")
     layout = request.form.get("linkedin_layout", base.layout)
+    ttl_raw = request.form.get(
+        "linkedin_fetch_ttl_hours", str(base.fetch_ttl_hours)
+    ).strip()
+    try:
+        fetch_ttl_hours = int(ttl_raw)
+    except ValueError:
+        fetch_ttl_hours = base.fetch_ttl_hours
+    fetch_ttl_hours = max(0, min(168, fetch_ttl_hours))
     if layout not in LINKEDIN_LAYOUTS:
         layout = base.layout
 
@@ -110,6 +118,7 @@ def _linkedin_from_form(base: LinkedInConfig) -> LinkedInConfig:
         enabled=enabled,
         article_fetch=article_fetch,
         layout=layout,  # type: ignore[arg-type]
+        fetch_ttl_hours=fetch_ttl_hours,
         searches=searches,
     )
 

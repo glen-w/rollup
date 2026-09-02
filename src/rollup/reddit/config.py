@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from rollup.source_fetch_cache import DEFAULT_FETCH_TTL_HOURS, parse_fetch_ttl_hours
+
 REDDIT_FOLDER_PREFIX = "reddit:"
 REDDIT_FEED_FOLDER = "reddit:feed"
 
@@ -26,7 +28,7 @@ MAX_REDDIT_SUBS = 100
 
 SUB_KEYS = frozenset({"enabled", "mode", "sort", "limit", "display_name", "emoji", "accent", "order"})
 REDDIT_TOP_KEYS = frozenset(
-    {"enabled", "layout", "sort", "limit", "mode", "time_filter", "subs"}
+    {"enabled", "layout", "sort", "limit", "mode", "time_filter", "fetch_ttl_hours", "subs"}
 )
 
 
@@ -62,6 +64,7 @@ class RedditConfig:
     limit: int = DEFAULT_REDDIT_LIMIT
     mode: RedditMode = "summary"
     time_filter: str | None = None
+    fetch_ttl_hours: int = DEFAULT_FETCH_TTL_HOURS
     subs: dict[str, RedditSub] = field(default_factory=dict)
 
 
@@ -159,6 +162,12 @@ def parse_reddit_config(raw: object | None, *, path: Path) -> RedditConfig:
     if time_filter is not None and not isinstance(time_filter, str):
         raise ValueError(f"{path}: [reddit].time_filter must be a string")
 
+    fetch_ttl_hours = parse_fetch_ttl_hours(
+        raw.get("fetch_ttl_hours", DEFAULT_FETCH_TTL_HOURS),
+        path=str(path),
+        context="[reddit].fetch_ttl_hours",
+    )
+
     subs_raw = raw.get("subs")
     subs: dict[str, RedditSub] = {}
     if subs_raw is not None:
@@ -215,6 +224,7 @@ def parse_reddit_config(raw: object | None, *, path: Path) -> RedditConfig:
         limit=limit,
         mode=mode,
         time_filter=time_filter.strip() if time_filter else None,
+        fetch_ttl_hours=fetch_ttl_hours,
         subs=subs,
     )
 

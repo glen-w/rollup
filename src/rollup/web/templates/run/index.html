@@ -24,7 +24,7 @@
     <dt>LinkedIn</dt>
     <dd>{% if linkedin_enabled %}<span class="hint-badge ollama">enabled</span> — {{ linkedin_search_count }} search{{ 'es' if linkedin_search_count != 1 else '' }} — <a href="{{ url_for('linkedin.linkedin_index') }}">Manage</a>{% else %}<span class="hint-badge local">off</span> — <a href="{{ url_for('linkedin.linkedin_index') }}">Manage</a>{% endif %}</dd>
     <dt>Reddit</dt>
-    <dd>{% if reddit_enabled %}<span class="hint-badge ollama">enabled</span> — {{ reddit_sub_count }} sub{{ 's' if reddit_sub_count != 1 else '' }}{% if reddit_fetch_eta %}, {{ reddit_fetch_eta }} fetch{% endif %} — <a href="{{ url_for('reddit.reddit_index') }}">Manage</a>{% else %}<span class="hint-badge local">off</span>{% endif %}</dd>
+    <dd>{% if reddit_enabled %}<span class="hint-badge ollama">enabled</span> — {{ reddit_sub_count }} sub{{ 's' if reddit_sub_count != 1 else '' }}{% if reddit_fetch_eta %}, {% if reddit_fetch_eta == 'cached' %}cached{% else %}{{ reddit_fetch_eta }} fetch{% endif %}{% endif %} — <a href="{{ url_for('reddit.reddit_index') }}">Manage</a>{% else %}<span class="hint-badge local">off</span>{% endif %}</dd>
     <dt>Articles</dt>
     <dd>{% if webpage_in_window_count %}<span class="hint-badge ollama">{{ webpage_in_window_count }} in lookback</span>{% if webpage_pending_count %} · {{ webpage_pending_count }} to fetch{% endif %} — <a href="{{ url_for('articles.articles_index') }}">Manage</a>{% elif webpage_pending_count %}<span class="hint-badge ollama">{{ webpage_pending_count }} to fetch</span> — <a href="{{ url_for('articles.articles_index') }}">Manage</a>{% else %}<span class="hint-badge local">empty</span>{% endif %}</dd>
     {% if use_single_model and selected_single_model %}

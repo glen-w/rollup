@@ -9,6 +9,7 @@ from typing import Literal, Mapping
 
 from rollup.folder_theme import FolderThemeOverride, folder_slug
 from rollup.linkedin.url import validate_content_search_url
+from rollup.source_fetch_cache import DEFAULT_FETCH_TTL_HOURS, parse_fetch_ttl_hours
 
 LINKEDIN_FOLDER_PREFIX = "linkedin:"
 LINKEDIN_FEED_FOLDER = "linkedin:feed"
@@ -17,6 +18,9 @@ LinkedInLayout = Literal["feed", "per_source", "per_search"]
 LINKEDIN_LAYOUTS = frozenset({"feed", "per_source", "per_search"})
 
 SEARCH_KEYS = frozenset({"url", "display_name", "enabled", "emoji", "accent", "order"})
+LINKEDIN_TOP_KEYS = frozenset(
+    {"enabled", "article_fetch", "layout", "fetch_ttl_hours", "searches"}
+)
 MAX_LINKEDIN_SEARCHES = 50
 _SEARCH_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -129,6 +133,7 @@ class LinkedInConfig:
     enabled: bool = False
     article_fetch: bool = True
     layout: LinkedInLayout = "feed"
+    fetch_ttl_hours: int = DEFAULT_FETCH_TTL_HOURS
     searches: dict[str, LinkedInSearch] = field(default_factory=dict)
 
 
@@ -137,6 +142,11 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
         return LinkedInConfig()
     if not isinstance(raw, dict):
         raise ValueError(f"{path}: [linkedin] must be a table")
+
+    unknown = set(raw) - LINKEDIN_TOP_KEYS
+    if unknown:
+        keys = ", ".join(sorted(unknown))
+        raise ValueError(f"{path}: unknown key(s) in [linkedin]: {keys}")
 
     enabled = raw.get("enabled", False)
     if not isinstance(enabled, bool):
@@ -149,6 +159,12 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
     layout = raw.get("layout", "feed")
     if layout not in LINKEDIN_LAYOUTS:
         raise ValueError(f"{path}: [linkedin].layout must be feed, per_source, or per_search")
+
+    fetch_ttl_hours = parse_fetch_ttl_hours(
+        raw.get("fetch_ttl_hours", DEFAULT_FETCH_TTL_HOURS),
+        path=str(path),
+        context="[linkedin].fetch_ttl_hours",
+    )
 
     searches_raw = raw.get("searches")
     searches: dict[str, LinkedInSearch] = {}
@@ -219,6 +235,7 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
         enabled=enabled,
         article_fetch=article_fetch,
         layout=layout,  # type: ignore[arg-type]
+        fetch_ttl_hours=fetch_ttl_hours,
         searches=searches,
     )
 

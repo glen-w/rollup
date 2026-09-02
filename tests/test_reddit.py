@@ -556,12 +556,21 @@ def test_fetch_posts_for_subs_does_not_retry_404(monkeypatch) -> None:
     assert _NotFoundClient.calls == 1
 
 
-def test_schema_v14_reddit_catalog(tmp_path: Path) -> None:
+def test_schema_v15_source_fetch_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 14
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='reddit_sub_catalog'"
-    ).fetchone()
-    assert row is not None
+    assert get_schema_version(conn) == SCHEMA_VERSION == 15
+    for table in (
+        "reddit_posts",
+        "reddit_listing_snapshots",
+        "linkedin_posts",
+        "linkedin_listing_snapshots",
+        "linkedin_article_bodies",
+        "reddit_sub_catalog",
+    ):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        assert row is not None, table
     conn.close()

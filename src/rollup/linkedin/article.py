@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
+from datetime import datetime
 from urllib.parse import urlparse
 
 import requests
@@ -79,11 +81,31 @@ def enrich_post_with_article(
     session: requests.Session,
     *,
     enabled: bool,
+    conn: sqlite3.Connection | None = None,
+    fetched_at: datetime | None = None,
 ) -> tuple[LinkedInPost, tuple[str, ...]]:
     """Append fetched article body to commentary when enabled and URL is present."""
     if not enabled or not post.article_url:
         return post, ()
-    article_text, warnings = fetch_article_text(post.article_url, session)
+    article_text = ""
+    warnings: list[str] = []
+    if conn is not None and post.article_url:
+        from rollup.linkedin.cache import get_article_body, store_article_body
+
+        cached = get_article_body(conn, post.article_url)
+        if cached:
+            article_text = cached
+    if not article_text:
+        article_text, warnings = fetch_article_text(post.article_url, session)
+        if article_text and conn is not None and fetched_at is not None:
+            from rollup.linkedin.cache import store_article_body
+
+            store_article_body(
+                conn,
+                post.article_url,
+                article_text,
+                fetched_at=fetched_at,
+            )
     if not article_text:
         return post, tuple(warnings)
 
@@ -111,6 +133,8 @@ def enrich_posts_with_articles(
     session: requests.Session,
     *,
     enabled: bool,
+    conn: sqlite3.Connection | None = None,
+    fetched_at: datetime | None = None,
 ) -> tuple[list[LinkedInPost], list[tuple[str, ...]]]:
     """Enrich posts with article bodies; cap fetches and apply backoff."""
     if not enabled:
@@ -125,15 +149,25 @@ def enrich_posts_with_articles(
             enriched.append(post)
             per_post_warnings.append(())
             continue
-        if fetch_count >= MAX_ARTICLE_FETCHES:
+        needs_network = True
+        if conn is not None:
+            from rollup.linkedin.cache import get_article_body
+
+            needs_network = get_article_body(conn, post.article_url) is None
+        if needs_network and fetch_count >= MAX_ARTICLE_FETCHES:
             enriched.append(post)
             per_post_warnings.append(("linkedin_article_fetch_cap",))
             continue
-        if fetch_count > 0:
+        if needs_network and fetch_count > 0:
             time.sleep(BACKOFF_SECONDS)
-        fetch_count += 1
+        if needs_network:
+            fetch_count += 1
         new_post, warnings = enrich_post_with_article(
-            post, session, enabled=True
+            post,
+            session,
+            enabled=True,
+            conn=conn,
+            fetched_at=fetched_at,
         )
         enriched.append(new_post)
         per_post_warnings.append(warnings)

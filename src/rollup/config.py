@@ -97,6 +97,8 @@ class Config:
     no_webpage: bool = False
     no_reddit: bool = True
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    reddit_refresh: bool = False
+    linkedin_refresh: bool = False
 
     @property
     def db_path(self) -> Path:

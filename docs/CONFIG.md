@@ -174,6 +174,7 @@ search, company pages, follows, and mentions are not supported yet (see
 [linkedin]
 enabled = true   # opt-in fetch on digest; default false
 article_fetch = true   # fetch linked article bodies for link posts (default on)
+fetch_ttl_hours = 24   # reuse listing/article cache within this window; 0 = always fetch
 layout = "per_search"  # one digest section per named search (also: feed, per_source)
 
 [linkedin.searches.general]
@@ -228,6 +229,7 @@ For launchd/cron, pass the same variables in the job environment (plist
 ### Behaviour
 
 - Enable: `[linkedin].enabled = true` and/or `rollup digest --linkedin`. `--no-linkedin` turns fetch off for that run.
+- Listing cache: `fetch_ttl_hours` (default `24`) skips Voyager when the last listing snapshot is still fresh. `0` always fetches (but still persists). `--linkedin-refresh` bypasses the cache for one run. On fetch failure, a stale snapshot is reused when available (`linkedin_cache_stale`).
 - Article fetch: `[linkedin].article_fetch = true` by default — link posts also fetch the URL from Voyager `ArticleComponent` (external blogs, Pulse). Adds HTTP beyond Voyager; disable with `[linkedin].article_fetch = false` or `--no-linkedin-article-fetch`. Failures leave the commentary teaser and add a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, …); they do not fail the digest.
 - URL must be `https://www.linkedin.com/search/results/content/…` with a `fromMember` facet (author `ACo…` ids). Copy it from LinkedIn after filtering Content search by people.
 - `--folder` / `--exclude-folder` accept `linkedin:general` (or any `linkedin:<slug>`) names like mbox folders.
@@ -253,6 +255,7 @@ Rollup fetches **public RSS feeds** (`https://www.reddit.com/r/{sub}/{sort}.rss`
 ```toml
 [reddit]
 enabled = true
+fetch_ttl_hours = 24   # reuse listing cache within this window; 0 = always fetch
 layout = "feed"          # feed | per_source
 sort = "hot"             # hot | new | top | rising | controversial
 limit = 10
@@ -270,6 +273,7 @@ limit = 5
 ### Behaviour
 
 - Enable: `[reddit].enabled = true` and/or `rollup digest --reddit`. `--no-reddit` turns fetch off for that run.
+- Listing cache: `fetch_ttl_hours` (default `24`) skips RSS when the last listing snapshot is still fresh and large enough for the requested cap. `0` always fetches (but still persists). `--reddit-refresh` bypasses the cache for one run. On fetch failure, a stale snapshot is reused when available (`reddit_cache_stale`).
 - **Reddit** page (`/reddit`): add subreddit names, checkbox which subs to include, per-sub overrides for mode/sort/cap. Selections saved in TOML.
 - `layout = feed`: all posts in `reddit:feed`; summary-mode subs become `subreddit_digest` groups, per-post subs stay standalone.
 - `layout = per_source`: one folder `reddit:<sub>` per enabled sub.

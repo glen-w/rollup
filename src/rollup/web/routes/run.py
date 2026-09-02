@@ -180,10 +180,44 @@ def _reddit_sub_count(reddit_config, sticky: dict) -> int:
     )
 
 
-def _reddit_fetch_eta(sub_count: int) -> str | None:
+def _reddit_fetch_eta(
+    reddit_config,
+    sticky: dict,
+    *,
+    db_path: Path | None = None,
+    lookback_days: int,
+) -> str | None:
+    from datetime import datetime
+
+    from rollup.reddit.cache import count_subs_needing_fetch
+    from rollup.reddit.config import filter_reddit_subs
     from rollup.reddit.fetch import reddit_fetch_eta_phrase
 
-    return reddit_fetch_eta_phrase(sub_count)
+    subs = filter_reddit_subs(
+        reddit_config,
+        folders_include=tuple(sticky.get("folder") or ()),
+        folders_exclude=tuple(sticky.get("exclude_folder") or ()),
+    )
+    fetch_count = len(subs)
+    if db_path is not None and db_path.is_file():
+        from rollup.state import connect_db_mutator
+
+        conn = connect_db_mutator(db_path)
+        try:
+            fetch_count = count_subs_needing_fetch(
+                conn,
+                subs,
+                config=reddit_config,
+                lookback_days=lookback_days,
+                ttl_hours=reddit_config.fetch_ttl_hours,
+                refresh=False,
+                now=datetime.now().astimezone(),
+            )
+        finally:
+            conn.close()
+    if fetch_count == 0 and subs and reddit_config.fetch_ttl_hours > 0:
+        return "cached"
+    return reddit_fetch_eta_phrase(fetch_count)
 
 
 @bp.get("")
@@ -229,6 +263,7 @@ def run_studio():
     cron = f"0 7 * * 1 cd ~ && {cli} --cron"
     lookback = effective.sticky.get("lookback_days") or DEFAULT_LOOKBACK_DAYS
     webpage_pending, _saved, webpage_in_window = _webpage_counts(lookback)
+    db_path = Path(current_app.config["DB_PATH"])
     return render_template(
         "run/index.html",
         doc=doc,
@@ -240,7 +275,12 @@ def run_studio():
         linkedin_search_count=len(linkedin_searches),
         reddit_enabled=doc.loaded.reddit.enabled,
         reddit_sub_count=reddit_sub_count,
-        reddit_fetch_eta=_reddit_fetch_eta(reddit_sub_count),
+        reddit_fetch_eta=_reddit_fetch_eta(
+            doc.loaded.reddit,
+            effective.sticky,
+            db_path=db_path,
+            lookback_days=lookback,
+        ),
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,
@@ -289,6 +329,7 @@ def run_preview():
     profiles = list_run_profiles(toml_profiles=doc.loaded.profiles)
     lookback = effective.sticky.get("lookback_days") or DEFAULT_LOOKBACK_DAYS
     webpage_pending, _saved, webpage_in_window = _webpage_counts(lookback)
+    db_path = Path(current_app.config["DB_PATH"])
     flash("Effective run updated (not saved to TOML unless you use Settings).")
     return render_template(
         "run/index.html",
@@ -301,7 +342,12 @@ def run_preview():
         linkedin_search_count=len(linkedin_searches),
         reddit_enabled=doc.loaded.reddit.enabled,
         reddit_sub_count=reddit_sub_count,
-        reddit_fetch_eta=_reddit_fetch_eta(reddit_sub_count),
+        reddit_fetch_eta=_reddit_fetch_eta(
+            doc.loaded.reddit,
+            effective.sticky,
+            db_path=db_path,
+            lookback_days=lookback,
+        ),
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,

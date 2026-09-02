@@ -551,6 +551,7 @@ def stage_parse_linkedin(
     *,
     dry_run: bool,
     client: "LinkedInClient | None" = None,
+    generated_at: datetime | None = None,
 ) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
     """Fetch LinkedIn searches and map to ParsedMessage. Returns (msgs, warnings, degraded)."""
     if not searches:
@@ -558,6 +559,11 @@ def stage_parse_linkedin(
 
     from rollup.error_sanitize import sanitize_provider_message
     from rollup.linkedin.article import enrich_posts_with_articles
+    from rollup.linkedin.cache import (
+        partition_linkedin_searches,
+        save_listing_snapshot,
+        should_fetch_search,
+    )
     from rollup.linkedin.fetch import LinkedInFetchError, fetch_search_posts
     from rollup.linkedin.parse import linkedin_post_to_parsed_message
     from rollup.linkedin.session import (
@@ -565,10 +571,14 @@ def stage_parse_linkedin(
         build_linkedin_session,
         linkedin_cookie_configured,
     )
+    from rollup.state import init_db
 
     warnings: list[StageWarning] = []
     messages: list[ParsedMessage] = []
     degraded = False
+    when = generated_at or datetime.now().astimezone()
+    ttl_hours = config.linkedin.fetch_ttl_hours
+    refresh = config.linkedin_refresh
     article_session = None
     if config.linkedin.article_fetch:
         try:
@@ -601,58 +611,148 @@ def stage_parse_linkedin(
                     ),
                 )
             )
-        for search in searches:
-            warnings.append(
-                StageWarning(
-                    code="linkedin_dry_run",
-                    message=f"Would fetch LinkedIn search {search.slug}",
-                    folder=search.folder_name,
-                )
+        conn = init_db(config.db_path)
+        try:
+            cached, to_fetch, cache_logs = partition_linkedin_searches(
+                conn,
+                searches,
+                ttl_hours=ttl_hours,
+                refresh=refresh,
+                now=when,
             )
+            for line in cache_logs:
+                logger.info(line)
+            for search in to_fetch:
+                warnings.append(
+                    StageWarning(
+                        code="linkedin_dry_run",
+                        message=f"Would fetch LinkedIn search {search.slug}",
+                        folder=search.folder_name,
+                    )
+                )
+            for slug in cached:
+                warnings.append(
+                    StageWarning(
+                        code="linkedin_dry_run",
+                        message=f"Would reuse cached LinkedIn search {slug}",
+                        folder=f"linkedin:{slug}",
+                    )
+                )
+        finally:
+            conn.close()
         degraded = (not linkedin_cookie_configured()) or (
             needs_voyager and not jsession_id_configured()
         )
         return messages, warnings, degraded
 
-    for search in searches:
-        try:
-            posts = fetch_search_posts(
-                search,
-                lookback_days=config.lookback_days,
-                client=client,
-            )
-            if article_session is not None and config.linkedin.article_fetch:
-                posts, article_warnings = enrich_posts_with_articles(
-                    posts,
-                    article_session,
-                    enabled=True,
+    conn = init_db(config.db_path)
+    try:
+        cached_posts, searches_to_fetch, cache_logs = partition_linkedin_searches(
+            conn,
+            searches,
+            ttl_hours=ttl_hours,
+            refresh=refresh,
+            now=when,
+        )
+        for line in cache_logs:
+            logger.info(line)
+
+        posts_by_search: dict[str, list] = dict(cached_posts)
+        for search in searches_to_fetch:
+            try:
+                posts = fetch_search_posts(
+                    search,
+                    lookback_days=config.lookback_days,
+                    client=client,
                 )
-            else:
-                article_warnings = [() for _ in posts]
-            for post, post_warnings in zip(posts, article_warnings, strict=True):
+                if article_session is not None and config.linkedin.article_fetch:
+                    posts, article_warnings = enrich_posts_with_articles(
+                        posts,
+                        article_session,
+                        enabled=True,
+                        conn=conn,
+                        fetched_at=when,
+                    )
+                else:
+                    article_warnings = [() for _ in posts]
+                save_listing_snapshot(
+                    conn,
+                    search=search,
+                    posts=posts,
+                    fetched_at=when,
+                )
+                posts_by_search[search.slug] = posts
+                for post, post_warnings in zip(posts, article_warnings, strict=True):
+                    messages.append(
+                        linkedin_post_to_parsed_message(
+                            post,
+                            search_slug=search.slug,
+                            max_body_chars=config.max_body_chars,
+                            layout=config.linkedin.layout,
+                            extra_warnings=post_warnings,
+                        )
+                    )
+            except LinkedInFetchError as exc:
+                degraded = True
+                _, snapshot = should_fetch_search(
+                    conn,
+                    search=search,
+                    ttl_hours=ttl_hours,
+                    refresh=True,
+                    now=when,
+                )
+                if snapshot is not None and snapshot.url == search.url:
+                    from rollup.linkedin.cache import load_posts_by_keys
+
+                    stale_posts = load_posts_by_keys(conn, snapshot.post_keys)
+                    posts_by_search[search.slug] = stale_posts
+                    warnings.append(
+                        StageWarning(
+                            code="linkedin_cache_stale",
+                            message=(
+                                f"Using stale LinkedIn cache for {search.slug}: "
+                                f"{sanitize_provider_message(str(exc))}"
+                            ),
+                            folder=search.folder_name,
+                        )
+                    )
+                    for post in stale_posts:
+                        messages.append(
+                            linkedin_post_to_parsed_message(
+                                post,
+                                search_slug=search.slug,
+                                max_body_chars=config.max_body_chars,
+                                layout=config.linkedin.layout,
+                            )
+                        )
+                else:
+                    warnings.append(
+                        StageWarning(
+                            code="linkedin_fetch_failed",
+                            message=sanitize_provider_message(str(exc)),
+                            folder=search.folder_name,
+                        )
+                    )
+                    logger.warning(
+                        "LinkedIn fetch failed for %s: %s",
+                        search.slug,
+                        sanitize_provider_message(str(exc)),
+                    )
+
+        for slug, posts in cached_posts.items():
+            if slug in {s.slug for s in searches_to_fetch}:
+                continue
+            for post in posts:
                 messages.append(
                     linkedin_post_to_parsed_message(
                         post,
-                        search_slug=search.slug,
+                        search_slug=slug,
                         max_body_chars=config.max_body_chars,
                         layout=config.linkedin.layout,
-                        extra_warnings=post_warnings,
                     )
                 )
-        except LinkedInFetchError as exc:
-            degraded = True
-            warnings.append(
-                StageWarning(
-                    code="linkedin_fetch_failed",
-                    message=sanitize_provider_message(str(exc)),
-                    folder=search.folder_name,
-                )
-            )
-            logger.warning(
-                "LinkedIn fetch failed for %s: %s",
-                search.slug,
-                sanitize_provider_message(str(exc)),
-            )
+    finally:
+        conn.close()
 
     return messages, warnings, degraded
 
@@ -670,71 +770,146 @@ def stage_parse_reddit(
         return [], [], False
 
     from rollup.error_sanitize import sanitize_provider_message
-    from rollup.reddit.fetch import fetch_posts_for_subs
+    from rollup.reddit.cache import (
+        count_subs_needing_fetch,
+        fetch_and_cache_reddit_subs,
+        partition_reddit_subs,
+        resolve_stale_sub_posts,
+    )
+    from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
     from rollup.reddit.parse import reddit_post_to_parsed_message
+    from rollup.state import init_db
 
     warnings: list[StageWarning] = []
     messages: list[ParsedMessage] = []
     degraded = False
-
-    if dry_run:
-        from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
-
-        n = len(subs)
-        phrase = reddit_fetch_eta_phrase(n)
-        if phrase:
-            warnings.append(
-                StageWarning(
-                    code="reddit_dry_run",
-                    message=(
-                        f"Would fetch {n} Reddit subs, {phrase} "
-                        f"({int(SUB_FETCH_BACKOFF_SECONDS)}s between subs)"
-                    ),
-                    folder=config.reddit.layout,
-                )
-            )
-        for sub in subs:
-            warnings.append(
-                StageWarning(
-                    code="reddit_dry_run",
-                    message=f"Would fetch r/{sub.name} via public RSS",
-                    folder=config.reddit.layout,
-                )
-            )
-        return messages, warnings, degraded
-
     when = generated_at or datetime.now().astimezone()
     window_start, window_end = compute_date_window(when, config.lookback_days)
+    ttl_hours = config.reddit.fetch_ttl_hours
+    refresh = config.reddit_refresh
 
-    posts_by_sub, fetch_failures = fetch_posts_for_subs(
-        subs,
-        config=config.reddit,
-        lookback_days=config.lookback_days,
-        client=client,
-        window_start=window_start,
-        window_end=window_end,
-    )
-    if fetch_failures:
-        degraded = True
-        for failure in fetch_failures:
-            warnings.append(
-                StageWarning(
-                    code="reddit_fetch_failed",
-                    message=sanitize_provider_message(failure),
+    conn = init_db(config.db_path)
+    try:
+        cached_posts, subs_to_fetch, cache_logs = partition_reddit_subs(
+            conn,
+            subs,
+            config=config.reddit,
+            lookback_days=config.lookback_days,
+            ttl_hours=ttl_hours,
+            refresh=refresh,
+            now=when,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        for line in cache_logs:
+            logger.info(line)
+
+        if dry_run:
+            fetch_count = len(subs_to_fetch)
+            phrase = reddit_fetch_eta_phrase(fetch_count)
+            if phrase:
+                warnings.append(
+                    StageWarning(
+                        code="reddit_dry_run",
+                        message=(
+                            f"Would fetch {fetch_count} Reddit subs, {phrase} "
+                            f"({int(SUB_FETCH_BACKOFF_SECONDS)}s between subs)"
+                        ),
+                        folder=config.reddit.layout,
+                    )
                 )
-            )
-        if not posts_by_sub:
+            elif cached_posts:
+                warnings.append(
+                    StageWarning(
+                        code="reddit_dry_run",
+                        message=(
+                            f"Would reuse cached Reddit listings for "
+                            f"{len(cached_posts)} sub(s)"
+                        ),
+                        folder=config.reddit.layout,
+                    )
+                )
+            for sub in subs_to_fetch:
+                warnings.append(
+                    StageWarning(
+                        code="reddit_dry_run",
+                        message=f"Would fetch r/{sub.name} via public RSS",
+                        folder=config.reddit.layout,
+                    )
+                )
+            for sub_name in cached_posts:
+                if sub_name not in {s.name for s in subs_to_fetch}:
+                    warnings.append(
+                        StageWarning(
+                            code="reddit_dry_run",
+                            message=f"Would reuse cached listing for r/{sub_name}",
+                            folder=config.reddit.layout,
+                        )
+                    )
             return messages, warnings, degraded
 
-    for sub_name, posts in posts_by_sub.items():
-        for post in posts:
-            messages.append(
-                reddit_post_to_parsed_message(
-                    post,
-                    layout=config.reddit.layout,
-                    max_body_chars=config.max_body_chars,
-                )
+        posts_by_sub: dict[str, list] = dict(cached_posts)
+        if subs_to_fetch:
+            fetched, fetch_failures, stale_candidates = fetch_and_cache_reddit_subs(
+                conn,
+                tuple(subs_to_fetch),
+                config=config.reddit,
+                lookback_days=config.lookback_days,
+                window_start=window_start,
+                window_end=window_end,
+                fetched_at=when,
+                client=client,
             )
+            posts_by_sub.update(fetched)
+            stale_by_name = {name: snap for name, snap in stale_candidates}
+            if fetch_failures:
+                degraded = True
+                for failure in fetch_failures:
+                    sub_name = failure.split(":", 1)[0][2:] if failure.startswith("r/") else ""
+                    snapshot = stale_by_name.get(sub_name)
+                    if snapshot is not None:
+                        sub = next((s for s in subs_to_fetch if s.name == sub_name), None)
+                        if sub is not None:
+                            posts_by_sub[sub_name] = resolve_stale_sub_posts(
+                                conn,
+                                sub,
+                                config.reddit,
+                                config.lookback_days,
+                                snapshot,
+                                window_start=window_start,
+                                window_end=window_end,
+                            )
+                            warnings.append(
+                                StageWarning(
+                                    code="reddit_cache_stale",
+                                    message=(
+                                        f"Using stale Reddit cache for r/{sub_name}: "
+                                        f"{sanitize_provider_message(failure)}"
+                                    ),
+                                )
+                            )
+                            continue
+                    warnings.append(
+                        StageWarning(
+                            code="reddit_fetch_failed",
+                            message=sanitize_provider_message(failure),
+                        )
+                    )
+                if not posts_by_sub:
+                    return messages, warnings, degraded
+
+        for sub_name, posts in posts_by_sub.items():
+            for post in posts:
+                messages.append(
+                    reddit_post_to_parsed_message(
+                        post,
+                        layout=config.reddit.layout,
+                        max_body_chars=config.max_body_chars,
+                    )
+                )
+    finally:
+        conn.close()
+
     return messages, warnings, degraded
 
 
@@ -1306,15 +1481,37 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         config.no_ollama,
     )
     if discovery.reddit_subs:
+        from rollup.reddit.cache import count_subs_needing_fetch
         from rollup.reddit.fetch import reddit_fetch_eta_log_line
+        from rollup.state import init_db
 
-        logger.info(
-            "%s",
-            reddit_fetch_eta_log_line(
+        when = generated_at or datetime.now().astimezone()
+        conn = init_db(config.db_path)
+        try:
+            fetch_count = count_subs_needing_fetch(
+                conn,
+                discovery.reddit_subs,
+                config=config.reddit,
+                lookback_days=config.lookback_days,
+                ttl_hours=config.reddit.fetch_ttl_hours,
+                refresh=config.reddit_refresh,
+                now=when,
+            )
+        finally:
+            conn.close()
+        if fetch_count:
+            logger.info(
+                "%s",
+                reddit_fetch_eta_log_line(
+                    fetch_count,
+                    prefix="Reddit fetch estimate",
+                ),
+            )
+        elif config.reddit.fetch_ttl_hours > 0:
+            logger.info(
+                "Reddit fetch estimate: all %d subs served from cache",
                 len(discovery.reddit_subs),
-                prefix="Reddit fetch estimate",
-            ),
-        )
+            )
 
     parse_result = stage_parse(config, discovery.folders)
     rd_messages, rd_warnings, reddit_degraded = stage_parse_reddit(
@@ -1329,6 +1526,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         config,
         discovery.linkedin_searches,
         dry_run=run_options.dry_run,
+        generated_at=generated_at,
     )
     parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
     aggregated.linkedin_degraded = linkedin_degraded

@@ -13,6 +13,11 @@ This is guidance for contributors, not a commitment calendar.
 - Optional LinkedIn `fromMember` folders (`[linkedin]` + `--linkedin`; Voyager `profileUpdatesV2`; session cookies from env; default-on article fetch for link posts; `/linkedin` GUI for named searches)
 - **Webpage articles** (`/articles` GUI + SQLite `webpage_queue`): add HTTPS URLs; digest fetches once into `webpage:queue`, caches the body, and includes pages saved within the lookback window; `--no-webpage` skips ingest
 - **Reddit subreddits** (`/reddit` GUI + `[reddit]` TOML): public RSS fetch (no credentials); add sub names in GUI; per-sub or global sort/cap/mode; `summary` → `subreddit_digest` groups, `posts` → standalone items; shared `feed` / `per_source` layout with LinkedIn
+- **Reddit + LinkedIn listing cache** (`rollup.db` schema v15): persist network listings (and LinkedIn article bodies) in SQLite; skip expensive fetches when `fetch_ttl_hours` (default 24) has not elapsed; `--reddit-refresh` / `--linkedin-refresh` force a live pull
+
+## Standing rule (network sources)
+
+Persist fetched payloads in `rollup.db` and avoid re-calling expensive or rate-limited APIs when a fresh-enough snapshot exists. Webpage articles already followed this pattern; Reddit and LinkedIn now do too.
 
 ## Near-term (product)
 

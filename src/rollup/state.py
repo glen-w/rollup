@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -448,6 +448,62 @@ CREATE INDEX IF NOT EXISTS idx_reddit_sub_catalog_fetched
     ON reddit_sub_catalog(fetched_at);
 """
 
+SOURCE_FETCH_CACHE_V15 = """
+CREATE TABLE IF NOT EXISTS reddit_posts (
+    post_id TEXT PRIMARY KEY,
+    subreddit TEXT NOT NULL,
+    title TEXT NOT NULL,
+    selftext TEXT NOT NULL,
+    author TEXT NOT NULL,
+    permalink TEXT NOT NULL,
+    url TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    num_comments INTEGER NOT NULL,
+    created_at TEXT,
+    over_18 INTEGER NOT NULL DEFAULT 0,
+    is_self INTEGER NOT NULL DEFAULT 1,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reddit_posts_subreddit
+    ON reddit_posts(subreddit);
+CREATE TABLE IF NOT EXISTS reddit_listing_snapshots (
+    subreddit TEXT NOT NULL,
+    sort TEXT NOT NULL,
+    time_filter TEXT NOT NULL DEFAULT '',
+    fetched_at TEXT NOT NULL,
+    post_ids_json TEXT NOT NULL,
+    PRIMARY KEY (subreddit, sort, time_filter)
+);
+CREATE INDEX IF NOT EXISTS idx_reddit_listing_snapshots_fetched
+    ON reddit_listing_snapshots(fetched_at);
+CREATE TABLE IF NOT EXISTS linkedin_posts (
+    message_key TEXT PRIMARY KEY,
+    activity_id TEXT,
+    author_name TEXT NOT NULL,
+    author_member_id TEXT,
+    text TEXT NOT NULL,
+    permalink TEXT NOT NULL,
+    created_at TEXT,
+    article_url TEXT,
+    article_title TEXT,
+    fetched_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS linkedin_listing_snapshots (
+    slug TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    post_keys_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_linkedin_listing_snapshots_fetched
+    ON linkedin_listing_snapshots(fetched_at);
+CREATE TABLE IF NOT EXISTS linkedin_article_bodies (
+    url_hash TEXT PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    body_text TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+"""
+
 _V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fetched_title", "TEXT"),
     ("body_text", "TEXT"),
@@ -488,6 +544,11 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "message_reader_bodies",
         "webpage_queue",
         "reddit_sub_catalog",
+        "reddit_posts",
+        "reddit_listing_snapshots",
+        "linkedin_posts",
+        "linkedin_listing_snapshots",
+        "linkedin_article_bodies",
     }
 )
 
@@ -1170,6 +1231,38 @@ def ensure_reddit_catalog_v14(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_source_fetch_cache_v15(conn: sqlite3.Connection) -> None:
+    """Schema v15: persisted Reddit/LinkedIn listing and article-body caches."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    required = {
+        "reddit_posts",
+        "reddit_listing_snapshots",
+        "linkedin_posts",
+        "linkedin_listing_snapshots",
+        "linkedin_article_bodies",
+    }
+    if ver >= 15 and required.issubset(_existing_tables(conn)):
+        return
+    if ver < 14:
+        ensure_reddit_catalog_v14(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, SOURCE_FETCH_CACHE_V15)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after source fetch cache v15: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 15)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -1182,6 +1275,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_webpage_queue_v12(conn)
     ensure_webpage_queue_v13(conn)
     ensure_reddit_catalog_v14(conn)
+    ensure_source_fetch_cache_v15(conn)
     validate_canonical_schema(conn)
 
 
