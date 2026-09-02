@@ -11,7 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from rollup.addons.offline_text import strip_urls_for_offline, wrap_text
+from rollup.addons.offline_text import (
+    clip_heading,
+    strip_urls_for_offline,
+    wrap_text,
+)
 from rollup.addons.txt.render import atomic_write_txt_digest, render_txt
 from rollup.addons.json.serialize import (
     SCHEMA_VERSION,
@@ -200,6 +204,12 @@ def test_offline_strip_and_wrap() -> None:
     )
     assert strip_urls_for_offline("") == ""
     assert "www." not in strip_urls_for_offline("visit www.example.com please")
+    stripped = strip_urls_for_offline(
+        "Apply through the provided link: <https://example.com/jobs>."
+    )
+    assert "http" not in stripped
+    assert "<" not in stripped
+    assert "Apply through the provided link:" in stripped
     wrapped = wrap_text("word " * 40, 60)
     for line in wrapped.split("\n"):
         if line.strip():
@@ -207,6 +217,30 @@ def test_offline_strip_and_wrap() -> None:
     assert wrap_text("") == ""
     # Preserve blank lines between paragraphs.
     assert wrap_text("a\n\nb", 60) == "a\n\nb"
+
+
+def test_clip_heading_prefers_complete_sentence() -> None:
+    first = (
+        "I am pleased to share that we are recruiting a new colleague "
+        "for our FAO Statistics and Information Team (NFISI)."
+    )
+    rest = (
+        " If you are interested in fisheries and aquaculture data, information "
+        "systems, analytics and global knowledge products, I encourage you to "
+        "take a look at this Fishery Officer position in Rome."
+    )
+    clipped = clip_heading(first + rest, 280)
+    assert clipped == first
+    assert "…" not in clipped
+    assert "Fishery Officer" not in clipped
+
+
+def test_clip_heading_falls_back_to_word_boundary() -> None:
+    text = "word " * 80
+    clipped = clip_heading(text, 80)
+    assert clipped.endswith("…")
+    assert "word" in clipped
+    assert not clipped[:-1].endswith(" ")
 
 
 def test_artifact_paths_include_run_id(tmp_path: Path) -> None:

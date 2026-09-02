@@ -36,6 +36,11 @@ def validate_content_search_url(
             f"{prefix}LinkedIn search URL{ctx} must be a content search "
             f"({CONTENT_SEARCH_PATH})"
         )
+    if not from_member_ids(url.strip()):
+        raise LinkedInUrlError(
+            f"{prefix}LinkedIn search URL{ctx} must include a fromMember= "
+            "facet with ACo… author ids"
+        )
     return url.strip()
 
 

@@ -4,6 +4,20 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.0 — 2026-09-02
+
+### Added
+
+- **Named LinkedIn searches** (`/linkedin` GUI): add multiple `fromMember` URLs with display names; `per_search` layout keeps each name as its own digest section.
+- **Reddit fetch ETA**: CLI and Run Studio log planned wait from the 70s-per-sub backoff (~1 request/minute); Reddit and Run Studio pages show the same estimate. Per-sub progress includes remaining time. HTTP 429s add extra wait beyond the estimate.
+
+### Changed
+
+- **Reddit compact lists**: subject/summary caps raised (280 / 1000) so a complete 3–5 bullet summary survives EPUB, Markdown, HTML, TXT, and Xteink. Roundup lists every post title (no 80-character chop, no “and N more”). Truncation, when it still fires, prefers a full bullet over a mid-sentence ellipsis.
+- **Headings**: LinkedIn, Reddit, and webpage titles clip at a sentence or word boundary instead of a mid-word ellipsis (280-character cap kept).
+- **Offline URL strip**: drop `<https://…>` autolinks so EPUB/TXT summaries do not end on a dangling `<`.
+- **Reddit fetch**: fix subreddit name normalization (`raspberry_pi` no longer becomes `aspberry_pi`); listing transport ladder (optional OAuth JSON → public JSON → www RSS → old.reddit RSS); richer HTTP errors; 404 is not retried; HTML login walls rejected.
+
 ## 0.8.9 — 2026-09-01
 
 ### Added

@@ -30,7 +30,7 @@ from rollup.effort import (
     resolve_effort_name,
     resolve_profile_set,
 )
-from rollup.linkedin.config import LinkedInConfig
+from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.reddit.config import RedditConfig
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
@@ -214,6 +214,7 @@ def _build_config(
     if llm_model is None and single_model:
         llm_model = single_model
 
+    linkedin = _resolve_linkedin_config(args)
     return Config(
         root=Path(args.root).expanduser(),
         mail_root=Path(args.mail_root).expanduser(),
@@ -289,11 +290,13 @@ def _build_config(
         list_efforts=getattr(args, "list_efforts", False),
         run_profile=getattr(args, "profile", None),
         list_profiles=getattr(args, "list_profiles", False),
-        folder_themes=dict(folder_themes or {}),
+        folder_themes=merge_linkedin_folder_themes(
+            dict(folder_themes or {}), linkedin
+        ),
         effort_overrides=effort_overrides,
         single_model=single_model,
         no_linkedin=_resolve_no_linkedin(args),
-        linkedin=_resolve_linkedin_config(args),
+        linkedin=linkedin,
         no_webpage=_resolve_no_webpage(args),
         no_reddit=_resolve_no_reddit(args),
         reddit=_resolve_reddit_config(args),

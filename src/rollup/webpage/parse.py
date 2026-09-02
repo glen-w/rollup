@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from rollup.addons.offline_text import clip_heading
 from rollup.models import LinkItem, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.webpage.config import WEBPAGE_FOLDER_NAME
@@ -15,17 +16,12 @@ _PREVIEW_FULL_MAX = 2000
 
 def _subject(title: str | None, url: str, body: str) -> str:
     if title and title.strip():
-        cleaned = title.strip()
-        if len(cleaned) <= _SUBJECT_MAX:
-            return cleaned
-        return cleaned[: _SUBJECT_MAX - 1] + "…"
+        return clip_heading(title.strip(), _SUBJECT_MAX) or title.strip()
     cleaned = " ".join(body.split())
     if cleaned:
         first = cleaned.split("\n", 1)[0].strip()
         if first:
-            if len(first) <= _SUBJECT_MAX:
-                return first
-            return first[: _SUBJECT_MAX - 1] + "…"
+            return clip_heading(first, _SUBJECT_MAX) or first
     return url
 
 

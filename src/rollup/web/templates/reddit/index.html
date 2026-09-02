@@ -2,7 +2,10 @@
 {% block title %}Reddit — Rollup{% endblock %}
 {% block content %}
 <h1>Reddit</h1>
-<p class="note">Add public subreddits by name for digest inclusion. Rollup fetches posts via Reddit's public RSS feeds — no account or API credentials. Sorts <code>rising</code> and <code>controversial</code> map to <code>hot</code> on RSS. Unauthenticated feeds may be rate-limited (~1 request per minute per sub).</p>
+<p class="note">Add public subreddits by name for digest inclusion. Rollup fetches posts via Reddit's public RSS feeds — no account or API credentials. Sorts <code>rising</code> and <code>controversial</code> map to <code>hot</code> on RSS. Unauthenticated feeds are rate-limited (~1 request per minute per sub); Rollup waits {{ reddit_backoff_seconds }}s between subs.</p>
+{% if reddit_fetch_eta %}
+<p class="note">{{ enabled_sub_count }} enabled sub{{ 's' if enabled_sub_count != 1 else '' }}: <strong>{{ reddit_fetch_eta }}</strong> per digest ({{ reddit_backoff_seconds }}s between subs). HTTP 429 adds extra wait.</p>
+{% endif %}
 
 <form method="post" action="{{ url_for('reddit.reddit_save') }}" class="settings-form stack-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

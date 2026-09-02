@@ -14,6 +14,7 @@ from rollup.config_service import (
     validate_patch,
 )
 from rollup.reddit.config import RedditConfig, RedditSub, normalize_sub_name
+from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
 from rollup.web.config import load_web_config_document
 from rollup.web.csrf import validate_csrf_token as csrf_ok
 
@@ -110,6 +111,7 @@ def reddit_index():
     except Exception:
         reddit = RedditConfig()
     subs_sorted = sorted(reddit.subs.values(), key=lambda s: s.name)
+    enabled_sub_count = sum(1 for s in reddit.subs.values() if s.enabled)
     return render_template(
         "reddit/index.html",
         reddit=reddit,
@@ -117,6 +119,9 @@ def reddit_index():
         sorts=REDDIT_SORTS,
         modes=REDDIT_MODES,
         layouts=REDDIT_LAYOUTS,
+        enabled_sub_count=enabled_sub_count,
+        reddit_fetch_eta=reddit_fetch_eta_phrase(enabled_sub_count),
+        reddit_backoff_seconds=int(SUB_FETCH_BACKOFF_SECONDS),
     )
 
 

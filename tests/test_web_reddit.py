@@ -67,6 +67,7 @@ def test_reddit_index_empty(app) -> None:
     assert b"public RSS" in resp.data
     assert b"Refresh subscriptions" not in resp.data
     assert b"ROLLUP_REDDIT" not in resp.data
+    assert b"70s between subs" in resp.data
 
 
 def test_reddit_save_adds_sub(app) -> None:
@@ -91,6 +92,31 @@ def test_reddit_save_adds_sub(app) -> None:
     assert loaded.reddit.enabled is True
     assert "python" in loaded.reddit.subs
     assert loaded.reddit.subs["python"].enabled is True
+
+
+def test_reddit_index_shows_fetch_estimate(app) -> None:
+    application, cfg = app
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8")
+        + "\n".join(
+            [
+                "",
+                "[reddit]",
+                "enabled = true",
+                "[reddit.subs.python]",
+                "enabled = true",
+                "[reddit.subs.rust]",
+                "enabled = true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    client = application.test_client()
+    resp = client.get("/reddit")
+    assert resp.status_code == 200
+    assert b"about 1 min" in resp.data
+    assert b"2 enabled subs" in resp.data
 
 
 def test_reddit_save_requires_csrf(app) -> None:

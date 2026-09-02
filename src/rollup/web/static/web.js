@@ -79,4 +79,11 @@
 
   document.getElementById("use-single-model")?.addEventListener("change", syncSingleModelFields);
   syncSingleModelFields();
+
+  document.getElementById("linkedin-add-another")?.addEventListener("click", function () {
+    var wrap = document.getElementById("linkedin-add-rows");
+    var tmpl = document.getElementById("linkedin-add-row-template");
+    if (!wrap || !tmpl) return;
+    wrap.appendChild(tmpl.content.cloneNode(true));
+  });
 })();

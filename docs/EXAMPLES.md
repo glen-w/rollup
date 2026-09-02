@@ -89,18 +89,19 @@ Reference: [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 2. Open **Search**, switch the results type to **Content** (not People or Jobs).
 3. Filter by the people you want (`fromMember`). The address bar must contain
    `/search/results/content/` and `fromMember=` with `ACo…` ids.
-4. Copy that URL. Save it in TOML or **Configuration Centre → LinkedIn searches**.
-   Store URLs only — never cookies.
+4. Copy that URL. Save it on the web **LinkedIn** page (`/linkedin`) with a
+   display name, or in TOML. Store URLs only — never cookies.
 
 ```toml
 # ~/.config/rollup/config.toml  (or ./rollup.toml)
 [linkedin]
 enabled = true
 article_fetch = true   # default; set false to skip linked-article HTTP
+layout = "per_search"  # one digest section per named search
 
-[linkedin.searches.watchlist]
+[linkedin.searches.general]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&datePosted=%5B%22past-week%22%5D&fromMember=%5B%22ACoAAAMN5aEBk7L5BGyjHbFsDr40zYqwuSB7tlw%22%2C%22ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg%22%5D"
-display_name = "LinkedIn watchlist"
+display_name = "General"
 enabled = true
 ```
 
@@ -159,14 +160,14 @@ python -m rollup digest --linkedin --dry-run
 Then fetch. `--linkedin` is required unless `[linkedin].enabled = true` in TOML:
 
 ```bash
-python -m rollup digest --linkedin --folder linkedin:watchlist
+python -m rollup digest --linkedin --folder linkedin:general
 python -m rollup digest --linkedin --lookback-days 7
 python -m rollup digest --no-linkedin          # mail only, even if TOML enables LinkedIn
 python -m rollup digest --linkedin --no-linkedin-article-fetch   # posts only, no article HTTP
 ```
 
 A successful fetch logs `Fetching LinkedIn fromMember feed (N authors) via Voyager`.
-Posts land in `linkedin:<slug>` (here `linkedin:watchlist`) as **standalone**
+Posts land in `linkedin:<slug>` (here `linkedin:general`) as **standalone**
 entries (they are not collapsed into notification-stream groups). Link posts
 use the article title as the subject when Voyager exposes one, and append the
 fetched article body after the commentary teaser.
@@ -207,7 +208,8 @@ limit = 5
 ```
 
 Or use **Configuration Centre → Reddit** (`/reddit`) to add subs, toggle inclusion,
-and set per-sub mode/sort/cap (saved in TOML).
+and set per-sub mode/sort/cap (saved in TOML). The Reddit page and Run Studio show
+the estimated fetch wait (70s between subs; ~1 request/minute).
 
 ### CLI
 

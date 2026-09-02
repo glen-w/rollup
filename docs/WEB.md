@@ -40,7 +40,7 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 ## Configuration Centre (`/settings`)
 
-Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers, **LinkedIn content searches** (URLs and article-fetch toggle only — set `ROLLUP_LINKEDIN_LI_AT` and `ROLLUP_LINKEDIN_JSESSIONID` in the process environment; never in TOML), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
+Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers, LinkedIn/Reddit enablement (manage searches and subs on their own pages), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
 
 Saves are previewed as an effective-config diff, confirmed with a one-time maintenance token, validated, backed up, and persisted atomically with optimistic concurrency (revision mismatch → re-preview). Digest settings are **not** stored in SQLite.
 
@@ -54,13 +54,17 @@ Guided digest composer: pick a profile or temporary overrides, inspect the effec
 
 Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each new page at runtime (folder `webpage:queue`), caches the body, and includes the article when it was **saved within the lookback window** (same caching pattern as mail). Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip. SSRF checks apply to user-supplied URLs.
 
+## LinkedIn (`/linkedin`)
+
+Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, and choose TOC layout (`feed` / `per_source` / `per_search`). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
+
 ## Reddit (`/reddit`)
 
-Add public subreddit names, checkbox which subs to roll up, and set global or per-sub sort/cap/mode. Fetches use Reddit's public RSS feeds (no credentials). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count with a Manage link.
+Add public subreddit names, checkbox which subs to roll up, and set global or per-sub sort/cap/mode. Fetches use Reddit's public RSS feeds (no credentials). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for the enabled sub count. Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
 
 ## Read-only GET contract
 
-Every web **GET** (Archive, Quality, Registry, Admin, Settings, Run, Articles, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes.
+Every web **GET** (Archive, Quality, Registry, Admin, Settings, Run, Articles, LinkedIn, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes.
 
 Admin deep diagnostics are **POST-only** (`POST /admin/deep-check` with CSRF). Deep-check opens **no write connection** — mutation routes open a short-lived mutator only after CSRF and form validation.
 

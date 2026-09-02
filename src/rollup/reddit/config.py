@@ -90,8 +90,15 @@ def lookback_to_time_filter(lookback_days: int) -> str:
     return "year"
 
 
+def _strip_subreddit_prefix(name: str) -> str:
+    """Strip a leading ``r/`` prefix only (not arbitrary leading ``r`` characters)."""
+    if name.startswith("r/"):
+        return name[2:]
+    return name
+
+
 def _parse_sub_name(raw: str, *, path: Path, context: str) -> str:
-    name = raw.strip().lower().lstrip("r/")
+    name = _strip_subreddit_prefix(raw.strip().lower())
     if not name or "/" in name:
         raise ValueError(f"{path}: {context} must be a non-empty subreddit name")
     return name
@@ -99,7 +106,7 @@ def _parse_sub_name(raw: str, *, path: Path, context: str) -> str:
 
 def normalize_sub_name(raw: str) -> str | None:
     """Return a normalized subreddit slug or None when invalid."""
-    name = raw.strip().lower().lstrip("r/")
+    name = _strip_subreddit_prefix(raw.strip().lower())
     if not name or "/" in name:
         return None
     return name

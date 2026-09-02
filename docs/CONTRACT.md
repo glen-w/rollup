@@ -8,7 +8,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders. Op
 |-------|--------|----------------|
 | Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
 | Window & folders | Rollup run profile / CLI / TOML | Which calendar days and which folders enter the digest |
-| LinkedIn searches | `[linkedin.searches.*]` in TOML + `--linkedin` | Saved **fromMember** content-search URLs; each search is one digest section (`linkedin:<slug>`). Session cookies stay in the environment (`ROLLUP_LINKEDIN_LI_AT`, `ROLLUP_LINKEDIN_JSESSIONID`). Link-post article bodies are fetched by default (`[linkedin].article_fetch`) |
+| LinkedIn searches | `[linkedin.searches.*]` in TOML + `--linkedin` | Named **fromMember** content-search URLs (`/linkedin` GUI); each search is one digest section (`linkedin:<slug>`) when layout is `per_search`. Session cookies stay in the environment (`ROLLUP_LINKEDIN_LI_AT`, `ROLLUP_LINKEDIN_JSESSIONID`). Link-post article bodies are fetched by default (`[linkedin].article_fetch`) |
 | Reddit subs | `[reddit.subs.*]` in TOML + `--reddit` | Public subreddit names from the `/reddit` GUI; per-sub or global sort/cap/mode (`summary` → `subreddit_digest` group, `posts` → standalone items). Fetched via public RSS (no credentials). Layout `feed` (default) or `per_source` |
 | Webpage articles | SQLite `webpage_queue` + `/articles` GUI | HTTPS article URLs saved by the user; fetched once into `webpage:queue`, then reused from cache. Included when **saved within the lookback window** (same rule as mbox dates). Pass `--no-webpage` to skip. Not stored in TOML |
 | Noisy senders | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface |

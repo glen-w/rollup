@@ -136,3 +136,18 @@ rollup digest --linkedin
 - **Dry-run / Settings GET:** never contacts LinkedIn.
 - **Link-post still a short teaser:** article fetch is on by default. Confirm `[linkedin].article_fetch` is not `false` and you did not pass `--no-linkedin-article-fetch`. Voyager must expose `ArticleComponent` (`content.navigationContext.actionTarget`). Job posts and posts without a link card stay commentary-only. A failed article GET leaves the teaser and sets a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, `linkedin_article_url_invalid`); it does not fail the digest.
 - **How to copy cookies:** [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
+
+### Reddit fetch failed (429 / missing sub)
+
+Rollup fetches public subreddit listings via a transport ladder: **OAuth JSON** (when env credentials are set) → **public JSON** → **www RSS** → **old.reddit RSS**. Unauthenticated feeds are often rate-limited (~1 request per minute per IP).
+
+```bash
+rollup digest --reddit --lookback-days 7
+```
+
+- **429 / empty body:** rate limited or bot wall — wait and retry. Mail-only digests may still publish as **partial** (exit 2). Rollup retries 429s once per sub across the ladder, then retries failed subs once more after a longer backoff. The CLI prints a planned wait (`70s` between subs) at fetch start and remaining time per sub; HTTP 429s add extra wait beyond that estimate.
+- **404:** subreddit does not exist or name is wrong — not retried. Check `/reddit` or `[reddit.subs.*]` in TOML.
+- **Subs whose names start with `r`:** older builds mangled names like `raspberry_pi` → `aspberry_pi` (bad `lstrip("r/")`). Upgrade fixes this; if TOML has `[reddit.subs.aspberry_pi]`, rename to `raspberry_pi`.
+- **Optional OAuth (script app):** set in the environment (never TOML): `ROLLUP_REDDIT_CLIENT_ID`, `ROLLUP_REDDIT_CLIENT_SECRET`, `ROLLUP_REDDIT_USERNAME`, `ROLLUP_REDDIT_PASSWORD`. When all four are set, Rollup uses `oauth.reddit.com` JSON first.
+- **Reddit-only run (`--folder reddit:feed` and no mbox):** fetch failure is **exit 1**, not partial.
+- **Dry-run / Settings GET:** never contacts Reddit.

@@ -40,7 +40,11 @@ def _refresh_config_derived(app: Flask) -> None:
 
         with app.app_context():
             doc = load_web_config_document()
-        app.config["FOLDER_THEMES"] = dict(doc.loaded.folder_themes)
+        from rollup.linkedin.config import merge_linkedin_folder_themes
+
+        app.config["FOLDER_THEMES"] = merge_linkedin_folder_themes(
+            dict(doc.loaded.folder_themes), doc.loaded.linkedin
+        )
         app.config["UI_LANDING_PAGE"] = doc.loaded.ui.landing_page
         app.config["UI_PREFERRED_VIEW"] = doc.loaded.ui.preferred_view
     except Exception:
@@ -197,6 +201,7 @@ def create_app(
     from rollup.web.routes.run import bp as run_bp
     from rollup.web.routes.articles import bp as articles_bp
     from rollup.web.routes.reddit import bp as reddit_bp
+    from rollup.web.routes.linkedin import bp as linkedin_bp
 
     app.register_blueprint(rollups_bp)
     app.register_blueprint(sources_bp)
@@ -207,6 +212,7 @@ def create_app(
     app.register_blueprint(run_bp)
     app.register_blueprint(articles_bp)
     app.register_blueprint(reddit_bp)
+    app.register_blueprint(linkedin_bp)
 
     @app.get("/branding/<name>")
     def branding(name: str):

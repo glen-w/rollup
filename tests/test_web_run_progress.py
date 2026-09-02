@@ -43,3 +43,17 @@ def test_parse_run_progress_complete() -> None:
     )
     assert progress["phase"] == "complete"
     assert progress["percent"] == 100
+
+
+def test_parse_run_progress_reddit_fetch() -> None:
+    lines = [
+        "INFO: Digest: root=/mail folders=4 linkedin=0 reddit=28 webpage=0 lookback=7d dry_run=False no_ollama=True",
+        "INFO: Parsing tech (/mail/tech.mbox)",
+        "INFO: Fetching Reddit: 28 subs, about 32 min (70s between subs; 429s add extra wait)",
+        "INFO: Reddit [3/28] r/localllama (about 29 min remaining)",
+    ]
+    progress = parse_run_progress(lines, dry_run=False, status="running")
+    assert progress["phase"] == "reddit"
+    assert progress["phase_label"] == "Fetching Reddit"
+    assert progress["detail"] == "r/localllama (3/28), about 29 min remaining"
+    assert 30 <= progress["percent"] <= 40

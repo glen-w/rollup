@@ -9,10 +9,16 @@ from datetime import datetime
 from pathlib import Path
 
 from rollup.addons.artifact_write import atomic_write_digest_artifact
-from rollup.addons.offline_text import strip_urls_for_offline, truncate_with_ellipsis
+from rollup.addons.offline_text import (
+    COMPACT_PREVIEW_MAX,
+    COMPACT_SUBJECT_MAX,
+    strip_urls_for_offline,
+    truncate_with_ellipsis,
+)
 from rollup.assets import EPUB_COVER_FILENAME, epub_cover_bytes
 from rollup.final_review import format_final_review_digest_summary
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
+from rollup.reddit.summary import reddit_entry_display
 from rollup.render import (
     ROLLUP_TITLE,
     digest_output_stem,
@@ -57,6 +63,9 @@ h3 { font-size: 1.1em; margin-top: 1.1em; }
 .summary { margin: 0.75em 0; }
 .group-summary { margin: 0.75em 0 1em; font-style: italic; }
 .compact-list { padding-left: 1.2em; }
+.compact-list .summary { font-style: normal; margin: 0.35em 0 0.6em; }
+.compact-list .summary ul { margin: 0.3em 0; padding-left: 1.2em; }
+.compact-list .summary p { margin: 0.35em 0; }
 .appendix p, .appendix li { font-size: 0.95em; }
 """
 
@@ -143,18 +152,35 @@ def _render_group_xhtml(group: DigestGroup) -> str:
         parts.append("<ol class='compact-list'>")
         for entry in group.entries:
             p = entry.classified.parsed
-            subject = html_module.escape(truncate_with_ellipsis(p.subject, 100))
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
-            preview_src = strip_urls_for_offline(
-                truncate_with_ellipsis(entry.summary or p.preview or "", 200)
-            )
-            preview = html_module.escape(preview_src)
-            item = f"<li><strong>{date}</strong> — {subject}"
-            if preview:
-                item += f"<br/><em>{preview}</em>"
-            item += "</li>"
+            if group.group_type == "subreddit_digest":
+                subject, summary = reddit_entry_display(entry, offline=True)
+                item = (
+                    f"<li><p><strong>{html_module.escape(date)}</strong> — "
+                    f"{html_module.escape(subject)}</p>"
+                )
+                if summary:
+                    item += (
+                        f"<div class='summary'>"
+                        f"{render_summary_html(summary)}</div>"
+                    )
+                item += "</li>"
+            else:
+                subject = html_module.escape(
+                    truncate_with_ellipsis(p.subject, COMPACT_SUBJECT_MAX)
+                )
+                preview_src = strip_urls_for_offline(
+                    truncate_with_ellipsis(
+                        entry.summary or p.preview or "", COMPACT_PREVIEW_MAX
+                    )
+                )
+                preview = html_module.escape(preview_src)
+                item = f"<li><strong>{date}</strong> — {subject}"
+                if preview:
+                    item += f"<br/><em>{preview}</em>"
+                item += "</li>"
             parts.append(item)
         parts.append("</ol>")
     else:

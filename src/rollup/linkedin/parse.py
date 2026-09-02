@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+from rollup.addons.offline_text import clip_heading
 from rollup.linkedin.config import linkedin_folder_for_post
 from rollup.linkedin.models import LinkedInPost
 from rollup.models import LinkItem, ParsedMessage
@@ -19,18 +20,14 @@ def _subject_from_text(text: str) -> str:
     if not cleaned:
         return "(no text)"
     first_line = cleaned.split("\n", 1)[0].strip()
-    if len(first_line) <= _SUBJECT_MAX:
-        return first_line
-    return first_line[: _SUBJECT_MAX - 1] + "…"
+    return clip_heading(first_line, _SUBJECT_MAX) or "(no text)"
 
 
 def _subject_from_post(post: LinkedInPost) -> str:
     if post.article_title:
         title = post.article_title.strip()
         if title:
-            if len(title) <= _SUBJECT_MAX:
-                return title
-            return title[: _SUBJECT_MAX - 1] + "…"
+            return clip_heading(title, _SUBJECT_MAX) or title
     return _subject_from_text(post.text)
 
 

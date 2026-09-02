@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Mapping
 
 from rollup.addons.offline_text import (
+    COMPACT_PREVIEW_MAX,
+    COMPACT_SUBJECT_MAX,
     OFFLINE_LINE_LENGTH,
+    indent_multiline,
     strip_urls_for_offline,
     truncate_with_ellipsis,
     wrap_text,
@@ -16,6 +19,7 @@ from rollup.addons.offline_text import (
 from rollup.folder_theme import FolderThemeOverride
 from rollup.fsutil import atomic_write_text
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
+from rollup.reddit.summary import reddit_entry_display
 from rollup.render import (
     folder_display_name,
     format_date,
@@ -29,8 +33,8 @@ FolderThemeMap = Mapping[str, FolderThemeOverride]
 
 # XTEINK-specific constants for e-ink optimization
 XTEINK_LINE_LENGTH = OFFLINE_LINE_LENGTH
-XTEINK_PREVIEW_MAX = 200
-XTEINK_SUBJECT_MAX = 100
+XTEINK_PREVIEW_MAX = COMPACT_PREVIEW_MAX
+XTEINK_SUBJECT_MAX = COMPACT_SUBJECT_MAX
 
 # Compatibility aliases for tests / callers that imported private helpers.
 _strip_urls_for_xteink = strip_urls_for_offline
@@ -82,15 +86,13 @@ def _render_xteink_group_md(group: DigestGroup, max_display_links: int) -> str:
             lines.extend(["**Roundup:**", "", _wrap_text(summary, XTEINK_LINE_LENGTH), ""])
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = _truncate(p.subject, XTEINK_SUBJECT_MAX)
+            subject, preview = reddit_entry_display(entry, offline=True)
             date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
-            preview = _truncate(
-                _strip_urls_for_xteink(entry.summary or p.preview or ""),
-                XTEINK_PREVIEW_MAX,
-            )
             lines.append(f"{i}. {date} — {subject}")
             if preview:
-                lines.append(f"   Preview: {preview}")
+                wrapped = _wrap_text(preview, XTEINK_LINE_LENGTH)
+                lines.append("")
+                lines.append(indent_multiline(wrapped))
             lines.append("")
         return "\n".join(lines)
     if group.group_type == "notification_stream":

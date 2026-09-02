@@ -10,6 +10,10 @@ _PARSING_RE = re.compile(r"Parsing (\S+)")
 _LLM_RE = re.compile(r"(?:LLM|Ollama) \[(\d+)/(\d+)\] summarising: (.+)")
 _WRITER_RE = re.compile(r"Running output writer (\S+)")
 _STATS_RE = re.compile(r"Folders scanned: (\d+)")
+_REDDIT_FETCH_RE = re.compile(r"Fetching Reddit: (\d+) subs?")
+_REDDIT_SUB_RE = re.compile(
+    r"Reddit \[(\d+)/(\d+)\] r/(\S+)(?: \((.+) remaining\))?"
+)
 
 _STATUS_LABELS = {
     "success": "Complete",
@@ -44,6 +48,9 @@ def parse_run_progress(
     last_detail: str | None = None
     saw_digest = False
     saw_stats = False
+    reddit_current: int | None = None
+    reddit_total: int | None = None
+    saw_reddit_fetch = False
 
     for line in log_lines:
         match = _DIGEST_RE.search(line)
@@ -70,6 +77,26 @@ def parse_run_progress(
             saw_stats = True
         if "Archived" in line and "prior digest" in line:
             last_detail = "Archiving prior outputs"
+        match = _REDDIT_FETCH_RE.search(line)
+        if match:
+            saw_reddit_fetch = True
+            reddit_total = int(match.group(1))
+            if reddit_current is None:
+                reddit_current = 0
+        match = _REDDIT_SUB_RE.search(line)
+        if match:
+            saw_reddit_fetch = True
+            cur = int(match.group(1))
+            tot = int(match.group(2))
+            name = match.group(3)
+            remaining = match.group(4)
+            if reddit_total is None or tot >= reddit_total:
+                reddit_current = cur
+                reddit_total = tot
+            detail = f"r/{name} ({cur}/{tot})"
+            if remaining:
+                detail = f"{detail}, {remaining} remaining"
+            last_detail = detail
 
     if saw_stats:
         phase = "finishing"
@@ -83,13 +110,21 @@ def parse_run_progress(
         phase = "summarizing"
         label = "Summarising with LLM"
         percent = 40 + int(42 * llm_current / llm_total)
+    elif saw_reddit_fetch:
+        phase = "reddit"
+        label = "Fetching Reddit"
+        if reddit_total and reddit_total > 0:
+            current = reddit_current or 0
+            percent = 30 + int(10 * min(current, reddit_total) / reddit_total)
+        else:
+            percent = 30
     elif parsed_count > 0 or saw_digest:
         phase = "parsing"
         label = "Parsing mailboxes" if not dry_run else "Dry-run discovery"
         if folders_total and folders_total > 0:
-            percent = 10 + int(28 * min(parsed_count, folders_total) / folders_total)
+            percent = 10 + int(18 * min(parsed_count, folders_total) / folders_total)
         else:
-            percent = 10 + min(parsed_count * 6, 28)
+            percent = 10 + min(parsed_count * 6, 18)
     elif saw_digest:
         phase = "discovering"
         label = "Discovering folders"

@@ -180,6 +180,12 @@ def _reddit_sub_count(reddit_config, sticky: dict) -> int:
     )
 
 
+def _reddit_fetch_eta(sub_count: int) -> str | None:
+    from rollup.reddit.fetch import reddit_fetch_eta_phrase
+
+    return reddit_fetch_eta_phrase(sub_count)
+
+
 @bp.get("")
 @bp.get("/")
 def run_studio():
@@ -198,6 +204,7 @@ def run_studio():
             linkedin_search_count=0,
             reddit_enabled=False,
             reddit_sub_count=0,
+            reddit_fetch_eta=None,
             webpage_pending_count=0,
             webpage_in_window_count=0,
             cli_command="",
@@ -233,6 +240,7 @@ def run_studio():
         linkedin_search_count=len(linkedin_searches),
         reddit_enabled=doc.loaded.reddit.enabled,
         reddit_sub_count=reddit_sub_count,
+        reddit_fetch_eta=_reddit_fetch_eta(reddit_sub_count),
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,
@@ -293,6 +301,7 @@ def run_preview():
         linkedin_search_count=len(linkedin_searches),
         reddit_enabled=doc.loaded.reddit.enabled,
         reddit_sub_count=reddit_sub_count,
+        reddit_fetch_eta=_reddit_fetch_eta(reddit_sub_count),
         webpage_pending_count=webpage_pending,
         webpage_in_window_count=webpage_in_window,
         cli_command=cli,

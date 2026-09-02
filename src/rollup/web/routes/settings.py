@@ -37,8 +37,8 @@ from rollup.effort import (
     EffortModelOverride,
     effort_editor_rows,
 )
-from rollup.folder_theme import FolderThemeOverride, folder_slug, theme_for
-from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
+from rollup.folder_theme import FolderThemeOverride, folder_display_name, folder_slug, theme_for
+from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.reddit.config import RedditConfig
 from rollup.webpage.queue import count_items
 from rollup.output_writers import discover_writers
@@ -104,43 +104,13 @@ def _folder_themes_from_form() -> dict[str, FolderThemeOverride]:
     return themes
 
 
-def _linkedin_from_form() -> LinkedInConfig:
+def _linkedin_enabled_from_form(base: LinkedInConfig) -> LinkedInConfig:
     enabled = "1" in request.form.getlist("linkedin_enabled")
-    article_fetch = "1" in request.form.getlist("linkedin_article_fetch")
-    layout = request.form.get("linkedin_layout", "feed")
-    if layout not in ("feed", "per_source", "per_search"):
-        layout = "feed"
-    searches: dict[str, LinkedInSearch] = {}
-    slugs = request.form.getlist("linkedin_slug")
-    urls = request.form.getlist("linkedin_url")
-    display_names = request.form.getlist("linkedin_display_name")
-    enabled_flags = request.form.getlist("linkedin_search_enabled")
-    for i, slug_raw in enumerate(slugs):
-        slug = slug_raw.strip().lower()
-        if not slug:
-            continue
-        url = urls[i].strip() if i < len(urls) else ""
-        if not url:
-            continue
-        display = (
-            display_names[i].strip()
-            if i < len(display_names) and display_names[i].strip()
-            else None
-        )
-        search_enabled = (
-            enabled_flags[i] == "1" if i < len(enabled_flags) else True
-        )
-        searches[slug] = LinkedInSearch(
-            slug=slug,
-            url=url,
-            display_name=display,
-            enabled=search_enabled,
-        )
     return LinkedInConfig(
         enabled=enabled,
-        article_fetch=article_fetch,
-        layout=layout,  # type: ignore[arg-type]
-        searches=searches,
+        article_fetch=base.article_fetch,
+        layout=base.layout,
+        searches=base.searches,
     )
 
 
@@ -265,11 +235,14 @@ def _patch_from_request() -> ConfigPatch:
 
     themes = _folder_themes_from_form()
     profiles, remove = _profiles_from_form()
-    linkedin = _linkedin_from_form()
     try:
-        base_reddit = _load_doc().loaded.reddit
+        loaded = _load_doc().loaded
+        base_linkedin = loaded.linkedin
+        base_reddit = loaded.reddit
     except Exception:
+        base_linkedin = LinkedInConfig()
         base_reddit = RedditConfig()
+    linkedin = _linkedin_enabled_from_form(base_linkedin)
     reddit = _reddit_enabled_from_form(base_reddit)
     return patch_from_form_values(
         mail_root=request.form.get("mail_root"),
@@ -387,11 +360,14 @@ def settings_index():
     discovered = discovered + [n for n in linkedin_names if n not in discovered]
     discovered = discovered + [n for n in webpage_names if n not in discovered]
     folder_rows = []
-    themes = doc.loaded.folder_themes if doc else {}
+    raw_themes = doc.loaded.folder_themes if doc else {}
+    preview_themes = merge_linkedin_folder_themes(
+        raw_themes, doc.loaded.linkedin if doc else LinkedInConfig()
+    )
     for name in discovered:
         slug = folder_slug(name)
-        theme = theme_for(name, themes)
-        override = themes.get(slug) or themes.get(name.lower())
+        theme = theme_for(name, preview_themes)
+        override = raw_themes.get(slug) or raw_themes.get(name.lower())
         folder_rows.append(
             {
                 "slug": slug,
@@ -400,15 +376,12 @@ def settings_index():
                 "accent": (override.accent if override else None) or theme.accent,
                 "display_name": (override.display_name if override else None) or "",
                 "order": override.order if override and override.order is not None else "",
-                "preview_label": (
-                    f"{(override.emoji + ' ') if override and override.emoji else ''}"
-                    f"{(override.display_name if override and override.display_name else name)}"
-                ),
+                "preview_label": folder_display_name(name, preview_themes),
             }
         )
     # Include theme-only slugs not discovered on disk
     known = {r["slug"] for r in folder_rows}
-    for slug, override in themes.items():
+    for slug, override in raw_themes.items():
         if slug not in known:
             folder_rows.append(
                 {

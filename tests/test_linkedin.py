@@ -14,7 +14,9 @@ from rollup.linkedin.config import (
     LinkedInSearch,
     filter_linkedin_searches,
     folder_name_for_search,
+    merge_linkedin_folder_themes,
     parse_linkedin_config,
+    search_slug_from_name,
 )
 from rollup.linkedin.fetch import (
     FixtureLinkedInClient,
@@ -54,6 +56,19 @@ def test_validate_content_search_url_accepts_watchlist() -> None:
 def test_validate_content_search_url_rejects_jobs() -> None:
     with pytest.raises(ValueError, match="content search"):
         validate_content_search_url("https://www.linkedin.com/jobs/search/")
+
+
+def test_validate_content_search_url_requires_from_member() -> None:
+    with pytest.raises(ValueError, match="fromMember"):
+        validate_content_search_url(
+            "https://www.linkedin.com/search/results/content/?keywords=ocean"
+        )
+
+
+def test_search_slug_from_name() -> None:
+    assert search_slug_from_name("BBNJ") == "bbnj"
+    assert search_slug_from_name("General") == "general"
+    assert search_slug_from_name("  My Watch-List ") == "my-watch-list"
 
 
 def test_lookback_to_date_posted_mapping() -> None:
@@ -117,6 +132,34 @@ def test_linkedin_subject_uses_article_title() -> None:
         post, search_slug="watchlist", max_body_chars=50_000
     )
     assert msg.subject == "Tagging on a borrowed boat — Francisco Blaha"
+
+
+def test_linkedin_subject_clips_at_sentence() -> None:
+    from rollup.linkedin.models import LinkedInPost
+
+    first = (
+        "I am pleased to share that we are recruiting a new colleague "
+        "for our FAO Statistics and Information Team (NFISI)."
+    )
+    rest = (
+        " If you are interested in fisheries and aquaculture data, information "
+        "systems, analytics and global knowledge products, I encourage you to "
+        "take a look at this Fishery Officer position in Rome."
+    )
+    post = LinkedInPost(
+        activity_id="3",
+        author_name="Stefania",
+        author_member_id=None,
+        text=first + rest,
+        permalink="https://example.com",
+        created_at=None,
+    )
+    msg = linkedin_post_to_parsed_message(
+        post, search_slug="watchlist", max_body_chars=50_000
+    )
+    assert msg.subject == first
+    assert "…" not in msg.subject
+    assert "Fishery Officer" not in msg.subject
 
 
 def test_linkedin_preview_not_truncated_for_short_body() -> None:
@@ -210,6 +253,48 @@ def test_parse_linkedin_toml() -> None:
     assert loaded.linkedin.article_fetch is True
     assert "watchlist" in loaded.linkedin.searches
     assert loaded.linkedin.searches["watchlist"].url == WATCHLIST_URL
+
+
+def test_parse_named_linkedin_searches() -> None:
+    data = {
+        "linkedin": {
+            "enabled": True,
+            "layout": "per_search",
+            "searches": {
+                "general": {
+                    "url": WATCHLIST_URL,
+                    "display_name": "General",
+                    "enabled": True,
+                },
+                "bbnj": {
+                    "url": WATCHLIST_URL,
+                    "display_name": "BBNJ",
+                    "enabled": True,
+                },
+            },
+        }
+    }
+    loaded = parse_toml_dict(data, path=Path("test.toml"))
+    assert set(loaded.linkedin.searches) == {"general", "bbnj"}
+    assert loaded.linkedin.searches["bbnj"].display_name == "BBNJ"
+    assert loaded.linkedin.layout == "per_search"
+
+
+def test_merge_linkedin_folder_themes_uses_search_display_name() -> None:
+    from rollup.folder_theme import folder_display_name
+
+    linkedin = LinkedInConfig(
+        layout="per_search",
+        searches={
+            "bbnj": LinkedInSearch(
+                slug="bbnj",
+                url=WATCHLIST_URL,
+                display_name="BBNJ",
+            )
+        },
+    )
+    themes = merge_linkedin_folder_themes({}, linkedin)
+    assert folder_display_name("linkedin:bbnj", themes) == "BBNJ"
 
 
 def test_parse_linkedin_article_fetch_false() -> None:

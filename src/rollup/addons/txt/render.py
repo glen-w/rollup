@@ -7,12 +7,16 @@ from pathlib import Path
 
 from rollup.addons.artifact_write import atomic_write_digest_artifact
 from rollup.addons.offline_text import (
+    COMPACT_PREVIEW_MAX,
+    COMPACT_SUBJECT_MAX,
     OFFLINE_LINE_LENGTH,
+    indent_multiline,
     strip_urls_for_offline,
     truncate_with_ellipsis,
     wrap_text,
 )
 from rollup.models import DigestEntry, DigestGroup, DigestItem, DigestReport
+from rollup.reddit.summary import reddit_entry_display
 from rollup.render import folder_display_name, format_date, format_read_time
 from rollup.summarize import clean_summary_output
 
@@ -49,14 +53,13 @@ def _render_group_txt(group: DigestGroup) -> str:
             lines.extend(["Roundup:", "", wrap_text(summary, OFFLINE_LINE_LENGTH), ""])
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = truncate_with_ellipsis(p.subject, 100)
+            subject, preview = reddit_entry_display(entry, offline=True)
             date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
-            preview = strip_urls_for_offline(
-                truncate_with_ellipsis(entry.summary or p.preview or "", 200)
-            )
             lines.append(f"{i}. {date} — {subject}")
             if preview:
-                lines.append(f"   Preview: {preview}")
+                wrapped = wrap_text(preview, OFFLINE_LINE_LENGTH)
+                lines.append("")
+                lines.append(indent_multiline(wrapped))
             lines.append("")
         return "\n".join(lines)
     if group.group_type == "notification_stream":
@@ -83,12 +86,12 @@ def _render_group_txt(group: DigestGroup) -> str:
             )
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = truncate_with_ellipsis(p.subject, 100)
+            subject = truncate_with_ellipsis(p.subject, COMPACT_SUBJECT_MAX)
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
             preview = strip_urls_for_offline(
-                truncate_with_ellipsis(p.preview or "", 200)
+                truncate_with_ellipsis(p.preview or "", COMPACT_PREVIEW_MAX)
             )
             lines.append(f"{i}. {date} — {subject}")
             if preview:
@@ -120,10 +123,10 @@ def _render_group_txt(group: DigestGroup) -> str:
         )
     for entry in group.entries:
         p = entry.classified.parsed
-        subject = truncate_with_ellipsis(p.subject, 100)
+        subject = truncate_with_ellipsis(p.subject, COMPACT_SUBJECT_MAX)
         date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
         preview = strip_urls_for_offline(
-            truncate_with_ellipsis(p.preview or "", 200)
+            truncate_with_ellipsis(p.preview or "", COMPACT_PREVIEW_MAX)
         )
         lines.append(f"{date} — {subject}")
         if preview:

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Mapping
 
+from rollup.folder_theme import FolderThemeOverride, folder_slug
 from rollup.linkedin.url import validate_content_search_url
 
 LINKEDIN_FOLDER_PREFIX = "linkedin:"
@@ -15,6 +17,8 @@ LinkedInLayout = Literal["feed", "per_source", "per_search"]
 LINKEDIN_LAYOUTS = frozenset({"feed", "per_source", "per_search"})
 
 SEARCH_KEYS = frozenset({"url", "display_name", "enabled", "emoji", "accent", "order"})
+MAX_LINKEDIN_SEARCHES = 50
+_SEARCH_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,67 @@ class LinkedInSearch:
 
 def folder_name_for_search(slug: str) -> str:
     return f"{LINKEDIN_FOLDER_PREFIX}{slug.strip().lower()}"
+
+
+def search_slug_from_name(name: str) -> str:
+    """Derive a TOML/folder slug from a display name (e.g. BBNJ → bbnj)."""
+    return _SEARCH_SLUG_RE.sub("-", name.strip().lower()).strip("-")
+
+
+def linkedin_folder_theme_overrides(
+    linkedin: LinkedInConfig,
+) -> dict[str, FolderThemeOverride]:
+    """Folder-theme overlays so named searches appear as digest section titles.
+
+    Applied for ``per_search`` layout (each search is ``linkedin:<slug>``).
+    Explicit ``[folders.*]`` entries still win when merged.
+    """
+    if linkedin.layout != "per_search":
+        return {}
+    out: dict[str, FolderThemeOverride] = {}
+    for search in linkedin.searches.values():
+        if not search.enabled:
+            continue
+        if not any(
+            (
+                search.display_name,
+                search.emoji,
+                search.accent,
+                search.order is not None,
+            )
+        ):
+            continue
+        out[folder_slug(search.folder_name)] = FolderThemeOverride(
+            emoji=search.emoji,
+            accent=search.accent,
+            display_name=search.display_name,
+            order=search.order,
+        )
+    return out
+
+
+def merge_linkedin_folder_themes(
+    folder_themes: Mapping[str, FolderThemeOverride],
+    linkedin: LinkedInConfig,
+) -> dict[str, FolderThemeOverride]:
+    """Overlay LinkedIn search names onto folder themes; ``[folders.*]`` wins."""
+    merged = dict(folder_themes)
+    for slug, overlay in linkedin_folder_theme_overrides(linkedin).items():
+        existing = merged.get(slug)
+        if existing is None:
+            merged[slug] = overlay
+            continue
+        merged[slug] = FolderThemeOverride(
+            emoji=existing.emoji if existing.emoji is not None else overlay.emoji,
+            accent=existing.accent if existing.accent is not None else overlay.accent,
+            display_name=(
+                existing.display_name
+                if existing.display_name is not None
+                else overlay.display_name
+            ),
+            order=existing.order if existing.order is not None else overlay.order,
+        )
+    return merged
 
 
 def linkedin_folder_for_post(
@@ -144,6 +209,11 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
                 accent=accent,
                 order=order,
             )
+            if len(searches) > MAX_LINKEDIN_SEARCHES:
+                raise ValueError(
+                    f"{path}: [linkedin.searches] supports at most "
+                    f"{MAX_LINKEDIN_SEARCHES} saved searches"
+                )
 
     return LinkedInConfig(
         enabled=enabled,

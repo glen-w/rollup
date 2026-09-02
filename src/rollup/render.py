@@ -10,7 +10,14 @@ from email.utils import parseaddr
 from pathlib import Path
 
 from rollup.assets import FAVICON_FILENAME, LOGO_FILENAME
-from rollup.addons.offline_text import truncate_with_ellipsis
+from rollup.addons.offline_text import (
+    COMPACT_HTML_STREAM_PREVIEW_MAX,
+    COMPACT_PREVIEW_MAX,
+    COMPACT_SUBJECT_MAX,
+    indent_multiline,
+    truncate_with_ellipsis,
+)
+from rollup.reddit.summary import reddit_entry_display
 from rollup.folder_theme import (
     FolderThemeOverride,
     folder_accent_css,
@@ -505,12 +512,12 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
             lines.extend(["**Roundup:**", "", group.group_summary.strip(), ""])
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = _truncate(p.subject, 100)
+            subject, summary = reddit_entry_display(entry)
             date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
-            preview = _truncate(entry.summary or p.preview or "", 200)
             lines.append(f"{i}. **{date}** — {subject}")
-            if preview:
-                lines.append(f"   Preview: {preview}")
+            if summary:
+                lines.append("")
+                lines.append(indent_multiline(summary))
             lines.append("")
         return "\n".join(lines)
     if group.group_type == "notification_stream":
@@ -536,11 +543,11 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
             )
         for i, entry in enumerate(group.entries, start=1):
             p = entry.classified.parsed
-            subject = _truncate(p.subject, 100)
+            subject = _truncate(p.subject, COMPACT_SUBJECT_MAX)
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
-            preview = _truncate(entry.summary or p.preview or "", 200)
+            preview = _truncate(entry.summary or p.preview or "", COMPACT_PREVIEW_MAX)
             lines.append(f"{i}. **{date}** — {subject}")
             if preview:
                 lines.append(f"   Preview: {preview}")
@@ -570,9 +577,9 @@ def _render_group_md(group: DigestGroup, max_display_links: int) -> str:
         )
     for entry in group.entries:
         p = entry.classified.parsed
-        subject = _truncate(p.subject, 100)
+        subject = _truncate(p.subject, COMPACT_SUBJECT_MAX)
         date = p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
-        preview = _truncate(entry.summary or p.preview or "", 200)
+        preview = _truncate(entry.summary or p.preview or "", COMPACT_PREVIEW_MAX)
         lines.append(f"#### {date} — {subject}")
         if preview:
             lines.append(f"Preview: {preview}")
@@ -594,22 +601,24 @@ def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
         ]
         if group.group_summary:
             parts.append(
-                f"<p class='group-summary'><strong>Roundup:</strong> "
-                f"{html_module.escape(group.group_summary.strip())}</p>"
+                f"<div class='group-summary'><p><strong>Roundup:</strong></p>"
+                f"{render_summary_html(group.group_summary.strip())}</div>"
             )
         parts.append("<ol class='group-entries'>")
         for entry in group.entries:
             p = entry.classified.parsed
-            subject = html_module.escape(_truncate(p.subject, 100))
+            subject, summary = reddit_entry_display(entry)
             date = (
                 p.date_parsed.strftime("%Y-%m-%d") if p.date_parsed else "undated"
             )
-            preview = html_module.escape(
-                _truncate(entry.summary or p.preview or "", 200)
+            parts.append(
+                f"<li><p><strong>{html_module.escape(date)}</strong> — "
+                f"{html_module.escape(subject)}</p>"
             )
-            parts.append(f"<li><strong>{date}</strong> — {subject}")
-            if preview:
-                parts.append(f"<div class='preview'>{preview}</div>")
+            if summary:
+                parts.append(
+                    f"<div class='summary'>{render_summary_html(summary)}</div>"
+                )
             parts.append("</li>")
         parts.append("</ol></section>")
         return "\n".join(parts)
@@ -639,9 +648,12 @@ def _render_group_html(group: DigestGroup, max_display_links: int) -> str:
         parts.append("<ul role='list' class='group-updates'>")
         for entry in group.entries:
             p = entry.classified.parsed
-            subject = html_module.escape(_truncate(p.subject, 100))
+            subject = html_module.escape(_truncate(p.subject, COMPACT_SUBJECT_MAX))
             preview = html_module.escape(
-                _truncate(entry.summary or p.preview or "", 120)
+                _truncate(
+                    entry.summary or p.preview or "",
+                    COMPACT_HTML_STREAM_PREVIEW_MAX,
+                )
             )
             if p.date_parsed:
                 dt = p.date_parsed.isoformat()
@@ -892,6 +904,9 @@ def render_html(
         ".digest-group{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ccc;border-radius:6px;}",
         ".group-chip{font-size:0.85rem;color:#555;margin:0.25rem 0 0.75rem;}",
         ".group-updates{margin:0.5rem 0;padding-left:1.25rem;}",
+        ".group-entries{padding-left:1.25rem;}",
+        ".group-entries .summary{margin:0.35em 0 0.75em;}",
+        ".group-summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}",
         folder_accent_css(folders, folder_themes),
         ".summary-metadata table{border-collapse:collapse;margin:1rem 0;}",
         ".summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}",

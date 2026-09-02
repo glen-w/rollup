@@ -678,6 +678,21 @@ def stage_parse_reddit(
     degraded = False
 
     if dry_run:
+        from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
+
+        n = len(subs)
+        phrase = reddit_fetch_eta_phrase(n)
+        if phrase:
+            warnings.append(
+                StageWarning(
+                    code="reddit_dry_run",
+                    message=(
+                        f"Would fetch {n} Reddit subs, {phrase} "
+                        f"({int(SUB_FETCH_BACKOFF_SECONDS)}s between subs)"
+                    ),
+                    folder=config.reddit.layout,
+                )
+            )
         for sub in subs:
             warnings.append(
                 StageWarning(
@@ -1290,15 +1305,18 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         run_options.dry_run,
         config.no_ollama,
     )
+    if discovery.reddit_subs:
+        from rollup.reddit.fetch import reddit_fetch_eta_log_line
+
+        logger.info(
+            "%s",
+            reddit_fetch_eta_log_line(
+                len(discovery.reddit_subs),
+                prefix="Reddit fetch estimate",
+            ),
+        )
 
     parse_result = stage_parse(config, discovery.folders)
-    li_messages, li_warnings, linkedin_degraded = stage_parse_linkedin(
-        config,
-        discovery.linkedin_searches,
-        dry_run=run_options.dry_run,
-    )
-    parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
-    aggregated.linkedin_degraded = linkedin_degraded
     rd_messages, rd_warnings, reddit_degraded = stage_parse_reddit(
         config,
         discovery.reddit_subs,
@@ -1307,6 +1325,13 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     )
     parse_result = merge_reddit_parse(parse_result, rd_messages, rd_warnings)
     aggregated.reddit_degraded = reddit_degraded
+    li_messages, li_warnings, linkedin_degraded = stage_parse_linkedin(
+        config,
+        discovery.linkedin_searches,
+        dry_run=run_options.dry_run,
+    )
+    parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
+    aggregated.linkedin_degraded = linkedin_degraded
     wp_messages, wp_warnings, webpage_degraded, wp_ingest = stage_parse_webpage(
         config,
         discovery.webpage_items,

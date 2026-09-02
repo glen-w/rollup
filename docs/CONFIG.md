@@ -174,10 +174,16 @@ search, company pages, follows, and mentions are not supported yet (see
 [linkedin]
 enabled = true   # opt-in fetch on digest; default false
 article_fetch = true   # fetch linked article bodies for link posts (default on)
+layout = "per_search"  # one digest section per named search (also: feed, per_source)
 
-[linkedin.searches.watchlist]
+[linkedin.searches.general]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&fromMember=%5B%22ACo…%22%5D"
-display_name = "LinkedIn watchlist"
+display_name = "General"
+enabled = true
+
+[linkedin.searches.bbnj]
+url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&fromMember=%5B%22ACo…%22%5D"
+display_name = "BBNJ"
 enabled = true
 ```
 
@@ -212,7 +218,7 @@ One-off shell exports still work:
 ```bash
 export ROLLUP_LINKEDIN_LI_AT='…'
 export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
-rollup digest --linkedin --folder linkedin:watchlist
+rollup digest --linkedin --folder linkedin:general
 ```
 
 For launchd/cron, pass the same variables in the job environment (plist
@@ -224,7 +230,7 @@ For launchd/cron, pass the same variables in the job environment (plist
 - Enable: `[linkedin].enabled = true` and/or `rollup digest --linkedin`. `--no-linkedin` turns fetch off for that run.
 - Article fetch: `[linkedin].article_fetch = true` by default — link posts also fetch the URL from Voyager `ArticleComponent` (external blogs, Pulse). Adds HTTP beyond Voyager; disable with `[linkedin].article_fetch = false` or `--no-linkedin-article-fetch`. Failures leave the commentary teaser and add a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, …); they do not fail the digest.
 - URL must be `https://www.linkedin.com/search/results/content/…` with a `fromMember` facet (author `ACo…` ids). Copy it from LinkedIn after filtering Content search by people.
-- `--folder` / `--exclude-folder` accept `linkedin:watchlist` names like mbox folders.
+- `--folder` / `--exclude-folder` accept `linkedin:general` (or any `linkedin:<slug>`) names like mbox folders.
 - Posts are dated from LinkedIn activity ids; the digest **lookback window** still applies after ingest (older posts are skipped, not listed as undated).
 - `linkedin:*` folders stay **standalone** (no `notification_stream` grouping). Subject prefers the article title when present; preview keeps the full body up to 2000 characters.
 - Caps (per search): 20 authors, 2 pages × 10 posts each, 100 posts total, 2s backoff between requests. Article fetch: 50 URLs per run, 1s backoff.
@@ -232,8 +238,9 @@ For launchd/cron, pass the same variables in the job environment (plist
 - Fetch failure **partial** (exit 2) when mail still publishes; LinkedIn-only runs **hard-fail** (exit 1) when fetch cannot proceed.
 - `--dry-run` and web **GET** routes never contact LinkedIn (dry-run warns if cookies are missing).
 
-Configure search URLs in the web **Configuration Centre** under **LinkedIn searches**.
-Settings stores URLs only. How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
+Configure named search URLs in the web **LinkedIn** page (`/linkedin`). Settings
+only toggles fetch on/off. The LinkedIn page stores URLs and display names only.
+How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
 `[linkedin].layout` controls TOC sections: `feed` (default, one `linkedin:feed` section), `per_source` (one section per author), or `per_search` (legacy `linkedin:<slug>` per saved search).
 
@@ -267,7 +274,7 @@ limit = 5
 - `layout = feed`: all posts in `reddit:feed`; summary-mode subs become `subreddit_digest` groups, per-post subs stay standalone.
 - `layout = per_source`: one folder `reddit:<sub>` per enabled sub.
 - Global defaults apply when per-sub keys are omitted.
-- Caps: 10 posts/sub default (max 50), max 100 enabled subs, 1s backoff between subs (429 → wait 60s, retry once).
+- Caps: 10 posts/sub default (max 50), max 100 enabled subs, **70s backoff** between subs (~1 request/minute). CLI logs and the Reddit / Run Studio pages show the estimated wait. HTTP 429 adds extra wait (retry remaining subs once after a longer backoff).
 - Message identity `reddit:t3:<id>`; source key `reddit:sub:<name>` (mute with `rollup sources disable reddit:sub:…`).
 - Fetch failure **partial** (exit 2) when mail still publishes; Reddit-only runs **hard-fail** (exit 1).
 - `--dry-run` and web **GET** never contact Reddit.

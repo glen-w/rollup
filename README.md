@@ -317,13 +317,13 @@ so the weekly digest stays readable. Essays stay standalone. Disable with
     python -m rollup digest --ollama --folder tech --lookback-days 7 --summary-routing-report
     python -m rollup digest --ollama --summary-routing-report
     ```
-11. Optional LinkedIn author feeds (`fromMember` URL in TOML; cookies in env only).
+11. Optional LinkedIn author feeds (named `fromMember` URLs in TOML or `/linkedin`; cookies in env only).
     Copy `li_at` and `JSESSIONID` from a logged-in browser — step-by-step:
     [docs/EXAMPLES.md](docs/EXAMPLES.md#linkedin-content-searches-opt-in-network).
     ```bash
     export ROLLUP_LINKEDIN_LI_AT='…'
     export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
-    python -m rollup digest --linkedin --folder linkedin:watchlist
+    python -m rollup digest --linkedin --folder linkedin:general
     ```
     See also [docs/CONFIG.md](docs/CONFIG.md#linkedin-content-searches-optional).
 

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}LinkedIn — Rollup{% endblock %}
+{% block content %}
+<h1>LinkedIn searches</h1>
+<p class="note">Save named <strong>fromMember</strong> content-search URLs. Each one becomes a digest section (<code>linkedin:&lt;slug&gt;</code>) when layout is <code>per_search</code>. Copy the URL from LinkedIn after filtering Content search by people — the address bar must contain <code>fromMember=</code> and <code>ACo…</code> ids. Set <code>ROLLUP_LINKEDIN_LI_AT</code> and <code>ROLLUP_LINKEDIN_JSESSIONID</code> in <code>~/.config/rollup/env</code> — never in TOML. Keyword-only search is not supported yet.</p>
+
+<form method="post" action="{{ url_for('linkedin.linkedin_save') }}" class="settings-form stack-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <details class="panel" open>
+    <summary>Global defaults</summary>
+    <label>
+      <input type="hidden" name="linkedin_enabled" value="0">
+      <input type="checkbox" name="linkedin_enabled" value="1" {% if linkedin.enabled %}checked{% endif %}>
+      Enable LinkedIn fetch on digest
+    </label>
+    <label>
+      <input type="hidden" name="linkedin_article_fetch" value="0">
+      <input type="checkbox" name="linkedin_article_fetch" value="1" {% if linkedin.article_fetch %}checked{% endif %}>
+      Fetch linked article bodies for link posts (extra HTTP; default on)
+    </label>
+    <label>TOC layout
+      <select name="linkedin_layout">
+        {% for layout in layouts %}
+        <option value="{{ layout }}" {% if linkedin.layout == layout %}selected{% endif %}>
+          {%- if layout == 'feed' -%}feed (one combined section)
+          {%- elif layout == 'per_source' -%}per_source (per author)
+          {%- else -%}per_search (one section per named search)
+          {%- endif -%}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="note">Use <strong>per_search</strong> so names like General and BBNJ stay separate in the digest.</p>
+  </details>
+
+  <details class="panel" open>
+    <summary>Saved searches</summary>
+    {% if rows %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Include</th>
+          <th>Name</th>
+          <th>Slug</th>
+          <th>Authors</th>
+          <th>Search URL</th>
+          <th>Remove</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <input type="hidden" name="search_original_slug" value="{{ row.search.slug }}">
+            <input type="checkbox" name="search_enabled_{{ row.search.slug }}" value="1"
+              {% if row.search.enabled %}checked{% endif %} title="Include on digest">
+          </td>
+          <td>
+            <input type="text" name="search_display_name" value="{{ row.search.display_name or '' }}"
+              placeholder="General" aria-label="Display name">
+          </td>
+          <td>
+            <input type="text" name="search_slug" value="{{ row.search.slug }}"
+              placeholder="general" aria-label="Slug">
+          </td>
+          <td class="muted">{{ row.author_count }}</td>
+          <td>
+            <textarea name="search_url" rows="3" class="linkedin-url-field"
+              placeholder="https://www.linkedin.com/search/results/content/?…">{{ row.search.url }}</textarea>
+          </td>
+          <td>
+            <input type="checkbox" name="search_remove" value="{{ row.search.slug }}" title="Remove on save">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No saved searches yet. Add one below.</p>
+    {% endif %}
+  </details>
+
+  <details class="panel" open>
+    <summary>Add named search</summary>
+    <div id="linkedin-add-rows">
+      <div class="linkedin-add-row">
+        <label>Name
+          <input type="text" name="add_display_name" placeholder="BBNJ" autocomplete="off">
+        </label>
+        <label>Slug <span class="muted">(optional — from name)</span>
+          <input type="text" name="add_slug" placeholder="bbnj" autocomplete="off">
+        </label>
+        <label>fromMember content-search URL
+          <textarea name="add_url" rows="3" class="linkedin-url-field"
+            placeholder="https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&amp;fromMember=…"></textarea>
+        </label>
+      </div>
+    </div>
+    <p>
+      <button type="button" id="linkedin-add-another" class="secondary">Add another search</button>
+    </p>
+    <template id="linkedin-add-row-template">
+      <div class="linkedin-add-row">
+        <label>Name
+          <input type="text" name="add_display_name" placeholder="BBNJ" autocomplete="off">
+        </label>
+        <label>Slug <span class="muted">(optional — from name)</span>
+          <input type="text" name="add_slug" placeholder="bbnj" autocomplete="off">
+        </label>
+        <label>fromMember content-search URL
+          <textarea name="add_url" rows="3" class="linkedin-url-field"
+            placeholder="https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&amp;fromMember=…"></textarea>
+        </label>
+      </div>
+    </template>
+  </details>
+
+  <div class="panel-actions">
+    <button type="submit">Save LinkedIn searches</button>
+  </div>
+</form>
+{% endblock %}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from rollup.addons.offline_text import clip_heading
 from rollup.models import LinkItem, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.reddit.config import RedditLayout, folder_name_for_sub
@@ -25,9 +26,7 @@ def reddit_source_key(subreddit: str) -> str:
 
 def _subject_from_post(post: RedditPost) -> str:
     title = post.title.strip() or "(no title)"
-    if len(title) <= _SUBJECT_MAX:
-        return title
-    return title[: _SUBJECT_MAX - 1] + "…"
+    return clip_heading(title, _SUBJECT_MAX) or "(no title)"
 
 
 def _body_from_post(post: RedditPost) -> str:

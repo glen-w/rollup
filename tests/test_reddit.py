@@ -15,13 +15,25 @@ from rollup.reddit.config import (
     parse_reddit_config,
 )
 from rollup.reddit.fetch import (
+    SUB_FETCH_BACKOFF_SECONDS,
     FixtureRedditClient,
     fetch_posts_for_subs,
+    format_reddit_duration,
+    posts_from_json,
     posts_from_rss,
+    reddit_fetch_eta_log_line,
+    reddit_fetch_eta_phrase,
+    reddit_fetch_wait_seconds,
 )
 from rollup.reddit.parse import reddit_post_to_parsed_message, reddit_source_key
 from rollup.reddit.models import RedditPost
-from rollup.reddit.session import build_rss_url, rss_sort_path
+from rollup.reddit.session import (
+    RedditNotFoundError,
+    build_json_url,
+    build_rss_url,
+    format_http_error,
+    rss_sort_path,
+)
 from rollup.run_options import GroupingConfig
 from rollup.pipeline import (
     DiscoveryResult,
@@ -73,8 +85,43 @@ def test_parse_reddit_config() -> None:
 def test_normalize_sub_name() -> None:
     assert normalize_sub_name("Python") == "python"
     assert normalize_sub_name("r/machinelearning") == "machinelearning"
+    assert normalize_sub_name("raspberry_pi") == "raspberry_pi"
+    assert normalize_sub_name("r/raspberry_pi") == "raspberry_pi"
+    assert normalize_sub_name("R/Rust") == "rust"
+    assert normalize_sub_name("rust") == "rust"
     assert normalize_sub_name("") is None
     assert normalize_sub_name("bad/name") is None
+
+
+def test_reddit_fetch_wait_estimate() -> None:
+    assert reddit_fetch_wait_seconds(0) == 0.0
+    assert reddit_fetch_wait_seconds(1) == 0.0
+    assert reddit_fetch_wait_seconds(2) == SUB_FETCH_BACKOFF_SECONDS
+    assert reddit_fetch_wait_seconds(28) == 27 * SUB_FETCH_BACKOFF_SECONDS
+    assert reddit_fetch_eta_phrase(0) is None
+    assert reddit_fetch_eta_phrase(1) is None
+    assert reddit_fetch_eta_phrase(2) == "about 1 min"
+    assert reddit_fetch_eta_phrase(28) == "about 32 min"
+    assert format_reddit_duration(0) == "a few seconds"
+    assert format_reddit_duration(6930) == "about 1 h 56 min"
+    line = reddit_fetch_eta_log_line(28)
+    assert line.startswith("Fetching Reddit: 28 subs, about 32 min")
+    assert "70s between subs" in line
+
+
+def test_parse_reddit_config_preserves_r_prefix_subs() -> None:
+    raw = {
+        "enabled": True,
+        "subs": {
+            "raspberry_pi": {"enabled": True},
+            "rust": {"enabled": True},
+        },
+    }
+    cfg = parse_reddit_config(raw, path=Path("t.toml"))
+    assert "raspberry_pi" in cfg.subs
+    assert cfg.subs["raspberry_pi"].name == "raspberry_pi"
+    assert cfg.subs["rust"].name == "rust"
+    assert "aspberry_pi" not in cfg.subs
 
 
 def test_folder_name_feed_vs_per_source() -> None:
@@ -98,6 +145,45 @@ def test_fixture_rss_parse() -> None:
     assert posts[0].selftext
 
 
+def test_fixture_json_parse() -> None:
+    raw = FIXTURES.joinpath("listing_hot.json").read_text(encoding="utf-8")
+    posts = posts_from_json(raw, subreddit="python")
+    assert len(posts) == 2
+    assert posts[0].post_id == "abc123"
+    assert posts[0].title.startswith("What's new")
+    assert posts[0].score == 420
+    assert posts[1].is_self is False
+    assert "limit=10" in build_json_url("python", "hot", limit=10)
+
+
+def test_format_http_error_includes_content_type() -> None:
+    class _Resp:
+        status_code = 429
+        text = ""
+        headers = {"Content-Type": "text/html", "Retry-After": "42"}
+
+    msg = format_http_error(_Resp(), label="Reddit JSON r/foo/hot")  # type: ignore[arg-type]
+    assert "429" in msg
+    assert "text/html" in msg
+    assert "retry-after=42" in msg
+
+
+def test_ensure_listing_body_rejects_html_login_wall() -> None:
+    from rollup.reddit.session import _ensure_listing_body
+
+    class _Resp:
+        status_code = 200
+        text = "<!DOCTYPE html><html><body>login</body></html>"
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+    import pytest
+    from rollup.reddit.session import RedditSessionError
+
+    with pytest.raises(RedditSessionError) as exc:
+        _ensure_listing_body("rss", _Resp(), label="Reddit old RSS r/foo/hot")  # type: ignore[arg-type]
+    assert exc.value.retriable is True
+
+
 def test_fixture_fetch_posts_for_subs() -> None:
     client = FixtureRedditClient(FIXTURES)
     cfg = RedditConfig(enabled=True, sort="hot", limit=10)
@@ -110,6 +196,22 @@ def test_fixture_fetch_posts_for_subs() -> None:
     )
     assert failures == []
     assert len(result["python"]) == 2
+
+
+def test_fetch_posts_for_subs_logs_eta(caplog, monkeypatch) -> None:
+    monkeypatch.setattr("rollup.reddit.fetch.time.sleep", lambda _s: None)
+    caplog.set_level("INFO", logger="rollup.reddit.fetch")
+    client = FixtureRedditClient(FIXTURES)
+    cfg = RedditConfig(enabled=True, sort="hot", limit=10)
+    subs = (
+        RedditSub(name="python", enabled=True),
+        RedditSub(name="rust", enabled=True),
+    )
+    fetch_posts_for_subs(subs, config=cfg, lookback_days=7, client=client)
+    text = caplog.text
+    assert "Fetching Reddit: 2 subs, about 1 min" in text
+    assert "Reddit [1/2] r/python (about 1 min remaining)" in text
+    assert "Reddit [2/2] r/rust" in text
 
 
 def test_rss_window_filter() -> None:
@@ -238,6 +340,58 @@ def test_stage_parse_reddit_dry_run() -> None:
     assert degraded is False
 
 
+def test_stage_parse_reddit_dry_run_includes_eta() -> None:
+    cfg = RedditConfig(
+        enabled=True,
+        subs={
+            "python": RedditSub(name="python", enabled=True),
+            "rust": RedditSub(name="rust", enabled=True),
+        },
+    )
+    from rollup.config import Config
+
+    config = Config(
+        root=Path("."),
+        mail_root=Path("."),
+        output_dir=Path("/tmp/out"),
+        state_dir=Path("/tmp/state"),
+        log_dir=Path("/tmp/logs"),
+        lookback_days=7,
+        folders_include=(),
+        folders_exclude=(),
+        no_ollama=True,
+        include_seen_undated=False,
+        rebuild_summaries=False,
+        max_body_chars=10_000,
+        max_chars_for_llm=5_000,
+        max_display_links=8,
+        ollama_url="http://localhost:11434/api/generate",
+        ollama_model="test",
+        allow_remote_ollama=False,
+        summary_profile=None,
+        summary_variants=(),
+        summary_type_routing=None,
+        summary_profile_set_path=None,
+        export_summary_profile_set_path=None,
+        list_summary_profiles=False,
+        list_newsletter_types=False,
+        summary_routing_report=False,
+        no_reddit=False,
+        reddit=cfg,
+    )
+    _msgs, warnings, _degraded = stage_parse_reddit(
+        config,
+        (
+            RedditSub(name="python", enabled=True),
+            RedditSub(name="rust", enabled=True),
+        ),
+        dry_run=True,
+    )
+    assert any(
+        "about 1 min" in w.message and "2 Reddit subs" in w.message for w in warnings
+    )
+
+
 def test_stage_parse_reddit_fixture_client() -> None:
     cfg = RedditConfig(
         enabled=True,
@@ -332,19 +486,24 @@ def test_fetch_posts_for_subs_partial_failure(monkeypatch) -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def fetch_feed(
+        def fetch_listing(
             self,
             sub: str,
             sort: str,
             *,
             time_filter: str | None = None,
-        ) -> str:
+            limit: int = 25,
+        ) -> tuple[Literal["json", "rss"], str]:
+            del sort, time_filter, limit
             self.calls += 1
             if sub == "bad":
                 from rollup.reddit.session import RedditSessionError
 
-                raise RedditSessionError("Reddit RSS r/bad/hot failed (429): ")
-            return FIXTURES.joinpath("hot.rss").read_text(encoding="utf-8")
+                raise RedditSessionError(
+                    "Reddit JSON r/bad/hot failed (429): content-type=text/html"
+                )
+            json_path = FIXTURES / "listing_hot.json"
+            return "json", json_path.read_text(encoding="utf-8")
 
     cfg = RedditConfig(enabled=True, sort="hot", limit=10)
     subs = (
@@ -361,6 +520,40 @@ def test_fetch_posts_for_subs_partial_failure(monkeypatch) -> None:
     assert "bad" not in result
     assert len(failures) == 1
     assert "r/bad" in failures[0]
+
+
+def test_fetch_posts_for_subs_does_not_retry_404(monkeypatch) -> None:
+    monkeypatch.setattr("rollup.reddit.fetch.time.sleep", lambda _s: None)
+
+    class _NotFoundClient:
+        calls = 0
+
+        def fetch_listing(
+            self,
+            sub: str,
+            sort: str,
+            *,
+            time_filter: str | None = None,
+            limit: int = 25,
+        ) -> tuple[str, str]:
+            del sort, time_filter, limit
+            _NotFoundClient.calls += 1
+            raise RedditNotFoundError(
+                "Reddit JSON r/missing/hot failed (404): content-type=text/html"
+            )
+
+    cfg = RedditConfig(enabled=True, sort="hot", limit=10)
+    subs = (RedditSub(name="missing", enabled=True),)
+    _NotFoundClient.calls = 0
+    result, failures = fetch_posts_for_subs(
+        subs,
+        config=cfg,
+        lookback_days=7,
+        client=_NotFoundClient(),
+    )
+    assert result == {}
+    assert len(failures) == 1
+    assert _NotFoundClient.calls == 1
 
 
 def test_schema_v14_reddit_catalog(tmp_path: Path) -> None:
