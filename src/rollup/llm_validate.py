@@ -76,33 +76,38 @@ def validate_summary_job(job: SummaryJob, config: Config) -> ResolvedLlmJob:
 
 
 def validate_executable_llm_jobs(config: Config, plan: SummaryPlan | None) -> list[ResolvedLlmJob]:
-    """Validate every executable LLM job before network execution."""
-    if config.no_ollama:
-        return []
+    """Validate every executable LLM job before network execution.
 
-    validate_llm_api_base(config.llm_api_base)
+    Summary and group jobs require LLM summarisation. Final review is independent
+    of ``--ollama`` and is still validated when enabled.
+    """
     resolved: list[ResolvedLlmJob] = []
     seen: set[tuple[str, str, str]] = set()
 
-    if plan is not None:
-        for jobs in plan.jobs_by_variant.values():
-            for job in jobs:
-                item = validate_summary_job(job, config)
-                key = (item.kind, item.provider, item.model)
-                if key not in seen:
-                    seen.add(key)
-                    resolved.append(item)
+    if not config.no_ollama:
+        validate_llm_api_base(config.llm_api_base)
 
-    if config.group_summaries_enabled:
-        provider = config.llm_provider
-        model = resolve_fallback_model(config)
-        if provider == "litellm":
-            _require_litellm_extra()
-            reject_litellm_ollama_model(model, context="group summary")
-        key = ("group", provider, model)
-        if key not in seen:
-            seen.add(key)
-            resolved.append(ResolvedLlmJob(provider=provider, model=model, kind="group"))
+        if plan is not None:
+            for jobs in plan.jobs_by_variant.values():
+                for job in jobs:
+                    item = validate_summary_job(job, config)
+                    key = (item.kind, item.provider, item.model)
+                    if key not in seen:
+                        seen.add(key)
+                        resolved.append(item)
+
+        if config.group_summaries_enabled:
+            provider = config.llm_provider
+            model = resolve_fallback_model(config)
+            if provider == "litellm":
+                _require_litellm_extra()
+                reject_litellm_ollama_model(model, context="group summary")
+            key = ("group", provider, model)
+            if key not in seen:
+                seen.add(key)
+                resolved.append(
+                    ResolvedLlmJob(provider=provider, model=model, kind="group")
+                )
 
     if config.final_review_enabled:
         provider = config.final_review_provider

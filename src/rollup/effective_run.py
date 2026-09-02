@@ -84,6 +84,9 @@ class EffectiveRun:
     allow_summary_network: bool
     allow_final_review_network: bool
     allow_group_summary_network: bool
+    allow_linkedin_network: bool
+    allow_reddit_network: bool
+    allow_webpage_network: bool
     apply_policy: ApplyPolicy | None
 
     @property
@@ -103,8 +106,9 @@ def resolve_effective_run(
     )
 
     allow_summary_network = not run_options.dry_run and config.llm_enabled
+    # Final review is independent of --ollama (CONTRACT + digest integration tests).
     allow_final_review_network = (
-        not run_options.dry_run and not config.no_ollama and config.final_review_enabled
+        not run_options.dry_run and config.final_review_enabled
     )
     allow_group_summary_network = (
         not run_options.dry_run
@@ -112,6 +116,9 @@ def resolve_effective_run(
         and config.llm_enabled
         and grouping.enabled
     )
+    allow_linkedin_network = not run_options.dry_run and config.linkedin_enabled
+    allow_reddit_network = not run_options.dry_run and config.reddit_enabled
+    allow_webpage_network = not run_options.dry_run and config.webpage_enabled
 
     return EffectiveRun(
         root=config.root,
@@ -178,6 +185,9 @@ def resolve_effective_run(
         allow_summary_network=allow_summary_network,
         allow_final_review_network=allow_final_review_network,
         allow_group_summary_network=allow_group_summary_network,
+        allow_linkedin_network=allow_linkedin_network,
+        allow_reddit_network=allow_reddit_network,
+        allow_webpage_network=allow_webpage_network,
         apply_policy=apply_policy,
     )
 

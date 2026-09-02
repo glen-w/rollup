@@ -64,7 +64,7 @@ def test_reddit_index_empty(app) -> None:
     resp = client.get("/reddit")
     assert resp.status_code == 200
     assert b"Add subreddit" in resp.data
-    assert b"public RSS" in resp.data
+    assert b"JSON/RSS" in resp.data
     assert b"Refresh subscriptions" not in resp.data
     assert b"ROLLUP_REDDIT" not in resp.data
     assert b"70s between subs" in resp.data

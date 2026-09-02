@@ -1282,6 +1282,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
 def apply_connection_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA journal_mode = WAL")
 
 
 def connect_db(db_path: Path) -> sqlite3.Connection:
@@ -1295,8 +1296,8 @@ def connect_db_mutator(db_path: Path) -> sqlite3.Connection:
     """Open an existing DB for writes without creating or migrating schema.
 
     Used by web POST handlers after startup ``init_db``. Fails if the file is
-    missing. Does not mkdir, migrate, or change journal mode beyond connection
-    pragmas required for FK + busy timeout.
+    missing.     Does not mkdir, migrate, or change journal mode beyond connection
+    pragmas required for FK + busy timeout + WAL.
     """
     path = Path(db_path)
     if not path.is_file():

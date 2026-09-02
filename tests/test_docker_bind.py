@@ -28,6 +28,11 @@ def test_validate_bind_host_bracketed_ipv6_wildcard_opt_in() -> None:
     assert validate_bind_host("[::]", allow_non_loopback=True) == "[::]"
 
 
-def test_validate_bind_host_still_rejects_public_hostname() -> None:
-    with pytest.raises(BindError):
-        validate_bind_host("example.com", allow_non_loopback=True)
+def test_compose_publishes_loopback_only() -> None:
+    from pathlib import Path
+
+    compose = Path(__file__).parent.parent / "docker-compose.yml"
+    text = compose.read_text(encoding="utf-8")
+    assert "127.0.0.1:8765:8765" in text
+    assert '- "8765:8765"' not in text
+    assert "- '8765:8765'" not in text

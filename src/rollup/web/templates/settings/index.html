@@ -170,7 +170,7 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
 
   <section class="card-section">
     <h2>Reddit</h2>
-    <p class="note">Manage subreddits on the <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a> page. Public RSS feeds — no credentials required.</p>
+    <p class="note">Manage subreddits on the <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a> page. No credentials required (public JSON/RSS). Optional OAuth lives in <code>~/.config/rollup/env</code> — never in TOML.</p>
     <label>
       <input type="hidden" name="reddit_enabled" value="0">
       <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>

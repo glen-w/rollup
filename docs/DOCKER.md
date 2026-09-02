@@ -31,9 +31,9 @@ Edit `docker-compose.override.yml` if your paths differ.
 
 ## Secrets
 
-LinkedIn session cookies live in `~/.config/rollup/env` (mode `600`), loaded at startup via `ROLLUP_ENV_FILE`. The container sets `ROLLUP_ENV_FILE=/data/config/env` and mounts your host file read-only.
+LinkedIn session cookies (and optional Reddit OAuth) live in `~/.config/rollup/env` (mode `600`), loaded at startup via `ROLLUP_ENV_FILE`. The container sets `ROLLUP_ENV_FILE=/data/config/env` and mounts your host file read-only.
 
-Do **not** put cookies in TOML, `.env`, or git. See [CONFIG.md](CONFIG.md) and [CRON.md](CRON.md).
+Do **not** put secrets in TOML, `.env`, or git. See [CONFIG.md](CONFIG.md) and [CRON.md](CRON.md).
 
 ## CLI flags vs TOML paths
 
@@ -46,9 +46,9 @@ Non-path settings (folder themes, LinkedIn searches, Reddit subs, efforts) load 
 | Source | Credentials | Egress needed |
 |--------|-------------|---------------|
 | Mail mbox | — | No |
-| LinkedIn | `~/.config/rollup/env` | Yes (when enabled) |
-| Reddit RSS | None | Yes (when `[reddit].enabled`) |
-| Webpage articles | None | Yes (on fetch runs) |
+| LinkedIn | `~/.config/rollup/env` | Yes (when enabled; skipped when listing cache is fresh) |
+| Reddit | None (optional `ROLLUP_REDDIT_*` in env) | Yes (when `[reddit].enabled`; skipped when listing cache is fresh) |
+| Webpage articles | None | Yes (on fetch runs for pending URLs) |
 | Ollama on host | — | `host.docker.internal:11434` via `extra_hosts` |
 
 Default mail-only digest makes no network calls.
@@ -85,7 +85,16 @@ Uses `tests/fixtures` as mail root and ephemeral volumes for state/output/logs.
 
 ## Bind flag
 
-Docker uses `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container. Host-header validation still requires loopback `Host:` headers — access via `http://localhost:8765` only.
+Docker uses `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container. Compose publishes **`127.0.0.1:8765:8765`** so the host port is loopback-only. Host-header validation still requires loopback `Host:` headers — access via `http://localhost:8765`.
+
+To listen on all host interfaces (LAN), override in `docker-compose.override.yml`:
+
+```yaml
+services:
+  rollup:
+    ports:
+      - "8765:8765"
+```
 
 Native use stays unchanged:
 
@@ -95,6 +104,6 @@ rollup web --host 127.0.0.1
 
 ## Related docs
 
-- [WEB.md](WEB.md) — web UI features (Articles, Reddit, Run Studio)
+- [WEB.md](WEB.md) — web UI features (Articles, LinkedIn, Reddit, Run Studio)
 - [CONFIG.md](CONFIG.md) — TOML and env file
 - [EXAMPLES.md](EXAMPLES.md) — CLI examples

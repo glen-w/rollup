@@ -11,6 +11,7 @@ from rollup.state import (
     CANONICAL_TABLES,
     SCHEMA_VERSION,
     connect_db,
+    connect_db_mutator,
     get_schema_version,
     init_db,
     init_db_with_summaries,
@@ -30,6 +31,22 @@ def test_fresh_db_canonical_full_shape(tmp_path: Path) -> None:
         )
     }
     assert CANONICAL_TABLES.issubset(tables)
+    conn.close()
+
+
+def test_init_db_enables_wal(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "rollup.db")
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert str(mode).lower() == "wal"
+    conn.close()
+
+
+def test_connect_db_mutator_keeps_wal(tmp_path: Path) -> None:
+    db = tmp_path / "rollup.db"
+    init_db(db).close()
+    conn = connect_db_mutator(db)
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert str(mode).lower() == "wal"
     conn.close()
 
 

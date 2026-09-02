@@ -41,6 +41,24 @@ When you add a new sticky key that should appear on the CLI, extend
 asserted in tests. The sticky key `profile` is resolved via `--profile` /
 `EffectiveConfigView.profile_name`, not the sticky→argv body.
 
+| TOML key | CLI |
+|----------|-----|
+| `lookback_days` | `--lookback-days` |
+| `effort` | `--effort` |
+| `grouping_min_size` | `--grouping-min-size` |
+| `ollama` | `--ollama` / `--no-ollama` |
+| `no_grouping` | `--no-grouping` / `--grouping` |
+| `ollama_model`, `llm_model`, `llm_provider`, `summary_profile` | matching `--*` flags |
+| `root`, `mail_root`, `output_dir`, `state_dir`, `log_dir` | matching `--*` flags |
+| `folder`, `exclude_folder` | `--folder`, `--exclude-folder` |
+| `output` | `--output` |
+| `profile` | `--profile` (not sticky→argv body) |
+
+`[linkedin]`, `[reddit]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
+separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled`
+still inject `--linkedin` / `--reddit` when neither enable nor disable flag is on
+the CLI.
+
 Scheduler helpers use a **separate** `cron_helpers.build_scheduled_digest_argv` (paths +
 `--cron`); do not confuse it with the sticky registry.
 
@@ -110,10 +128,39 @@ API keys and `--llm-api-base` are **not** sticky (CLI/env only). Custom summary
 profile JSON may set `"provider": "litellm"` per profile; that overrides the
 global `llm_provider` for those jobs only.
 
+`--final-review` is independent of `--ollama`: it can run whole-digest QA on a
+preview-summary digest. `--group-summaries` still requires `--ollama`.
+
+Built-in summary profiles (`--list-summary-profiles`) and default type routes:
+
+| Profile | Typical model (`balanced`) | Use |
+|---------|----------------------------|-----|
+| `rough` | `llama3.2:3b` | Short updates and link roundups |
+| `standard` | `qwen2.5:7b` | Default balanced profile |
+| `deep` | `gpt-oss:20b` | Analytical or policy-heavy items |
+| `max` | `qwen3.6:27b` | Long essays |
+
+| Newsletter type | Profile |
+|-----------------|---------|
+| `short_update`, `link_roundup` | `rough` |
+| `multi_section_digest`, `unclassified` | `standard` |
+| `essay` | `max` |
+| `item_list` | `preserve` |
+
+Custom profile JSON, `think` / `num_predict`, and routing flags: [EXAMPLES.md](EXAMPLES.md#digest-with-ollama-recommended-full-run).
+
 ## Effort model overrides
 
 Built-in `light` / `balanced` / `high` ladders keep the same profile names and
-type routes. Override **models** per effort in TOML (or the Configuration Centre):
+type routes. `--list-efforts` prints the effective bundle. Built-in defaults:
+
+| Effort | Rough | Standard | Deep | Max | Group / fallback | Final review | `max_chars_for_llm` |
+|--------|-------|----------|------|-----|------------------|--------------|---------------------|
+| `light` | `llama3.2:3b` | `llama3.2:3b` | `qwen2.5:7b` | `qwen2.5:7b` | `llama3.2:3b` | `qwen2.5:7b` | 20_000 |
+| `balanced` (default) | `llama3.2:3b` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `llama3.2:3b` | `qwen2.5:7b` | 30_000 |
+| `high` | `qwen2.5:7b` | `gpt-oss:20b` | `qwen3.6:27b` | `qwen3.6:27b` | `qwen2.5:7b` | `gpt-oss:20b` | 50_000 |
+
+Override **models** per effort in TOML (or the Configuration Centre):
 
 ```toml
 [efforts.high]
@@ -159,10 +206,18 @@ onboarding_complete = false
 
 ## LinkedIn content searches (optional)
 
-Each saved LinkedIn **content search** URL becomes a digest section named
-`linkedin:<slug>`, treated like a mailbox folder for include/exclude, themes,
-grouping, and rendering. Fetch is **opt-in network** (same idea as `--ollama`):
-off unless `[linkedin].enabled = true` and/or you pass `--linkedin`.
+Each saved LinkedIn **content search** URL is ingested like a mailbox folder
+(include/exclude, themes, grouping, rendering). Fetch is **opt-in network**
+(same idea as `--ollama`): off unless `[linkedin].enabled = true` and/or you
+pass `--linkedin`.
+
+TOC layout (`[linkedin].layout`, default **`feed`**) controls section names:
+
+| Layout | Digest section(s) |
+|--------|-------------------|
+| `feed` (default) | one `linkedin:feed` section |
+| `per_source` | one section per author (`linkedin:<member-id>`) |
+| `per_search` | one section per named search (`linkedin:<slug>`) |
 
 v1 supports **faceted author lists** (`fromMember=…` on a content-search URL).
 Rollup fetches each author’s recent posts via LinkedIn’s Voyager
@@ -175,7 +230,7 @@ search, company pages, follows, and mentions are not supported yet (see
 enabled = true   # opt-in fetch on digest; default false
 article_fetch = true   # fetch linked article bodies for link posts (default on)
 fetch_ttl_hours = 24   # reuse listing/article cache within this window; 0 = always fetch
-layout = "per_search"  # one digest section per named search (also: feed, per_source)
+layout = "feed"        # feed (default) | per_source | per_search
 
 [linkedin.searches.general]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&fromMember=%5B%22ACo…%22%5D"
@@ -206,7 +261,8 @@ They rotate together. If a run returns 401, refresh **both** from the same pane.
 **Persistent env file (recommended on your machine):** put the variables in
 `~/.config/rollup/env` (mode `600`). Rollup loads this file at startup and does
 not override variables already set in the shell. Override the path with
-`ROLLUP_ENV_FILE` if needed. Still never commit this file or put cookies in TOML.
+`ROLLUP_ENV_FILE` if needed. Still never commit this file or put secrets in TOML.
+Optional Reddit OAuth variables belong in the same file.
 
 ```bash
 # ~/.config/rollup/env
@@ -232,7 +288,7 @@ For launchd/cron, pass the same variables in the job environment (plist
 - Listing cache: `fetch_ttl_hours` (default `24`) skips Voyager when the last listing snapshot is still fresh. `0` always fetches (but still persists). `--linkedin-refresh` bypasses the cache for one run. On fetch failure, a stale snapshot is reused when available (`linkedin_cache_stale`).
 - Article fetch: `[linkedin].article_fetch = true` by default — link posts also fetch the URL from Voyager `ArticleComponent` (external blogs, Pulse). Adds HTTP beyond Voyager; disable with `[linkedin].article_fetch = false` or `--no-linkedin-article-fetch`. Failures leave the commentary teaser and add a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, …); they do not fail the digest.
 - URL must be `https://www.linkedin.com/search/results/content/…` with a `fromMember` facet (author `ACo…` ids). Copy it from LinkedIn after filtering Content search by people.
-- `--folder` / `--exclude-folder` accept `linkedin:general` (or any `linkedin:<slug>`) names like mbox folders.
+- `--folder` / `--exclude-folder` accept the layout’s folder names (`linkedin:feed` by default; `linkedin:<slug>` when `layout = "per_search"`).
 - Posts are dated from LinkedIn activity ids; the digest **lookback window** still applies after ingest (older posts are skipped, not listed as undated).
 - `linkedin:*` folders stay **standalone** (no `notification_stream` grouping). Subject prefers the article title when present; preview keeps the full body up to 2000 characters.
 - Caps (per search): 20 authors, 2 pages × 10 posts each, 100 posts total, 2s backoff between requests. Article fetch: 50 URLs per run, 1s backoff.
@@ -244,13 +300,13 @@ Configure named search URLs in the web **LinkedIn** page (`/linkedin`). Settings
 only toggles fetch on/off. The LinkedIn page stores URLs and display names only.
 How to copy cookies and run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
-`[linkedin].layout` controls TOC sections: `feed` (default, one `linkedin:feed` section), `per_source` (one section per author), or `per_search` (legacy `linkedin:<slug>` per saved search).
+`[linkedin].layout` is also editable on the LinkedIn page (`/linkedin`). `per_search` is the legacy one-section-per-saved-search mode.
 
 ## Reddit subreddits (optional)
 
 Opt-in like LinkedIn: off unless `[reddit].enabled = true` and/or `--reddit`.
 
-Rollup fetches **public RSS feeds** (`https://www.reddit.com/r/{sub}/{sort}.rss`). No Reddit account, OAuth app, or environment credentials. Sorts `rising` and `controversial` map to `hot` on RSS. Unauthenticated feeds are often rate-limited (~1 request per minute per sub); Reddit may restrict RSS further in future.
+Fetch uses a **transport ladder** (first success wins): optional **OAuth JSON** (when env credentials are set) → **public JSON** → **www RSS** → **old.reddit RSS**. No Reddit account is required. Sorts `rising` and `controversial` map to `hot` on RSS/JSON listing paths. Unauthenticated feeds are often rate-limited (~1 request per minute per sub).
 
 ```toml
 [reddit]
@@ -260,6 +316,7 @@ layout = "feed"          # feed | per_source
 sort = "hot"             # hot | new | top | rising | controversial
 limit = 10
 mode = "summary"         # summary | posts
+# time_filter = "week"   # optional; for sort=top, otherwise derived from lookback
 
 [reddit.subs.python]
 enabled = true
@@ -268,17 +325,31 @@ enabled = true
 enabled = true
 mode = "posts"
 limit = 5
+# display_name / emoji / accent / order work like [folders.*]
+```
+
+### Optional OAuth (environment only)
+
+A Reddit **script app** is optional. When all four variables are set, Rollup tries `oauth.reddit.com` JSON first (then falls through the public ladder). Never put them in TOML or Settings. They belong in `~/.config/rollup/env` (or `ROLLUP_ENV_FILE`) next to LinkedIn cookies:
+
+```bash
+# ~/.config/rollup/env
+ROLLUP_REDDIT_CLIENT_ID=…
+ROLLUP_REDDIT_CLIENT_SECRET=…
+ROLLUP_REDDIT_USERNAME=…
+ROLLUP_REDDIT_PASSWORD=…
 ```
 
 ### Behaviour
 
 - Enable: `[reddit].enabled = true` and/or `rollup digest --reddit`. `--no-reddit` turns fetch off for that run.
-- Listing cache: `fetch_ttl_hours` (default `24`) skips RSS when the last listing snapshot is still fresh and large enough for the requested cap. `0` always fetches (but still persists). `--reddit-refresh` bypasses the cache for one run. On fetch failure, a stale snapshot is reused when available (`reddit_cache_stale`).
-- **Reddit** page (`/reddit`): add subreddit names, checkbox which subs to include, per-sub overrides for mode/sort/cap. Selections saved in TOML.
+- Listing cache: `fetch_ttl_hours` (default `24`, max `168`) skips the network when the last listing snapshot is still fresh and large enough for the requested cap. `0` always fetches (but still persists). `--reddit-refresh` bypasses the cache for one run. On fetch failure, a stale snapshot is reused when available (`reddit_cache_stale`).
+- **Reddit** page (`/reddit`): add subreddit names, checkbox which subs to include, per-sub overrides for mode/sort/cap, layout, and TTL. Selections saved in TOML.
 - `layout = feed`: all posts in `reddit:feed`; summary-mode subs become `subreddit_digest` groups, per-post subs stay standalone.
 - `layout = per_source`: one folder `reddit:<sub>` per enabled sub.
 - Global defaults apply when per-sub keys are omitted.
-- Caps: 10 posts/sub default (max 50), max 100 enabled subs, **70s backoff** between subs (~1 request/minute). CLI logs and the Reddit / Run Studio pages show the estimated wait. HTTP 429 adds extra wait (retry remaining subs once after a longer backoff).
+- `time_filter` applies to `sort = top` (`day` / `week` / `month` / `year`). If omitted, Rollup derives it from `--lookback-days`.
+- Caps: 10 posts/sub default (max 50), max 100 enabled subs, **70s backoff** between subs (~1 request/minute). CLI logs and the Reddit / Run Studio pages show the estimated wait (cached subs are not counted). HTTP 429 adds extra wait (retry remaining subs once after a longer backoff).
 - Message identity `reddit:t3:<id>`; source key `reddit:sub:<name>` (mute with `rollup sources disable reddit:sub:…`).
 - Fetch failure **partial** (exit 2) when mail still publishes; Reddit-only runs **hard-fail** (exit 1).
 - `--dry-run` and web **GET** never contact Reddit.
@@ -326,8 +397,10 @@ If `root` / `mail_root` are not set in config or CLI:
 ## Related
 
 - Product contract: [CONTRACT.md](CONTRACT.md)
+- Comparison: [COMPARISON.md](COMPARISON.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
-- Web UI (Settings + Run Studio): [WEB.md](WEB.md)
+- Web UI (Settings + Run Studio + Articles + LinkedIn + Reddit): [WEB.md](WEB.md)
 - Docker (optional): [DOCKER.md](DOCKER.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)
+- Troubleshooting (LinkedIn session, Reddit ladder, listing cache): [TROUBLESHOOTING.md](TROUBLESHOOTING.md)

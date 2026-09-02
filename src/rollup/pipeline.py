@@ -567,8 +567,6 @@ def stage_parse_linkedin(
     from rollup.linkedin.fetch import LinkedInFetchError, fetch_search_posts
     from rollup.linkedin.parse import linkedin_post_to_parsed_message
     from rollup.linkedin.session import (
-        LinkedInSessionError,
-        build_linkedin_session,
         linkedin_cookie_configured,
     )
     from rollup.state import init_db
@@ -579,12 +577,6 @@ def stage_parse_linkedin(
     when = generated_at or datetime.now().astimezone()
     ttl_hours = config.linkedin.fetch_ttl_hours
     refresh = config.linkedin_refresh
-    article_session = None
-    if config.linkedin.article_fetch:
-        try:
-            article_session = build_linkedin_session()
-        except LinkedInSessionError:
-            article_session = None
 
     if dry_run:
         from rollup.linkedin.session import jsession_id_configured
@@ -665,10 +657,9 @@ def stage_parse_linkedin(
                     lookback_days=config.lookback_days,
                     client=client,
                 )
-                if article_session is not None and config.linkedin.article_fetch:
+                if config.linkedin.article_fetch:
                     posts, article_warnings = enrich_posts_with_articles(
                         posts,
-                        article_session,
                         enabled=True,
                         conn=conn,
                         fetched_at=when,
@@ -833,7 +824,7 @@ def stage_parse_reddit(
                 warnings.append(
                     StageWarning(
                         code="reddit_dry_run",
-                        message=f"Would fetch r/{sub.name} via public RSS",
+                        message=f"Would fetch r/{sub.name} (JSON/RSS listing)",
                         folder=config.reddit.layout,
                     )
                 )
@@ -1514,25 +1505,34 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             )
 
     parse_result = stage_parse(config, discovery.folders)
+    reddit_subs = discovery.reddit_subs if (
+        effective_run.allow_reddit_network or run_options.dry_run
+    ) else ()
     rd_messages, rd_warnings, reddit_degraded = stage_parse_reddit(
         config,
-        discovery.reddit_subs,
+        reddit_subs,
         dry_run=run_options.dry_run,
         generated_at=generated_at,
     )
     parse_result = merge_reddit_parse(parse_result, rd_messages, rd_warnings)
     aggregated.reddit_degraded = reddit_degraded
+    linkedin_searches = discovery.linkedin_searches if (
+        effective_run.allow_linkedin_network or run_options.dry_run
+    ) else ()
     li_messages, li_warnings, linkedin_degraded = stage_parse_linkedin(
         config,
-        discovery.linkedin_searches,
+        linkedin_searches,
         dry_run=run_options.dry_run,
         generated_at=generated_at,
     )
     parse_result = merge_linkedin_parse(parse_result, li_messages, li_warnings)
     aggregated.linkedin_degraded = linkedin_degraded
+    wp_items = discovery.webpage_items if (
+        effective_run.allow_webpage_network or run_options.dry_run
+    ) else ()
     wp_messages, wp_warnings, webpage_degraded, wp_ingest = stage_parse_webpage(
         config,
-        discovery.webpage_items,
+        wp_items,
         dry_run=run_options.dry_run,
         generated_at=generated_at,
     )
@@ -1568,7 +1568,11 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
 
         try:
             validate_llm_api_base(config.llm_api_base)
-            if effective_run.allow_summary_network:
+            need_ollama_url = effective_run.allow_summary_network or (
+                effective_run.allow_final_review_network
+                and config.final_review_provider == "ollama"
+            )
+            if need_ollama_url:
                 validate_ollama_url(config.ollama_url, config.allow_remote_ollama)
             validate_executable_llm_jobs(config, None)
         except (OllamaError, LlmJobValidationError) as exc:
@@ -1830,6 +1834,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                 use_explicit_path=False,
                 aggregated=aggregated,
                 apply_policy=session.resolved_apply_policy,
+                allow_network=session.effective_run.allow_final_review_network,
                 dry_run=run_options.dry_run,
                 quiet=run_options.quiet,
             )
@@ -1878,6 +1883,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
             use_explicit_path=bool(config.final_review_report_path),
             aggregated=aggregated,
             apply_policy=session.resolved_apply_policy,
+            allow_network=session.effective_run.allow_final_review_network,
             dry_run=run_options.dry_run,
             quiet=run_options.quiet,
         )
@@ -2299,10 +2305,16 @@ def _maybe_final_review(
     use_explicit_path: bool,
     aggregated: AggregatedResults,
     apply_policy=None,
+    allow_network: bool | None = None,
     dry_run: bool = False,
     quiet: bool = True,
 ) -> DigestReport:
-    if not config.final_review_enabled or dry_run:
+    allowed = (
+        allow_network
+        if allow_network is not None
+        else (config.final_review_enabled and not dry_run)
+    )
+    if not allowed:
         return report
     from rollup.final_review import (
         execute_final_review,

@@ -1,6 +1,6 @@
 # Rollup — agent notes
 
-Local, read-only Thunderbird mbox newsletter digest (Python 3.10+). CLI entrypoint: `rollup` (or `python -m rollup`). Optional Flask web UI via the `[web]` extra.
+Local-first personal briefing engine over a read-only Thunderbird mbox store (Python 3.10+). CLI entrypoint: `rollup` (or `python -m rollup`). Optional Flask web UI via the `[web]` extra. Product shape: [docs/CONTRACT.md](docs/CONTRACT.md). Position: [docs/COMPARISON.md](docs/COMPARISON.md). Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md). Rollup produces a bounded briefing for a time window; it is not an RSS reader (no unread stream). Network sources are ingest transports, same pattern as LinkedIn/Reddit today.
 
 ## Cursor Cloud specific instructions
 
@@ -57,7 +57,7 @@ python -m pytest tests/ -q
 - Never write under the mail root; all state/output/logs stay outside it.
 - Ollama is optional and local-loopback only by default.
 - Sticky TOML ↔ CLI flags: `rollup.sticky_flags` (single registry). Config load/save for web: `rollup.config_service`. Parser construction: `rollup.cli_parser` (re-exported as `rollup.cli.build_parser`). Digest orchestration: `pipeline.run_digest` (phase helpers; public API unchanged).
-- Docs: [README.md](README.md), [docs/CONFIG.md](docs/CONFIG.md), [docs/WEB.md](docs/WEB.md), [docs/DOCKER.md](docs/DOCKER.md), [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CONTRACT.md](docs/CONTRACT.md), [docs/ROADMAP.md](docs/ROADMAP.md).
+- Docs: [README.md](README.md), [docs/CONFIG.md](docs/CONFIG.md), [docs/WEB.md](docs/WEB.md), [docs/DOCKER.md](docs/DOCKER.md), [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CONTRACT.md](docs/CONTRACT.md), [docs/COMPARISON.md](docs/COMPARISON.md), [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### Docker (optional)
 

@@ -132,6 +132,7 @@ rollup digest --linkedin
 - **0 posts / all undated (older builds):** current Rollup dates posts from activity ids and applies lookback after fetch. If `Messages parsed` is 0, the session may be valid HTML-only (no Voyager) — confirm the log line `Fetching LinkedIn fromMember feed (N authors) via Voyager` and that the URL has `fromMember=`.
 - **429:** rate limited — wait and retry. Mail-only digests may still publish as **partial** (exit 2).
 - **Checkpoint / authwall:** complete LinkedIn’s verification in the browser, then export fresh cookies.
+- **Listing cache still showing old posts:** LinkedIn listings and article bodies persist in `rollup.db` for `[linkedin].fetch_ttl_hours` (default 24). Pass `--linkedin-refresh`, or set `fetch_ttl_hours = 0`, to force a live pull. A fetch failure may reuse a stale snapshot (`linkedin_cache_stale`).
 - **LinkedIn-only run (`--folder linkedin:…` and no mbox):** fetch failure is **exit 1**, not partial.
 - **Dry-run / Settings GET:** never contacts LinkedIn.
 - **Link-post still a short teaser:** article fetch is on by default. Confirm `[linkedin].article_fetch` is not `false` and you did not pass `--no-linkedin-article-fetch`. Voyager must expose `ArticleComponent` (`content.navigationContext.actionTarget`). Job posts and posts without a link card stay commentary-only. A failed article GET leaves the teaser and sets a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, `linkedin_article_url_invalid`); it does not fail the digest.
@@ -148,6 +149,7 @@ rollup digest --reddit --lookback-days 7
 - **429 / empty body:** rate limited or bot wall — wait and retry. Mail-only digests may still publish as **partial** (exit 2). Rollup retries 429s once per sub across the ladder, then retries failed subs once more after a longer backoff. The CLI prints a planned wait (`70s` between subs) at fetch start and remaining time per sub; HTTP 429s add extra wait beyond that estimate.
 - **404:** subreddit does not exist or name is wrong — not retried. Check `/reddit` or `[reddit.subs.*]` in TOML.
 - **Subs whose names start with `r`:** older builds mangled names like `raspberry_pi` → `aspberry_pi` (bad `lstrip("r/")`). Upgrade fixes this; if TOML has `[reddit.subs.aspberry_pi]`, rename to `raspberry_pi`.
-- **Optional OAuth (script app):** set in the environment (never TOML): `ROLLUP_REDDIT_CLIENT_ID`, `ROLLUP_REDDIT_CLIENT_SECRET`, `ROLLUP_REDDIT_USERNAME`, `ROLLUP_REDDIT_PASSWORD`. When all four are set, Rollup uses `oauth.reddit.com` JSON first.
+- **Stale listing / skipped RSS:** default `fetch_ttl_hours = 24` reuses the last snapshot. Use `--reddit-refresh` or set `[reddit].fetch_ttl_hours = 0`.
+- **Optional OAuth (script app):** set in the environment (never TOML): `ROLLUP_REDDIT_CLIENT_ID`, `ROLLUP_REDDIT_CLIENT_SECRET`, `ROLLUP_REDDIT_USERNAME`, `ROLLUP_REDDIT_PASSWORD`. When all four are set, Rollup uses `oauth.reddit.com` JSON first. Same `~/.config/rollup/env` file as LinkedIn cookies.
 - **Reddit-only run (`--folder reddit:feed` and no mbox):** fetch failure is **exit 1**, not partial.
 - **Dry-run / Settings GET:** never contacts Reddit.

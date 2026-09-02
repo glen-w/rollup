@@ -166,7 +166,7 @@ def build_parser() -> argparse.ArgumentParser:
     reddit_group.add_argument(
         "--reddit",
         action="store_true",
-        help="Enable Reddit sub fetch via public RSS (no credentials)",
+        help="Enable Reddit sub fetch (public JSON/RSS; optional OAuth via env)",
     )
     reddit_group.add_argument(
         "--no-reddit",

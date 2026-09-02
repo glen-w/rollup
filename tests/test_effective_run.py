@@ -66,6 +66,9 @@ def test_effective_run_network_arms_disabled_by_dry_run() -> None:
             no_ollama=False,
             final_review_enabled=True,
             group_summaries_enabled=True,
+            no_linkedin=False,
+            no_reddit=False,
+            no_webpage=False,
         ),
         RunOptions(dry_run=True),
         grouping=GroupingConfig(enabled=True),
@@ -74,6 +77,9 @@ def test_effective_run_network_arms_disabled_by_dry_run() -> None:
     assert effective.allow_summary_network is False
     assert effective.allow_final_review_network is False
     assert effective.allow_group_summary_network is False
+    assert effective.allow_linkedin_network is False
+    assert effective.allow_reddit_network is False
+    assert effective.allow_webpage_network is False
 
 
 def test_effective_run_network_arms_enabled_by_stage() -> None:
@@ -82,6 +88,9 @@ def test_effective_run_network_arms_enabled_by_stage() -> None:
             no_ollama=False,
             final_review_enabled=True,
             group_summaries_enabled=True,
+            no_linkedin=False,
+            no_reddit=False,
+            no_webpage=False,
         ),
         RunOptions(dry_run=False),
         grouping=GroupingConfig(enabled=True),
@@ -90,11 +99,21 @@ def test_effective_run_network_arms_enabled_by_stage() -> None:
     assert effective.allow_summary_network is True
     assert effective.allow_final_review_network is True
     assert effective.allow_group_summary_network is True
+    assert effective.allow_linkedin_network is True
+    assert effective.allow_reddit_network is True
+    assert effective.allow_webpage_network is True
 
 
 def test_effective_run_network_arms_respect_disabled_stages() -> None:
     effective = resolve_effective_run(
-        _config(no_ollama=True, final_review_enabled=False, group_summaries_enabled=False),
+        _config(
+            no_ollama=True,
+            final_review_enabled=False,
+            group_summaries_enabled=False,
+            no_linkedin=True,
+            no_reddit=True,
+            no_webpage=True,
+        ),
         RunOptions(dry_run=False),
         grouping=GroupingConfig(enabled=False),
     )
@@ -102,4 +121,85 @@ def test_effective_run_network_arms_respect_disabled_stages() -> None:
     assert effective.allow_summary_network is False
     assert effective.allow_final_review_network is False
     assert effective.allow_group_summary_network is False
+    assert effective.allow_linkedin_network is False
+    assert effective.allow_reddit_network is False
+    assert effective.allow_webpage_network is False
     assert effective.apply_policy is None
+
+
+def test_final_review_network_independent_of_no_ollama() -> None:
+    """--final-review may call a model even when LLM summaries are off."""
+    effective = resolve_effective_run(
+        _config(no_ollama=True, final_review_enabled=True),
+        RunOptions(dry_run=False),
+        grouping=GroupingConfig(enabled=True),
+    )
+    assert effective.allow_summary_network is False
+    assert effective.allow_final_review_network is True
+    assert effective.allow_group_summary_network is False
+
+
+def test_webpage_network_on_by_default_when_not_dry_run() -> None:
+    effective = resolve_effective_run(
+        _config(),
+        RunOptions(dry_run=False),
+    )
+    assert effective.allow_webpage_network is True
+    assert effective.allow_linkedin_network is False
+    assert effective.allow_reddit_network is False
+
+
+def test_toml_enables_linkedin_and_reddit_without_cli_flags(tmp_path: Path) -> None:
+    from rollup.cli import _apply_loaded_config, _build_config
+    from rollup.cli_parser import build_parser
+    from rollup.user_config import load_user_config
+
+    cfg = tmp_path / "rollup.toml"
+    cfg.write_text(
+        "[linkedin]\nenabled = true\n[reddit]\nenabled = true\n",
+        encoding="utf-8",
+    )
+    loaded = load_user_config(explicit_path=cfg)
+    parser = build_parser()
+    raw = ["digest"]
+    args = parser.parse_args(raw)
+    _apply_loaded_config(args, loaded, raw)
+    assert args.linkedin is True
+    assert args.reddit is True
+    config = _build_config(args)
+    assert config.linkedin_enabled is True
+    assert config.reddit_enabled is True
+    effective = resolve_effective_run(config, RunOptions(dry_run=False))
+    assert effective.allow_linkedin_network is True
+    assert effective.allow_reddit_network is True
+
+
+def test_cli_no_linkedin_overrides_toml_enabled(tmp_path: Path) -> None:
+    from rollup.cli import _apply_loaded_config, _build_config
+    from rollup.cli_parser import build_parser
+    from rollup.user_config import load_user_config
+
+    cfg = tmp_path / "rollup.toml"
+    cfg.write_text("[linkedin]\nenabled = true\n", encoding="utf-8")
+    loaded = load_user_config(explicit_path=cfg)
+    parser = build_parser()
+    raw = ["digest", "--no-linkedin"]
+    args = parser.parse_args(raw)
+    _apply_loaded_config(args, loaded, raw)
+    config = _build_config(args)
+    assert config.linkedin_enabled is False
+    effective = resolve_effective_run(config, RunOptions(dry_run=False))
+    assert effective.allow_linkedin_network is False
+
+
+def test_final_review_cli_independent_of_no_ollama() -> None:
+    from rollup.cli import _build_config
+    from rollup.cli_parser import build_parser
+
+    args = build_parser().parse_args(["digest", "--final-review", "--no-ollama"])
+    config = _build_config(args)
+    assert config.no_ollama is True
+    assert config.final_review_enabled is True
+    effective = resolve_effective_run(config, RunOptions(dry_run=False))
+    assert effective.allow_final_review_network is True
+    assert effective.allow_summary_network is False

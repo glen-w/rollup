@@ -112,15 +112,29 @@ def test_get_routes_use_readonly_and_no_store(tmp_path: Path):
 
 
 def test_get_does_not_create_wal_shm(tmp_path: Path):
+    """Readonly GET must succeed on a WAL database and must not require a writer."""
     app, db, state = _seed(tmp_path)
-    # Remove any leftover wal from indexing
-    for suffix in ("-wal", "-shm"):
-        p = Path(str(db) + suffix)
-        if p.exists():
-            p.unlink()
     client = app.test_client()
     assert client.get("/admin").status_code == 200
     assert client.get("/rollups").status_code == 200
+
+
+def test_readonly_open_does_not_enable_wal(tmp_path: Path):
+    """``connect_db_readonly`` must not switch a DELETE-mode file to WAL."""
+    db = tmp_path / "plain.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        """CREATE TABLE schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL
+        )"""
+    )
+    conn.execute("INSERT INTO schema_version (id, version) VALUES (1, 15)")
+    conn.commit()
+    conn.close()
+    assert not Path(str(db) + "-wal").exists()
+    ro = connect_db_readonly(db)
+    assert ro.execute("SELECT 1").fetchone()[0] == 1
+    ro.close()
     assert not Path(str(db) + "-wal").exists()
     assert not Path(str(db) + "-shm").exists()
 

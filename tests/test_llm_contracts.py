@@ -76,14 +76,15 @@ def test_schema_v11_idempotent(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_no_ollama_suppresses_final_review_network() -> None:
+def test_no_ollama_does_not_suppress_final_review_network() -> None:
+    """Final review is independent of --ollama; summaries/group remain off."""
     eff = resolve_effective_run(
         _config(no_ollama=True, final_review_enabled=True),
         RunOptions(dry_run=False),
         GroupingConfig(enabled=True),
     )
     assert eff.allow_summary_network is False
-    assert eff.allow_final_review_network is False
+    assert eff.allow_final_review_network is True
     assert eff.allow_group_summary_network is False
 
 
@@ -141,6 +142,15 @@ def test_validate_litellm_jobs_requires_extra(monkeypatch) -> None:
     )
     with pytest.raises((LlmJobValidationError, Exception)):
         validate_executable_llm_jobs(cfg, None)
+
+
+def test_validate_final_review_job_without_ollama() -> None:
+    jobs = validate_executable_llm_jobs(
+        _config(no_ollama=True, final_review_enabled=True),
+        None,
+    )
+    assert any(j.kind == "final_review" for j in jobs)
+    assert not any(j.kind in {"summary", "group"} for j in jobs)
 
 
 def test_no_ollama_does_not_import_litellm(monkeypatch) -> None:

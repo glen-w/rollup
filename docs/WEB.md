@@ -1,6 +1,18 @@
 # Rollup web UI
 
-Local, single-user browser UI for browsing digests, rating emails, reviewing newsletter quality, operating the source registry / reader-body state, editing digest configuration, and running guided digests.
+Local, single-user browser UI for browsing digests, rating emails, reviewing newsletter quality, operating the source registry / reader-body state, editing digest configuration, running guided digests, and managing Articles / LinkedIn / Reddit sources.
+
+| Path | Surface |
+|------|---------|
+| `/rollups` | Archive (indexed digests) |
+| `/run` | Run Studio (compose + background digest) |
+| `/settings` | Configuration Centre (real TOML) |
+| `/articles` | Webpage article queue |
+| `/linkedin` | Named `fromMember` searches + layout + TTL |
+| `/reddit` | Subreddits + layout + TTL |
+| `/sources` | Quality ranking |
+| `/sources/registry` | Source policy / aliases |
+| `/admin` | Read-only health + body maintenance |
 
 ## Install
 
@@ -56,11 +68,11 @@ Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage
 
 ## LinkedIn (`/linkedin`)
 
-Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, choose TOC layout (`feed` / `per_source` / `per_search`), and set `fetch_ttl_hours` (default 24). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
+Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, choose TOC layout (`feed` default / `per_source` / `per_search`), and set `fetch_ttl_hours` (default 24). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
 
 ## Reddit (`/reddit`)
 
-Add public subreddit names, checkbox which subs to roll up, set global or per-sub sort/cap/mode, and set `fetch_ttl_hours` (default 24). Fetches use Reddit's public RSS feeds (no credentials). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for subs that would hit the network (cached subs show **cached**). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
+Add public subreddit names, checkbox which subs to roll up, set global or per-sub sort/cap/mode, choose TOC layout (`feed` / `per_source`), and set `fetch_ttl_hours` (default 24). Fetches use a public JSON/RSS ladder; no credentials required. Optional Reddit script-app OAuth lives in `~/.config/rollup/env` (never the GUI). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for subs that would hit the network (cached subs show **cached**). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
 
 ## Read-only GET contract
 
@@ -115,3 +127,10 @@ Digest holds the run lock file; web rating/policy writes use short SQLite transa
 ## Backup
 
 Back up `{state_dir}/rollup.db` (and optionally `web_secret`) to preserve ratings and interaction state. Back up your `config.toml` (Settings also keeps `.bak` and timestamped copies under `config-backups/`).
+
+## Related
+
+- Product contract: [CONTRACT.md](CONTRACT.md)
+- Comparison: [COMPARISON.md](COMPARISON.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)
+- Configuration: [CONFIG.md](CONFIG.md)

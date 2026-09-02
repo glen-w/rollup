@@ -1,26 +1,70 @@
-# Product contract: Thunderbird filters → Rollup digest
+# Product contract
 
-Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders. Optional **LinkedIn content-search** sources (opt-in network) can add digest sections equivalent to mailbox folders.
+Rollup is a **local-first personal briefing engine**. It reduces a chosen
+information environment into a **bounded reading object** — a finite digest
+worth reading — without becoming the store of record for those sources.
+
+Thunderbird **owns the ongoing stream**. Rollup takes a time window and
+produces **the rollup**. You do not need a special newsletter address, a
+second mailbox, or to make Rollup authoritative for subscriptions.
+
+Optional **LinkedIn**, **Reddit**, and **webpage** sources add material at
+digest time. They are ingest transports, not inboxes: no continuous feed, no
+unread state. They do not replace the mail-store contract.
+
+This is a different product from an RSS reader:
+
+| | RSS reader | Rollup |
+|--|------------|--------|
+| Shape | source → stream → user triages items | source → collection window → filtering / grouping / synthesis → finished briefing |
+| Job | show everything new from these sources | turn a messy pile you already let into orbit into something finite and worth reading |
+
+The product is not “the self-hosted AI newsletter reader”. In 2026 that niche
+has competitors. Rollup’s distinction is read-only existing mail + durable
+source policy + publication integrity + multi-format digest output. See
+[COMPARISON.md](COMPARISON.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Who owns what
 
 | Layer | Owner | Responsibility |
 |-------|--------|----------------|
 | Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
-| Window & folders | Rollup run profile / CLI / TOML | Which calendar days and which folders enter the digest |
-| LinkedIn searches | `[linkedin.searches.*]` in TOML + `--linkedin` | Named **fromMember** content-search URLs (`/linkedin` GUI); each search is one digest section (`linkedin:<slug>`) when layout is `per_search`. Session cookies stay in the environment (`ROLLUP_LINKEDIN_LI_AT`, `ROLLUP_LINKEDIN_JSESSIONID`). Link-post article bodies are fetched by default (`[linkedin].article_fetch`). Listings and article bodies persist in `rollup.db` and reuse within `fetch_ttl_hours` (default 24h); `--linkedin-refresh` forces a live pull |
-| Reddit subs | `[reddit.subs.*]` in TOML + `--reddit` | Public subreddit names from the `/reddit` GUI; per-sub or global sort/cap/mode (`summary` → `subreddit_digest` group, `posts` → standalone items). Fetched via public RSS (no credentials). Layout `feed` (default) or `per_source`. Listings persist in `rollup.db` and reuse within `fetch_ttl_hours` (default 24h); `--reddit-refresh` forces a live pull |
-| Webpage articles | SQLite `webpage_queue` + `/articles` GUI | HTTPS article URLs saved by the user; fetched once into `webpage:queue`, then reused from cache. Included when **saved within the lookback window** (same rule as mbox dates). Pass `--no-webpage` to skip. Not stored in TOML |
-| Noisy senders | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface |
-| Summaries | Optional local Ollama or LiteLLM via `--ollama` + `--effort` | Preview excerpts by default; LLM only with `--ollama` |
+| Window & folders | Run profile / CLI / TOML | Which calendar days and which folders enter the digest |
+| LinkedIn / Reddit / webpages | TOML + GUI + opt-in CLI flags | Ingest transports for the collection window (not inboxes). Credentials in env only; payloads cached in `rollup.db`. Details: [CONFIG.md](CONFIG.md) |
+| Source policy | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface, grouping |
+| Summaries | Preview by default; LLM via `--ollama` | Entry summaries. Whole-digest QA is `--final-review` (independent of `--ollama`) |
+| Attention (planned) | Interest profile + ratings | Rank or annotate. Must **not** silently drop included material |
 
-## Non-goals (for now)
+## Invariants
 
-- IMAP / Gmail API / Maildir backends
+These do not change without an explicit contract revision:
+
+- Never write, delete, or rename anything under the mail root
+- Default `rollup digest` makes **no network calls**
+- LLM summarisation is opt-in (`--ollama`). `--final-review` calls a model
+  independently and does **not** require `--ollama`
+- Web UI is loopback and single-user; GET routes are read-only
+- Secrets never live in TOML or the web UI
+- Publication is staged + rename; `latest.*` and seen-state cross an
+  **irreversible boundary** only after required artifacts land
+- Reader bodies are a capped convenience cache, not a mailbox archive
+- Ranking, when added, changes attention — not deterministic inclusion
+- Network sources (LinkedIn, Reddit, webpages; RSS if it ever exists) are
+  **ingest transports** for the collection window. Rollup never grows an RSS
+  inbox, unread counts, mark-all-read, or a scrolling feed
+
+## Non-goals (through 1.0)
+
+- IMAP / Gmail API / Maildir backends (Gmail API is [post-1.0](ROADMAP.md))
 - Thunderbird add-on (XPI)
 - Multi-user or non-loopback web UI
+- In-app digest scheduler (use [CRON.md](CRON.md) / launchd)
 - Exposing classifier thresholds as user knobs
-- Official LinkedIn API integration (v1 uses your logged-in `li_at` + `JSESSIONID` from the environment; author feeds via Voyager `profileUpdatesV2`)
+- Built-in workflow engine, generic plugin-everything, or a mobile app
+- An RSS **reader** (unread counts, folders, stars, sync, mark-all-read). RSS
+  as a silent ingest transport is [parked](ROADMAP.md), same pattern as LinkedIn
+  / Reddit today
+- Official LinkedIn API (v1 uses session cookies + Voyager `profileUpdatesV2`)
 
 ## Sensible defaults
 
@@ -28,8 +72,7 @@ Rollup stays a **local, read-only** digest over Thunderbird **mbox** folders. Op
 - Default profile is **weekly** (7-day lookback, grouping on)
 - Folder accents are deterministic from folder names; personal emoji/colors live in TOML
 
-See [CONFIG.md](CONFIG.md) for TOML, profiles, and path discovery. Near-term
-engineering follow-ups and non-goals: [ROADMAP.md](ROADMAP.md).
+See [CONFIG.md](CONFIG.md) for TOML, profiles, and path discovery.
 
 ## Runtime integrity (persistence and publication)
 
@@ -62,7 +105,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **15** (listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
 
 ### Primary summary variant
 

@@ -60,6 +60,8 @@ Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `
 | Group summaries degrade | 2 | Member summaries still render; cache/read/write or stream errors are recorded |
 | LinkedIn fetch fails; mail still publishes | 2 | Dated mail digest usable; LinkedIn section omitted; `linkedin_fetch_failed` (or similar) in warnings |
 | LinkedIn-only run (`--folder linkedin:…`, no mbox) and fetch fails | 1 | Nothing published |
+| Reddit fetch fails; mail still publishes | 2 | Dated mail digest usable; Reddit section omitted; `reddit_fetch_failed` (or similar) in warnings |
+| Reddit-only run (`--folder reddit:…`, no mbox) and fetch fails | 1 | Nothing published |
 | High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
 
 **Irreversible boundary:** `latest.*`, seen-state, web index, and `success` status wait until every required dated artifact and required output writer has final paths. Manifest / web-index failures must not mark unpublished messages seen.
@@ -72,22 +74,38 @@ Unattended apply uses conservative whole-set caps (`final_review_max_patches_una
 
 **Dry-run** must not create databases, migrate schema, WAL/SHM files, locks, profile exports, staged publication temps, or writer artifacts.
 
-## Environment variables (LinkedIn)
+## Environment variables (network sources)
 
-If `[linkedin].enabled` is set in TOML, the scheduled job must also receive
-session cookies in its **environment** (never in TOML):
+CLI startup loads `~/.config/rollup/env` (or `ROLLUP_ENV_FILE`) and does **not**
+override variables already in the process environment. A launchd/cron job that
+runs as your user therefore picks up LinkedIn cookies (and optional Reddit OAuth)
+from that file — you do not have to duplicate them in the plist.
+
+If `[linkedin].enabled` is set and the env file is missing, put cookies in the
+job environment (never TOML):
 
 ```bash
 export ROLLUP_LINKEDIN_LI_AT='…'
 export ROLLUP_LINKEDIN_JSESSIONID='ajax:…'
 ```
 
-For launchd, put them under `EnvironmentVariables` in the plist, or wrap the
-Python invocation in a script that exports them. Refresh both cookies when
-LinkedIn 401s. How to copy cookies: [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
+For launchd, `EnvironmentVariables` in the plist or a wrapper script still work.
+Refresh both cookies when LinkedIn 401s. How to copy cookies: [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
 Article fetch (default on) adds extra HTTP to linked article hosts; disable with
 `[linkedin].article_fetch = false` if the scheduled job should stay Voyager-only.
+
+Optional Reddit script-app OAuth uses `ROLLUP_REDDIT_CLIENT_ID`,
+`ROLLUP_REDDIT_CLIENT_SECRET`, `ROLLUP_REDDIT_USERNAME`, and
+`ROLLUP_REDDIT_PASSWORD` in the same env file.
+
 See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
+
+## Listing cache vs weekly jobs
+
+Reddit and LinkedIn listings reuse SQLite snapshots for `fetch_ttl_hours`
+(default 24). A weekly job usually expires that window and fetches live. A
+daily job within 24 hours will skip the network unless you pass
+`--reddit-refresh` / `--linkedin-refresh` or set TTL to `0`.
 
 ## launchd (preferred on macOS)
 

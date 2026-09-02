@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from rollup.article_html import extract_article_text_from_html
 from rollup.linkedin.article import (
     ARTICLE_SEPARATOR,
@@ -18,6 +20,13 @@ from rollup.linkedin.models import LinkedInPost
 FIXTURES = Path(__file__).parent / "fixtures" / "linkedin"
 
 
+def _public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(host, *args, **kwargs):
+        return [(None, None, None, None, ("93.184.216.34", 443))]
+
+    monkeypatch.setattr("rollup.webpage.url.socket.getaddrinfo", fake_getaddrinfo)
+
+
 def test_extract_article_text_from_html_fixture() -> None:
     html = (FIXTURES / "article_squarespace.html").read_text(encoding="utf-8")
     text = extract_article_text_from_html(html)
@@ -26,7 +35,8 @@ def test_extract_article_text_from_html_fixture() -> None:
     assert len(text) >= 200
 
 
-def test_enrich_post_with_article_appends_body() -> None:
+def test_enrich_post_with_article_appends_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    _public_dns(monkeypatch)
     post = LinkedInPost(
         activity_id="1",
         author_name="A",
@@ -78,7 +88,8 @@ def test_fetch_article_text_invalid_url() -> None:
     assert "linkedin_article_url_invalid" in warnings
 
 
-def test_enrich_posts_with_articles_cap() -> None:
+def test_enrich_posts_with_articles_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    _public_dns(monkeypatch)
     session = MagicMock()
     response = MagicMock()
     response.status_code = 200
@@ -104,3 +115,79 @@ def test_enrich_posts_with_articles_cap() -> None:
     enriched, warnings = enrich_posts_with_articles(many, session, enabled=True)
     assert len(enriched) == MAX_ARTICLE_FETCHES + 2
     assert any("linkedin_article_fetch_cap" in w for w in warnings)
+
+
+def test_fetch_article_text_rejects_http() -> None:
+    text, warnings = fetch_article_text("http://example.com/article")
+    assert text == ""
+    assert "linkedin_article_url_invalid" in warnings
+
+
+def test_fetch_article_text_rejects_private_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(host, *args, **kwargs):
+        if host == "evil.example":
+            return [(None, None, None, None, ("127.0.0.1", 443))]
+        raise OSError("unknown")
+
+    monkeypatch.setattr("rollup.webpage.url.socket.getaddrinfo", fake_getaddrinfo)
+    text, warnings = fetch_article_text("https://evil.example/article")
+    assert text == ""
+    assert "linkedin_article_url_ssrf" in warnings
+
+
+def test_fetch_article_text_rejects_metadata_host() -> None:
+    text, warnings = fetch_article_text("https://metadata.google.internal/latest")
+    assert text == ""
+    assert "linkedin_article_url_ssrf" in warnings
+
+
+def test_fetch_article_text_rejects_redirect_to_loopback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _public_dns(monkeypatch)
+
+    def redirect_getaddrinfo(host, *args, **kwargs):
+        if host in {"127.0.0.1", "localhost"}:
+            return [(None, None, None, None, ("127.0.0.1", 443))]
+        return [(None, None, None, None, ("93.184.216.34", 443))]
+
+    monkeypatch.setattr("rollup.webpage.url.socket.getaddrinfo", redirect_getaddrinfo)
+
+    session = MagicMock()
+    response = MagicMock()
+    response.status_code = 302
+    response.headers = {"Location": "https://127.0.0.1/secret"}
+    session.get.return_value = response
+    session.headers = {"User-Agent": "test"}
+
+    text, warnings = fetch_article_text("https://example.com/out", session)
+    assert text == ""
+    assert "linkedin_article_url_ssrf" in warnings
+
+
+def test_fetch_article_uses_clean_session_when_none_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _public_dns(monkeypatch)
+    used: list[str] = []
+
+    class FakeSession:
+        headers = {"User-Agent": "rollup/linkedin"}
+
+        def get(self, url, **kwargs):
+            used.append(url)
+            response = MagicMock()
+            response.status_code = 200
+            response.encoding = "utf-8"
+            response.headers = {}
+            response.iter_content = lambda chunk_size: [
+                b"<article><p>Body long enough for extraction threshold with many words here.</p></article>"
+            ]
+            return response
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("rollup.linkedin.article._article_session", FakeSession)
+    fetch_article_text("https://example.com/article")
+    assert used == ["https://example.com/article"]

@@ -2,7 +2,7 @@ services:
   rollup:
     build: .
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

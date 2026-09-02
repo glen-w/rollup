@@ -93,9 +93,6 @@ def test_connect_db_readonly_blocks_writes(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("CREATE TABLE should_fail(x INTEGER)")
     conn.close()
-    # No WAL/SHM from readonly open
-    assert not (tmp_path / "rollup.db-wal").exists()
-    assert not (tmp_path / "rollup.db-shm").exists()
 
 
 def test_all_get_routes_no_store_and_readonly(tmp_path: Path) -> None:

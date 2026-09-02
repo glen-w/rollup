@@ -220,6 +220,35 @@ def test_stage_discover_loads_pending(tmp_path: Path) -> None:
     assert len(discovery.webpage_items) == 1
 
 
+def test_empty_webpage_queue_does_not_http(tmp_path: Path) -> None:
+    """Webpage ingest is on by default, but an empty queue must not fetch."""
+    from rollup.pipeline import run_digest
+    from rollup.run_options import GroupingConfig, RunOptions
+
+    fixture_root = Path(__file__).parent / "fixtures" / "Newsletters.sbd"
+    config = _minimal_config(
+        tmp_path,
+        root=fixture_root,
+        mail_root=fixture_root.parent,
+        output_dir=tmp_path / "output",
+        state_dir=tmp_path / "state",
+        log_dir=tmp_path / "logs",
+        lookback_days=3650,
+        no_linkedin=True,
+        no_reddit=True,
+        no_webpage=False,
+    )
+    with patch("rollup.webpage.fetch.fetch_webpage") as fetch:
+        result = run_digest(
+            config,
+            RunOptions(dry_run=False, write_manifest=False),
+            grouping=GroupingConfig(enabled=False),
+            acquire_lock=False,
+        )
+    fetch.assert_not_called()
+    assert result.status in ("success", "partial")
+
+
 def test_stage_discover_skips_when_no_webpage(tmp_path: Path) -> None:
     root = tmp_path / "Newsletters.sbd"
     root.mkdir()

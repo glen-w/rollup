@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rollup"
-version = "0.9.0"
-description = "Local read-only Thunderbird mbox newsletter digest"
+version = "0.9.1"
+description = "Local-first personal briefing engine over a read-only Thunderbird mail store"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

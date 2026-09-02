@@ -19,7 +19,8 @@ source .venv/bin/activate
 ```
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
-Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md). Roadmap: [ROADMAP.md](ROADMAP.md). Docker: [DOCKER.md](DOCKER.md).
+Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
+Position: [COMPARISON.md](COMPARISON.md). Roadmap: [ROADMAP.md](ROADMAP.md). Docker: [DOCKER.md](DOCKER.md).
 
 **Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
@@ -39,6 +40,8 @@ validated summary-only fixes.
 | Git checkout | `pip install .` |
 | Editable + tests | `pip install -e ".[dev,web]"` |
 | Web UI only | `pip install 'rollup[web]'` |
+| LiteLLM providers | `pip install 'rollup[llm]'` |
+| EPUB writer | `pip install 'rollup[epub]'` |
 | uv | `uv sync --extra dev --extra web` |
 | Docker | [DOCKER.md](DOCKER.md) |
 
@@ -78,8 +81,10 @@ python -m rollup web --open
 
 ## LinkedIn content searches (opt-in network)
 
-Author-list (`fromMember`) content-search URLs become digest sections named
-`linkedin:<slug>`. Fetch uses LinkedIn Voyager with **your** browser session.
+Author-list (`fromMember`) content-search URLs become digest sections. Default
+layout is **`feed`** (one `linkedin:feed` section). Set `layout = "per_search"`
+to keep each named search as `linkedin:<slug>` (needed for `--folder linkedin:general`
+below). Fetch uses LinkedIn Voyager with **your** browser session.
 Link posts also fetch the linked article body by default (external blogs, Pulse).
 Reference: [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 
@@ -97,7 +102,7 @@ Reference: [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 [linkedin]
 enabled = true
 article_fetch = true   # default; set false to skip linked-article HTTP
-layout = "per_search"  # one digest section per named search
+layout = "per_search"  # named section per search; omit for default feed (`linkedin:feed`)
 
 [linkedin.searches.general]
 url = "https://www.linkedin.com/search/results/content/?origin=FACETED_SEARCH&datePosted=%5B%22past-week%22%5D&fromMember=%5B%22ACoAAAMN5aEBk7L5BGyjHbFsDr40zYqwuSB7tlw%22%2C%22ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg%22%5D"
@@ -162,15 +167,16 @@ Then fetch. `--linkedin` is required unless `[linkedin].enabled = true` in TOML:
 ```bash
 python -m rollup digest --linkedin --folder linkedin:general
 python -m rollup digest --linkedin --lookback-days 7
+python -m rollup digest --linkedin --linkedin-refresh   # bypass listing cache
 python -m rollup digest --no-linkedin          # mail only, even if TOML enables LinkedIn
 python -m rollup digest --linkedin --no-linkedin-article-fetch   # posts only, no article HTTP
 ```
 
 A successful fetch logs `Fetching LinkedIn fromMember feed (N authors) via Voyager`.
-Posts land in `linkedin:<slug>` (here `linkedin:general`) as **standalone**
-entries (they are not collapsed into notification-stream groups). Link posts
-use the article title as the subject when Voyager exposes one, and append the
-fetched article body after the commentary teaser.
+With `layout = "per_search"` (as in the TOML above), posts land in `linkedin:<slug>`
+(here `linkedin:general`) as **standalone** entries. Default `feed` layout uses
+`linkedin:feed` instead. Link posts use the article title as the subject when
+Voyager exposes one, and append the fetched article body after the commentary teaser.
 
 Mute a noisy author:
 
@@ -178,16 +184,18 @@ Mute a noisy author:
 python -m rollup sources disable li:member:ACoAAA5GcN4BlMrjuK1OVX4Q63rShHLMZuQ1Qyg
 ```
 
-For launchd/cron, put the same two variables in the job environment (plist
-`EnvironmentVariables`, or a wrapper script). See [CRON.md](CRON.md#environment-variables-linkedin).
+For launchd/cron, `~/.config/rollup/env` is loaded at CLI startup. You can also
+put the same two variables in the job environment (plist `EnvironmentVariables`).
+See [CRON.md](CRON.md#environment-variables-network-sources).
 If fetch fails, see
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md#linkedin-fetch-failed-401--429--checkpoint).
 
 ## Reddit subreddits (opt-in network)
 
-Public RSS feeds (`https://www.reddit.com/r/{sub}/{sort}.rss`) — no Reddit account,
-OAuth app, or environment credentials. Sections land in `reddit:feed` or
-`reddit:<sub>` depending on `layout`. Reference:
+Public listings via a transport ladder (optional OAuth JSON → public JSON →
+www RSS → old.reddit RSS). No Reddit account is required. Sections land in
+`reddit:feed` or `reddit:<sub>` depending on `layout`. Listings reuse a SQLite
+cache within `fetch_ttl_hours` (default 24). Reference:
 [CONFIG.md](CONFIG.md#reddit-subreddits-optional).
 
 ### TOML
@@ -224,6 +232,7 @@ Then fetch. `--reddit` is required unless `[reddit].enabled = true` in TOML:
 ```bash
 python -m rollup digest --reddit --lookback-days 7
 python -m rollup digest --reddit --folder reddit:feed
+python -m rollup digest --reddit --reddit-refresh   # bypass listing cache
 python -m rollup digest --no-reddit          # mail only, even if TOML enables Reddit
 ```
 
@@ -232,6 +241,8 @@ Mute a noisy subreddit:
 ```bash
 rollup sources disable reddit:sub:python
 ```
+
+Optional script-app OAuth (never TOML) goes in `~/.config/rollup/env` — see [CONFIG.md](CONFIG.md#optional-oauth-environment-only). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#reddit-fetch-failed-429--missing-sub).
 
 ## Webpage articles (opt-in network)
 
@@ -276,6 +287,13 @@ python -m rollup sources disable web:host:example.com
 python -m rollup doctor --root tests/fixtures/Newsletters.sbd
 python -m rollup doctor --json --root tests/fixtures/Newsletters.sbd
 python -m rollup doctor --full --root tests/fixtures/Newsletters.sbd
+```
+
+Inspect merged TOML + profile:
+
+```bash
+python -m rollup config print
+python -m rollup --config ./rollup.toml config print --profile daily
 ```
 
 ## Cron helpers (launchd preferred on macOS)
@@ -609,7 +627,7 @@ python -m rollup digest --root tests/fixtures/Newsletters.sbd
 python -m rollup web --open
 ```
 
-**Configuration Centre** (`/settings`) edits the real digest TOML (paths, profiles, writers, folder themes). **Run Studio** (`/run`) previews the effective run, dry-runs discovery, and starts a digest without composing CLI by hand. See [WEB.md](WEB.md) and [CONFIG.md](CONFIG.md).
+**Configuration Centre** (`/settings`) edits the real digest TOML (paths, profiles, writers, folder themes). **Run Studio** (`/run`) previews the effective run, dry-runs discovery, and starts a digest without composing CLI by hand. **Articles** / **LinkedIn** / **Reddit** manage those sources. See [WEB.md](WEB.md) and [CONFIG.md](CONFIG.md).
 
 Variants:
 
@@ -621,7 +639,15 @@ python -m rollup web --config ~/.config/rollup/config.toml --open
 python -m rollup web reindex --state-dir ./state --output-dir ./output
 ```
 
-See [WEB.md](WEB.md) for security model, Settings / Run Studio, quality score, and backup notes.
+See [WEB.md](WEB.md) for security model, Settings / Run Studio / Articles / LinkedIn / Reddit, quality score, and backup notes.
+
+Reader-body cache (same SQLite; Admin can prune/backfill too):
+
+```bash
+python -m rollup bodies stats
+python -m rollup bodies check
+python -m rollup bodies backfill --dry-run
+```
 
 ## Docker (optional)
 
@@ -633,7 +659,7 @@ docker compose up -d --build
 open http://localhost:8765
 ```
 
-The image binds with `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container; access from the host still uses `http://localhost:8765` (Host-header loopback checks unchanged).
+The image binds with `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container. Compose publishes `127.0.0.1:8765:8765`; access from the host uses `http://localhost:8765` (Host-header loopback checks unchanged). Override the port mapping only if you intentionally need LAN access.
 
 Fixture smoke test without real mail:
 

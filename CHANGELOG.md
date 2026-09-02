@@ -4,9 +4,20 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.1 — 2026-09-02
+
 ### Added
 
 - **Reddit + LinkedIn listing cache** (SQLite schema v15): persist network listings in `rollup.db`; skip RSS/Voyager when `[reddit].fetch_ttl_hours` / `[linkedin].fetch_ttl_hours` (default 24) has not elapsed. `--reddit-refresh` and `--linkedin-refresh` force a live pull for one run. LinkedIn article bodies cache independently by URL. Stale snapshots are reused on fetch failure (`reddit_cache_stale`, `linkedin_cache_stale`). Web UI exposes TTL on `/reddit` and `/linkedin`; Run Studio ETA counts only subs that would hit the network.
+
+### Changed
+
+- Documentation pass: schema **v15**, Reddit fetch ladder + optional OAuth, LinkedIn default `feed` layout, listing-cache flags, CLI (`config` / `bodies`), architecture overview, and cron env-file loading.
+- **Positioning:** Rollup as a local-first personal briefing engine that reduces a chosen information environment into a bounded reading object (source → collection window → synthesis → finished briefing), not an RSS/stream reader. [docs/COMPARISON.md](docs/COMPARISON.md); [docs/ROADMAP.md](docs/ROADMAP.md) sequences attention, cross-source consolidation, briefing-level synthesis, search, source intelligence, and reading destinations toward 1.0. RSS as a *reader* is a non-goal; RSS as silent ingest is parked. README is an entry point rather than a second reference manual. `--final-review` documented as independent of `--ollama` throughout.
+- **LinkedIn article fetch** uses the same SSRF/redirect checks as webpage ingest and a cookie-free HTTP session (Voyager cookies stay on LinkedIn listing requests).
+- **Docker Compose** publishes `127.0.0.1:8765:8765` (loopback on the host). Override the port mapping for intentional LAN access.
+- **EffectiveRun** is the authority for which digest arms may use the network (LLM summaries, final review, group summaries, LinkedIn, Reddit, webpage). Final review is not gated on `--ollama`.
+- **SQLite WAL** is enabled on writable connections so the web UI can read during a long digest.
 
 ## 0.9.0 — 2026-09-02
 
