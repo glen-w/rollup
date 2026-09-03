@@ -4,6 +4,12 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.2 — 2026-09-03
+
+### Added
+
+- **Firefox Add to Rollup**: toolbar and context-menu capture into the webpage queue via `POST /articles/capture` (`Authorization: Bearer`, token in `{state_dir}/extension_token`). Pairing UI on `/articles`. Ingest-only; `rollup web` must be running. Load as a temporary add-on from [`extension/firefox`](extension/firefox/README.md).
+
 ## 0.9.1 — 2026-09-02
 
 ### Added

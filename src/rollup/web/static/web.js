@@ -86,4 +86,28 @@
     if (!wrap || !tmpl) return;
     wrap.appendChild(tmpl.content.cloneNode(true));
   });
+
+  document.querySelectorAll("[data-copy-target]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var sel = btn.getAttribute("data-copy-target");
+      var el = sel ? document.querySelector(sel) : null;
+      if (!el) return;
+      var text = el.value || el.textContent || "";
+      if (!text) return;
+      var prev = btn.textContent;
+      function copied() {
+        btn.textContent = "Copied";
+        setTimeout(function () {
+          btn.textContent = prev;
+        }, 1500);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(copied).catch(function () {
+          el.select();
+        });
+        return;
+      }
+      el.select();
+    });
+  });
 })();

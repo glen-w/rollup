@@ -18,6 +18,21 @@
   </form>
 </section>
 
+<details class="panel">
+  <summary>Firefox extension</summary>
+  <p class="note">Add the current page (or a link) to this queue from Firefox. Load the temporary add-on from <code>extension/firefox</code>, paste this token into the add-on options, and keep <code>rollup web</code> running. Capture is ingest-only: the next digest fetches the URL. Rotating the token immediately invalidates the old one.</p>
+  <div class="token-row">
+    <label>Capture token
+      <input id="extension-token" type="text" readonly value="{{ extension_token }}" autocomplete="off" spellcheck="false">
+    </label>
+    <button type="button" class="secondary" data-copy-target="#extension-token">Copy token</button>
+    <form method="post" action="{{ url_for('articles.articles_token_rotate') }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Rotate token</button>
+    </form>
+  </div>
+</details>
+
 <section class="card-section">
   <h2>Pending fetch <span class="hint-badge">{{ pending|length }}</span></h2>
   {% if pending %}

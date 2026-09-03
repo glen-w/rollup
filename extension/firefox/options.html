@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rollup add-on options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <h1>Add to Rollup</h1>
+  <p>
+    Pair this add-on with your local Rollup web UI. Copy the capture token from
+    <strong>Articles</strong> (<code>/articles</code>) while <code>rollup web</code>
+    is running. The toolbar button and context menu both enqueue the page URL;
+    Rollup fetches the article on the next digest.
+  </p>
+  <form id="options-form">
+    <label>
+      Origin
+      <input id="origin" type="url" required placeholder="http://127.0.0.1:8765" autocomplete="off">
+    </label>
+    <label>
+      Capture token
+      <input id="token" type="password" required autocomplete="off" spellcheck="false">
+    </label>
+    <div class="actions">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" id="test-connection">Test connection</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+  </form>
+  <script src="options.js"></script>
+</body>
+</html>

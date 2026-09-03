@@ -62,6 +62,7 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("web settings centre", "/settings"),
     ("web run studio", "/run"),
     ("web articles queue", "/articles"),
+    ("firefox add to rollup", "/articles/capture"),
     ("reddit digest", "--reddit"),
     ("no reddit", "--no-reddit"),
     ("reddit config ref", "CONFIG.md#reddit-subreddits"),

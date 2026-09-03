@@ -22,7 +22,7 @@ from rollup.state import SchemaCompatibilityError, init_db
 from rollup.web.csrf import init_csrf
 from rollup.web.db import open_readonly
 from rollup.web.headers import init_security_headers
-from rollup.web.secrets import load_or_create_secret
+from rollup.web.secrets import load_or_create_extension_token, load_or_create_secret
 
 _BRANDING = {
     LOGO_FILENAME: "image/png",
@@ -71,9 +71,11 @@ def create_app(
     )
     secret = load_or_create_secret(state_dir)
     app.secret_key = secret
+    extension_token = load_or_create_extension_token(state_dir)
     db_path = state_dir / "rollup.db"
     app.config.update(
         STATE_DIR=state_dir,
+        EXTENSION_TOKEN=extension_token,
         OUTPUT_DIR=output_dir,
         MAIL_ROOT=Path(mail_root) if mail_root else None,
         NEWSLETTER_ROOT=Path(newsletter_root) if newsletter_root else None,

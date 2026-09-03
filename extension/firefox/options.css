@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light;
+  --ink: #1a1a1a;
+  --muted: #555;
+  --line: #d8d8d8;
+  --accent: #1f4f8a;
+}
+body {
+  font-family: system-ui, sans-serif;
+  color: var(--ink);
+  max-width: 36rem;
+  margin: 2rem auto;
+  padding: 0 1rem 2rem;
+  line-height: 1.45;
+}
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+p {
+  color: var(--muted);
+}
+label {
+  display: block;
+  margin: 1rem 0;
+  font-weight: 600;
+}
+input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  font: inherit;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.status {
+  min-height: 1.4em;
+  margin-top: 1rem;
+}
+.status.ok {
+  color: #0b5;
+}
+.status.error {
+  color: #b00;
+}
+code {
+  font-size: 0.9em;
+}

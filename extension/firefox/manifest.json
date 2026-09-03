@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Rollup",
+  "version": "0.1.0",
+  "description": "Add the current page to your local Rollup briefing queue.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "addon@rollup.local",
+      "strict_min_version": "109.0"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png"
+  },
+  "action": {
+    "default_title": "Add to Rollup",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "permissions": ["activeTab", "menus", "notifications", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*"
+  ],
+  "optional_host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://[::1]/*"
+  ]
+}

@@ -247,7 +247,8 @@ Optional script-app OAuth (never TOML) goes in `~/.config/rollup/env` — see [C
 ## Webpage articles (opt-in network)
 
 HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs
-from the web **Articles** page (`/articles`) or enqueue programmatically. The next
+from the web **Articles** page (`/articles`), the Firefox **Add to Rollup**
+add-on, or enqueue programmatically. The next
 digest fetches pending rows once into folder `webpage:queue` and caches the body.
 Later digests reuse that cache and include an article when it was **saved within
 the lookback window** (same rule as email dates). Failed fetches stay **failed**
@@ -259,6 +260,14 @@ for retry. Pass `--no-webpage` to skip. Reference: [CONFIG.md](CONFIG.md#webpage
 python -m rollup web --open
 # Articles → add HTTPS URL → Run Studio → run digest
 ```
+
+### Firefox extension
+
+Load [`extension/firefox`](../extension/firefox/README.md) as a temporary add-on
+(`about:debugging#/runtime/this-firefox`). Copy the capture token from
+**Articles**, paste it into add-on options, then use the toolbar or context menu
+**Add to Rollup**. The add-on POSTs to `/articles/capture`; `rollup web` must be
+running. Capture is ingest-only (the next digest fetches the URL).
 
 ### CLI
 

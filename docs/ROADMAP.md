@@ -61,6 +61,7 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - Shared `sticky_flags` registry; `cli_parser` extraction; `run_digest` phase helpers
 - Optional LinkedIn `fromMember` folders, Reddit subreddits, webpage article queue
 - **Reddit + LinkedIn listing cache** (`rollup.db` schema v15): persist network listings; `--reddit-refresh` / `--linkedin-refresh` force a live pull
+- **Firefox Add to Rollup**: toolbar/context-menu capture into `webpage_queue` via `POST /articles/capture` (Bearer token in `{state_dir}/extension_token`). Ingest-only; `rollup web` must be running.
 
 ## Standing rule (network sources)
 
@@ -78,10 +79,6 @@ These expand surface. They wait until the briefing itself is distinct.
   rollup”; fetch the lookback window at digest time; never an RSS inbox,
   unread state, or continuous feed. Same conceptual slot as LinkedIn / Reddit
   today. An RSS *reader* is a [non-goal](#non-goals-still).
-- **Frictionless article capture** — `/articles` is architecturally sound;
-  pasting URLs is weak UX. Bookmarklet / share endpoint (“Send to Rollup”)
-  still stays ingest-only: another source for the window, not a read-later
-  library.
 - **Richer LinkedIn sources** beyond faceted `fromMember` search — keyword SRP
   if LinkedIn exposes a working content-search query again; company/org posts;
   follows/mentions. v1 stays author-list URLs mapped through Voyager
@@ -124,3 +121,4 @@ reading than a mobile app.
 | [DOCKER.md](DOCKER.md) | Optional container setup |
 | [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
 | [CHANGELOG.md](../CHANGELOG.md) | What shipped |
+| [design/firefox-capture.md](design/firefox-capture.md) | Firefox Add to Rollup (packages, SLOC, known issues, review) |

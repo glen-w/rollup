@@ -21,11 +21,6 @@ transports for that window, the same way LinkedIn and Reddit already are.
 You do not need a special newsletter address, a second mailbox, or to make
 Rollup authoritative for subscriptions.
 
-This is not “the self-hosted AI newsletter reader”. In 2026 that niche has
-competitors. Rollup’s distinction is the read-only existing mail store, durable
-source policy, publication integrity, and multi-format digest output. See
-[docs/COMPARISON.md](docs/COMPARISON.md) and [docs/CONTRACT.md](docs/CONTRACT.md).
-
 ## Quick start (digest + web UI)
 
 Install the optional web extra once (`pip install -e ".[web]"` or `pip install 'rollup[web]'`), then:
@@ -50,6 +45,7 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 | [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Docker) |
 | [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage, effort ladders |
 | [docs/WEB.md](docs/WEB.md) | Local web UI (Archive, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
+| [extension/firefox/README.md](extension/firefox/README.md) | Firefox Add to Rollup (temporary add-on) |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | Where Rollup sits relative to other readers and AI digests |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Product sequence toward 1.0 and non-goals |
@@ -58,6 +54,7 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 | [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
 | [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Doctor, LinkedIn session, exit codes |
+| [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, known issues, review checklist |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 Quick picks: [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md) · [CONTRACT](docs/CONTRACT.md)
@@ -199,6 +196,7 @@ src/rollup/                       # package source
 src/rollup/cli.py                 # command handlers; re-exports build_parser
 src/rollup/pipeline.py            # digest orchestration
 src/rollup/web/                   # optional Flask UI ([web] extra)
+extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 docs/                             # CONFIG, WEB, CONTRACT, COMPARISON, ROADMAP, …
 CHANGELOG.md                      # release notes

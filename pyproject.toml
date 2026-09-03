@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rollup"
-version = "0.9.1"
+version = "0.9.2"
 description = "Local-first personal briefing engine over a read-only Thunderbird mail store"
 readme = "README.md"
 requires-python = ">=3.10"

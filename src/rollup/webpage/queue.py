@@ -89,6 +89,11 @@ def get_by_id(conn: sqlite3.Connection, item_id: int) -> WebpageQueueItem | None
     return _parse_row(row) if row else None
 
 
+def get_by_url_hash(conn: sqlite3.Connection, digest: str) -> WebpageQueueItem | None:
+    row = conn.execute(f"{_ROW_SELECT} WHERE url_hash = ?", (digest,)).fetchone()
+    return _parse_row(row) if row else None
+
+
 def load_for_digest(
     conn: sqlite3.Connection,
     *,
@@ -159,12 +164,8 @@ def enqueue_url(
     title = display_title.strip() if display_title and display_title.strip() else None
     created = (now or datetime.now(timezone.utc)).isoformat()
 
-    existing = conn.execute(
-        f"{_ROW_SELECT} WHERE url_hash = ?",
-        (digest,),
-    ).fetchone()
-    if existing:
-        item = _parse_row(existing)
+    item = get_by_url_hash(conn, digest)
+    if item:
         if item.status in {"pending", "ingested"}:
             if title and title != item.display_title:
                 conn.execute(

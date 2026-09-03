@@ -8,6 +8,7 @@ Local, single-user browser UI for browsing digests, rating emails, reviewing new
 | `/run` | Run Studio (compose + background digest) |
 | `/settings` | Configuration Centre (real TOML) |
 | `/articles` | Webpage article queue |
+| `POST /articles/capture` | Firefox Add to Rollup (Bearer token) |
 | `/linkedin` | Named `fromMember` searches + layout + TTL |
 | `/reddit` | Subreddits + layout + TTL |
 | `/sources` | Quality ranking |
@@ -42,7 +43,7 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 - Never writes to Thunderbird/Gmail mail stores
 - Web writes update `{state_dir}/rollup.db` (ratings, interaction, source policy overrides, run index, reader bodies) and, from Settings, the real digest **TOML** config (atomic save + `.bak` + timestamped backups under `{state_dir}/config-backups/`)
-- CSRF tokens required on all POST forms
+- CSRF tokens required on all POST forms; `POST /articles/capture` uses a Bearer capture token instead (extension pairing)
 - Archived HTML artifacts are served as **attachments** (not inline)
 - Digest Markdown/HTML generation is unchanged
 - Reader bodies are capped plaintext (32,000 characters) with inline http(s) links; images and raw HTML are excluded
@@ -65,6 +66,8 @@ Guided digest composer: pick a profile or temporary overrides, inspect the effec
 ## Article library (`/articles`)
 
 Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each new page at runtime (folder `webpage:queue`), caches the body, and includes the article when it was **saved within the lookback window** (same caching pattern as mail). Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip. SSRF checks apply to user-supplied URLs.
+
+**Firefox Add to Rollup:** load the unsigned add-on from [`extension/firefox`](../extension/firefox/README.md) (`about:debugging` → Load Temporary Add-on). Copy the capture token from Articles (file `{state_dir}/extension_token`, mode `0600`; never TOML). The toolbar button and context menu POST `{"url", "title"}` to `POST /articles/capture` with `Authorization: Bearer`. Session CSRF is unchanged; this route does not send CORS headers. `rollup web` must be running. Capture is ingest-only — not a read-later inbox. Rotate the token on Articles to invalidate the old value immediately. Developer notes (packages, SLOC, known issues, review checklist): [design/firefox-capture.md](design/firefox-capture.md).
 
 ## LinkedIn (`/linkedin`)
 
@@ -126,7 +129,7 @@ Digest holds the run lock file; web rating/policy writes use short SQLite transa
 
 ## Backup
 
-Back up `{state_dir}/rollup.db` (and optionally `web_secret`) to preserve ratings and interaction state. Back up your `config.toml` (Settings also keeps `.bak` and timestamped copies under `config-backups/`).
+Back up `{state_dir}/rollup.db` (and optionally `web_secret` and `extension_token`) to preserve ratings, interaction state, and extension pairing. Back up your `config.toml` (Settings also keeps `.bak` and timestamped copies under `config-backups/`).
 
 ## Related
 
@@ -134,3 +137,4 @@ Back up `{state_dir}/rollup.db` (and optionally `web_secret`) to preserve rating
 - Comparison: [COMPARISON.md](COMPARISON.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Configuration: [CONFIG.md](CONFIG.md)
+- Firefox capture (developer): [design/firefox-capture.md](design/firefox-capture.md)
