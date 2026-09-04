@@ -11,16 +11,19 @@ Runnable examples for inventory, digest generation, summary routing, the local w
 `favicon.ico` beside the HTML file, and by default runs every output writer
 (xteink / txt / json / epub). See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
 
-Run from the project root with the virtualenv active:
+See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
+Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
+Position: [COMPARISON.md](COMPARISON.md). Roadmap: [ROADMAP.md](ROADMAP.md).
+**Default deploy:** [DOCKER.md](DOCKER.md).
+
+Most recipes below use the host CLI (`python -m rollup` / `rollup`). With Docker, run the same commands via `docker compose exec rollup …` (paths inside the container are under `/data/*` — see [DOCKER.md](DOCKER.md)).
+
+Run from the project root with the virtualenv active (host Python path only):
 
 ```bash
 cd /path/to/rollup
 source .venv/bin/activate
 ```
-
-See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
-Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
-Position: [COMPARISON.md](COMPARISON.md). Roadmap: [ROADMAP.md](ROADMAP.md). Docker: [DOCKER.md](DOCKER.md).
 
 **Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), `--scholar-mode detailed` (or `[scholar].mode = "detailed"`), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
@@ -34,6 +37,21 @@ validated summary-only fixes.
 
 ## Install
 
+### Default: Docker
+
+```bash
+mkdir -p ~/.config/rollup ~/Documents/rollup-outputs ./state ./logs
+touch ~/.config/rollup/config.toml ~/.config/rollup/env
+chmod 600 ~/.config/rollup/env
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d --build
+open http://localhost:8765
+```
+
+Full guide: [DOCKER.md](DOCKER.md).
+
+### Advanced: host Python / venv
+
 | Method | Command |
 |--------|---------|
 | PyPI (when published) | `pip install rollup` |
@@ -43,7 +61,6 @@ validated summary-only fixes.
 | LiteLLM providers | `pip install 'rollup[llm]'` |
 | EPUB writer | `pip install 'rollup[epub]'` |
 | uv | `uv sync --extra dev --extra web` |
-| Docker | [DOCKER.md](DOCKER.md) |
 
 ## Inventory
 
@@ -648,6 +665,10 @@ rollup sources import --from /tmp/sources.json --state-dir /tmp/rollup-state
 
 ## Local web UI
 
+**Preferred:** Docker Compose — see [Docker](#docker) below and [DOCKER.md](DOCKER.md).
+
+### Advanced: host Python
+
 Browse indexed rollups, rate emails, and review newsletter quality. Binds to **loopback only** (`127.0.0.1` by default). Pass `--allow-non-loopback-bind` only for Docker port mapping. Requires the optional Flask extra.
 
 Bring-up (install → digest that indexes into state → start the UI):
@@ -680,17 +701,22 @@ python -m rollup bodies check
 python -m rollup bodies backfill --dry-run
 ```
 
-## Docker (optional)
+## Docker
 
-Run web + digest in one container while sharing the same config, state, output, and mail paths as native CLI. See [DOCKER.md](DOCKER.md).
+Default deploy: web + digest in one container while sharing the same config, state, output, and mail paths as a host CLI. See [DOCKER.md](DOCKER.md).
 
 ```bash
+mkdir -p ~/.config/rollup ~/Documents/rollup-outputs ./state ./logs
+touch ~/.config/rollup/config.toml ~/.config/rollup/env
+chmod 600 ~/.config/rollup/env
 cp docker-compose.override.yml.example docker-compose.override.yml
 docker compose up -d --build
 open http://localhost:8765
 ```
 
 The image binds with `--allow-non-loopback-bind` so Flask can listen on `0.0.0.0` inside the container. Compose publishes `127.0.0.1:8765:8765`; access from the host uses `http://localhost:8765` (Host-header loopback checks unchanged). Override the port mapping only if you intentionally need LAN access.
+
+Do not run native `rollup web` and Docker web at the same time.
 
 Fixture smoke test without real mail:
 

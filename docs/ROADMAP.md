@@ -119,7 +119,7 @@ reading than a mobile app.
 | [COMPARISON.md](COMPARISON.md) | Competitive position |
 | [CONFIG.md](CONFIG.md) | TOML, profiles, sticky ↔ CLI |
 | [WEB.md](WEB.md) | Loopback UI surfaces |
-| [DOCKER.md](DOCKER.md) | Optional container setup |
+| [DOCKER.md](DOCKER.md) | Default Compose deploy |
 | [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
 | [CHANGELOG.md](../CHANGELOG.md) | What shipped |
 | [design/firefox-capture.md](design/firefox-capture.md) | Firefox Add to Rollup (packages, SLOC, reload, known issues, review) |

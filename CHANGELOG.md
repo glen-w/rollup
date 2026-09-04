@@ -4,6 +4,12 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.5 — 2026-09-04
+
+### Changed
+
+- **Docker is the default deploy**: README, website, and docs lead with Compose; host Python / venv is documented as an advanced alternative.
+
 ## 0.9.4 — 2026-09-04
 
 ### Added

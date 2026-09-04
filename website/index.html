@@ -144,24 +144,26 @@
           <h2>From a checkout to a digest</h2>
           <ol class="steps">
             <li>
-              Install into a venv with the web extra and confirm
-              <code>rollup doctor</code> is clean.
+              Bring up with Docker Compose and confirm
+              <code>docker compose exec rollup rollup doctor …</code> is clean.
             </li>
             <li>
-              Run <code>rollup digest</code> over your Thunderbird mbox (preview
-              summaries, no network).
+              Set mail/output paths in Settings, then run a digest from Run
+              Studio (preview summaries, no network).
             </li>
             <li>
-              Open <code>rollup web --open</code> and browse the archive on
-              loopback.
+              Browse the archive at
+              <a href="http://localhost:8765">http://localhost:8765</a>
+              (loopback).
             </li>
             <li>
-              Optionally pass <code>--ollama</code>, schedule with
-              <code>rollup cron print-launchd</code>, or add LinkedIn / Reddit /
-              articles.
+              Optionally enable Ollama, schedule digests, or add LinkedIn /
+              Reddit / articles.
             </li>
           </ol>
           <p>
+            <a href="./guide/DOCKER.html">Docker</a>
+            ·
             <a href="./guide/EXAMPLES.html">Examples</a>
             ·
             <a href="./guide/CONFIG.html">Config</a>
@@ -177,19 +179,24 @@
         <div class="wrap narrow">
           <h2>Install</h2>
           <p>
-            Python 3.10+. Thunderbird mbox (not Maildir). No Ollama server for
-            the default digest.
+            Default deploy is Docker. Thunderbird mbox (not Maildir). No Ollama
+            server for the default digest.
           </p>
           <pre class="code"><code>git clone https://github.com/glen-w/rollup.git
 cd rollup
-python3 -m venv .venv &amp;&amp; source .venv/bin/activate
-pip install -e ".[web]"
-rollup digest
-rollup web --open</code></pre>
+mkdir -p ~/.config/rollup ~/Documents/rollup-outputs ./state ./logs
+touch ~/.config/rollup/config.toml ~/.config/rollup/env
+chmod 600 ~/.config/rollup/env
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d --build
+open http://localhost:8765</code></pre>
           <p>
-            Open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>
-            (loopback). Docker: see
-            <a href="./guide/DOCKER.html">Docker</a>.
+            Full mounts and Ollama notes:
+            <a href="./guide/DOCKER.html">Docker guide</a>. Host Python / venv
+            is an advanced alternative in the
+            <a href="https://github.com/glen-w/rollup/blob/main/README.md#advanced-host-python--venv"
+              >README</a
+            >.
           </p>
           <p class="fine">
             Details:
@@ -205,7 +212,7 @@ rollup web --open</code></pre>
 
     <footer class="site-footer">
       <div class="wrap footer-inner">
-        <p>© Rollup contributors. Local-first software. Version 0.9.4.</p>
+        <p>© Rollup contributors. Local-first software. Version 0.9.5.</p>
         <p>
           <a href="https://github.com/glen-w/rollup">GitHub</a>
           ·

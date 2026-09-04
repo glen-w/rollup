@@ -1,4 +1,5 @@
 # Copy to docker-compose.override.yml (gitignored) and edit paths if needed.
+# First run: mkdir -p ~/.config/rollup … && touch config.toml and env (see docs/DOCKER.md).
 services:
   rollup:
     volumes:

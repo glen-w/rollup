@@ -15,17 +15,25 @@ Local, single-user browser UI for browsing digests, rating emails, reviewing new
 | `/sources/registry` | Source policy / aliases |
 | `/admin` | Read-only health + body maintenance |
 
-## Install
+## Install / start
+
+### Default: Docker
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+docker compose up -d --build
+open http://localhost:8765
+```
+
+Full guide (first-run path prep, mounts, Ollama): [DOCKER.md](DOCKER.md).
+
+### Advanced: host Python / venv
 
 ```bash
 pip install 'rollup[web]'
 # or from a checkout:
 pip install -e '.[web]'
-```
 
-## Start
-
-```bash
 rollup web
 # optional:
 rollup web --port 8765 --open
@@ -35,7 +43,7 @@ rollup web reindex   # backfill archive metadata from manifests/
 
 Binds to **loopback only** (`127.0.0.1` by default; `::1` allowed). Non-loopback hosts are rejected at startup unless `--allow-non-loopback-bind` is passed (Docker port mapping). Host headers must match the configured loopback bind; forwarded-host headers are ignored.
 
-Docker: see [DOCKER.md](DOCKER.md).
+Do not run native `rollup web` and Docker web at the same time (shared state DB).
 
 Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest (CLI flags still win). Pass `--config PATH` so Settings writes that file.
 

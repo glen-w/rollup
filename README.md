@@ -21,35 +21,37 @@ transports for that window, the same way LinkedIn and Reddit already are.
 You do not need a special newsletter address, a second mailbox, or to make
 Rollup authoritative for subscriptions.
 
-## Quick start (digest + web UI)
+## Quick start (Docker)
 
-Install the optional web extra once (`pip install -e ".[web]"` or `pip install 'rollup[web]'`), then:
+Recommended deploy: Docker Compose. Web UI + digest share host config, state, output, and mail mounts.
 
 ```bash
-# weekly digest (default profile; indexes into state for the UI)
-rollup digest
+mkdir -p ~/.config/rollup ~/Documents/rollup-outputs ./state ./logs
+touch ~/.config/rollup/config.toml ~/.config/rollup/env
+chmod 600 ~/.config/rollup/env
 
-# optional: with Ollama
-rollup digest --ollama
-
-# browse the archive (loopback only)
-rollup web --open
+cp docker-compose.override.yml.example docker-compose.override.yml
+# edit override paths if your mail/config/output dirs differ
+docker compose up -d --build
+open http://localhost:8765
 ```
 
-Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — see [docs/CONFIG.md](docs/CONFIG.md).
+Configure paths and run digests from the UI (Settings / Run Studio). Details: [docs/DOCKER.md](docs/DOCKER.md).
+
+Host Python / venv install is an advanced alternative — see [Install](#install) below. Sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Documentation
 
 | Doc | Purpose |
 |-----|---------|
-| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Scholar, Docker) |
+| [docs/DOCKER.md](docs/DOCKER.md) | Default deploy (Compose; host config/state/output mounts) |
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Scholar) |
 | [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage / Scholar, effort ladders |
 | [docs/WEB.md](docs/WEB.md) | Local web UI (Archive, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
 | [extension/firefox/README.md](extension/firefox/README.md) | Firefox Add to Rollup (temporary add-on) |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | Where Rollup sits relative to other readers and AI digests |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Product sequence toward 1.0 and non-goals |
-| [docs/DOCKER.md](docs/DOCKER.md) | Docker Compose setup sharing host config/state/output |
 | [docs/CRON.md](docs/CRON.md) | launchd / crontab scheduling |
 | [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
 | [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
@@ -57,7 +59,7 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 | [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, reload, known issues, review checklist |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
-Quick picks: [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md) · [CONTRACT](docs/CONTRACT.md)
+Quick picks: [DOCKER](docs/DOCKER.md) · [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md)
 
 Hosted site (GitHub Pages): landing in [`website/`](website/) plus Sphinx HTML from this `docs/` tree at `/guide/`. Preview locally with `pip install -e '.[docs]' && make pages-site`, then open `_site/index.html`.
 
@@ -71,11 +73,20 @@ All output, state, and logs are written outside the mail store.
 
 ## Requirements
 
-- Python 3.10+
+- **Docker Desktop** (or Docker Engine + Compose v2) for the default deploy
 - Thunderbird mbox format (not Maildir)
 - **No Ollama server required** for the default digest workflow
+- Python 3.10+ only if you use the host/venv install below
 
 ## Install
+
+### Default: Docker
+
+See [Quick start](#quick-start-docker) and [docs/DOCKER.md](docs/DOCKER.md).
+
+### Advanced: host Python / venv
+
+For local development, packaging extras, or running the CLI without Compose:
 
 | Method | Command |
 |--------|---------|
@@ -88,15 +99,16 @@ All output, state, and logs are written outside the mail store.
 | Dev + web + tests | `pip install -e ".[dev,web]"` |
 | Hosted docs (Sphinx) | `pip install -e '.[docs]'` then `make docs` / `make pages-site` |
 | uv (from checkout) | `uv sync --extra dev --extra web` |
-| Docker (web + digest) | [docs/DOCKER.md](docs/DOCKER.md) |
-
-From a git checkout, activate the venv then run `rollup` (or `python -m rollup`).
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,web]"
+rollup digest
+rollup web --open
 ```
+
+Do not run native `rollup web` and Docker web at the same time (shared `state/rollup.db`).
 
 The default `rollup digest` uses preview excerpts only and makes **no network
 calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
@@ -162,10 +174,10 @@ Built-in writers: **`xteink`**, **`txt`**, **`json`**, **`epub`** — see
 
 ## Recommended personal setup
 
-1. Install into a venv and confirm `rollup doctor` is clean.
-2. Run a manual weekly non-AI digest (preview summaries, no network).
-3. Optionally enable `--ollama` for local AI summaries.
-4. Schedule with **launchd** on macOS (`rollup cron print-launchd`) — see [docs/CRON.md](docs/CRON.md).
+1. Bring up with Docker Compose ([docs/DOCKER.md](docs/DOCKER.md)) and confirm `docker compose exec rollup rollup doctor …` is clean.
+2. Run a manual weekly non-AI digest from Run Studio (preview summaries, no network).
+3. Optionally enable Ollama (point at `host.docker.internal` from the container).
+4. Schedule digests — host **launchd**/crontab calling `docker compose exec`, or a native venv install; see [docs/CRON.md](docs/CRON.md).
 
 Live-mail checklist and Ollama routing examples: [docs/EXAMPLES.md](docs/EXAMPLES.md).
 

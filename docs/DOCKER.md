@@ -1,22 +1,33 @@
 # Docker
 
-Run Rollup web + digest subprocesses in one container while sharing the same config, state, output, and mail paths as the native CLI.
+**Default deploy.** Run Rollup web + digest subprocesses in one container while sharing the same config, state, output, and mail paths as a host CLI would use.
+
+For local development, packaging extras, or a bare-metal CLI without Compose, see the host Python / venv path in the [README](../README.md#advanced-host-python--venv) and [EXAMPLES.md](EXAMPLES.md#advanced-host-python--venv).
 
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine + Compose v2)
-- Existing Rollup setup: `~/.config/rollup/config.toml`, optional `~/.config/rollup/env` for LinkedIn cookies
 - File sharing enabled for `~/email`, `~/Documents`, `~/.config/rollup`, and this repo
+- Thunderbird mbox under the mail mount (default `~/email/gmail`)
 
 ## Quick start
 
+Create host paths first so Compose bind-mounts **files** (not empty directories):
+
 ```bash
+mkdir -p ~/.config/rollup ~/Documents/rollup-outputs ./state ./logs
+touch ~/.config/rollup/config.toml ~/.config/rollup/env
+chmod 600 ~/.config/rollup/env
+
 cp docker-compose.override.yml.example docker-compose.override.yml
+# edit override paths if your mail/config/output dirs differ
 docker compose up -d --build
 open http://localhost:8765
 ```
 
-The override bind-mounts your existing paths:
+Configure sticky paths in Settings, then run digests from Run Studio. Optional sticky config details: [CONFIG.md](CONFIG.md).
+
+The override bind-mounts your host paths:
 
 | Host | Container | Purpose |
 |------|-----------|---------|
@@ -96,7 +107,7 @@ services:
       - "8765:8765"
 ```
 
-Native use stays unchanged:
+Host Python (advanced) stays loopback-only by default:
 
 ```bash
 rollup web --host 127.0.0.1
@@ -107,3 +118,4 @@ rollup web --host 127.0.0.1
 - [WEB.md](WEB.md) — web UI features (Articles, LinkedIn, Reddit, Run Studio)
 - [CONFIG.md](CONFIG.md) — TOML and env file
 - [EXAMPLES.md](EXAMPLES.md) — CLI examples
+- [CRON.md](CRON.md) — scheduling (Compose exec or host venv)

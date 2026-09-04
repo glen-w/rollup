@@ -17,11 +17,14 @@ Do not confuse preview summaries with dry-run.
 
 ## Recommended setup
 
-1. Install Rollup in a project venv with a stable absolute Python path.
-2. Put sticky paths in `~/.config/rollup/config.toml` (see [CONFIG.md](CONFIG.md)).
-3. Run `rollup doctor` and fix any errors.
-4. Run a manual digest once, then inspect `output/` and `state/manifests/`.
-5. Schedule a weekly job with `rollup cron print-launchd` (macOS) or `print-crontab`.
+1. Bring up with Docker Compose ([DOCKER.md](DOCKER.md)); put sticky paths in `~/.config/rollup/config.toml` via Settings or by hand ([CONFIG.md](CONFIG.md)).
+2. Run `docker compose exec rollup rollup doctor …` (or host `rollup doctor`) and fix any errors.
+3. Run a manual digest once (Run Studio or CLI), then inspect `output/` and `state/manifests/`.
+4. Schedule a weekly job — `docker compose exec` from launchd/crontab, or a host venv with `rollup cron print-launchd` / `print-crontab` ([advanced host install](../README.md#advanced-host-python--venv)).
+
+### Advanced: host Python scheduling
+
+When running without Compose, install Rollup in a project venv with a stable absolute Python path, then use `rollup cron print-launchd` (macOS) or `print-crontab`.
 
 ## Single-run lock
 

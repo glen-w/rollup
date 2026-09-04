@@ -59,7 +59,9 @@ python -m pytest tests/ -q
 - Sticky TOML ↔ CLI flags: `rollup.sticky_flags` (single registry). Config load/save for web: `rollup.config_service`. Parser construction: `rollup.cli_parser` (re-exported as `rollup.cli.build_parser`). Digest orchestration: `pipeline.run_digest` (phase helpers; public API unchanged).
 - Docs: [README.md](README.md), [docs/CONFIG.md](docs/CONFIG.md), [docs/WEB.md](docs/WEB.md), [docs/DOCKER.md](docs/DOCKER.md), [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CONTRACT.md](docs/CONTRACT.md), [docs/COMPARISON.md](docs/COMPARISON.md), [docs/ROADMAP.md](docs/ROADMAP.md), [docs/design/firefox-capture.md](docs/design/firefox-capture.md). Hosted view: `pip install -e '.[docs]'` then `make docs` (Sphinx HTML) or `make pages-site` (`website/` + `/guide/` in `_site/`). Markdown under `docs/` remains the corpus.
 
-### Docker (optional)
+### Docker (default user deploy)
+
+Preferred end-user path (Compose mounts host config/state/output/mail). Agents on Cloud VMs without a real mail store should prefer the fixture digest + `rollup web` flow above, or the fixture Compose smoke test:
 
 ```bash
 cp docker-compose.override.yml.example docker-compose.override.yml
@@ -73,4 +75,4 @@ Fixture smoke test without real mail:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-See [docs/DOCKER.md](docs/DOCKER.md).
+See [docs/DOCKER.md](docs/DOCKER.md). Host Python / venv remains the advanced/dev path (`uv sync` above).

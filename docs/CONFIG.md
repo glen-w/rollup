@@ -425,7 +425,7 @@ If `root` / `mail_root` are not set in config or CLI:
 - Comparison: [COMPARISON.md](COMPARISON.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
 - Web UI (Settings + Run Studio + Articles + LinkedIn + Reddit): [WEB.md](WEB.md)
-- Docker (optional): [DOCKER.md](DOCKER.md)
+- Docker (default deploy): [DOCKER.md](DOCKER.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)
 - Troubleshooting (LinkedIn session, Reddit ladder, listing cache): [TROUBLESHOOTING.md](TROUBLESHOOTING.md)

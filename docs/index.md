@@ -10,7 +10,8 @@ Thunderbird owns the ongoing stream. Rollup takes a time window and produces a
 no scrolling feed, and no “mark all read.”
 
 **Default digest makes no network calls.** LLM summarisation is opt-in
-(`--ollama`). The web UI is loopback and single-user.
+(`--ollama`). The web UI is loopback and single-user. **Default deploy is
+Docker Compose** — see [DOCKER](DOCKER.md); host Python / venv is advanced.
 
 The GitHub [README](https://github.com/glen-w/rollup#readme) is the same
 first-run story.
@@ -19,6 +20,7 @@ first-run story.
 :maxdepth: 2
 :caption: Start here
 
+DOCKER
 CONTRACT
 EXAMPLES
 CONFIG
@@ -31,7 +33,6 @@ WEB
 
 SOURCES
 CRON
-DOCKER
 OUTPUT_WRITERS
 XTEINK_USAGE
 TROUBLESHOOTING
