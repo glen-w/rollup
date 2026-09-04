@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rollup — a bounded briefing from mail you already keep</title>
+    <meta
+      name="description"
+      content="Rollup is a local-first personal briefing engine. It reads your Thunderbird mbox (and optional LinkedIn, Reddit, and webpage sources) and writes a finite digest without modifying any mail."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="chrome/site_chrome.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header ru-site-chrome">
+      <div class="wrap header-inner">
+        <a class="brand" href="./">Rollup</a>
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="site-nav"
+          data-nav-toggle
+        >
+          Menu
+        </button>
+        <nav id="site-nav" class="site-nav" data-nav>
+          <a href="#product">See how it works</a>
+          <a href="./guide/">Docs</a>
+          <a href="#install">Install</a>
+          <a href="https://github.com/glen-w/rollup">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero-atmosphere" aria-hidden="true"></div>
+        <div class="wrap hero-copy">
+          <img
+            class="hero-logo"
+            src="images/rollup_logo.png"
+            alt=""
+            width="96"
+            height="96"
+          />
+          <p class="brand-mark">Rollup</p>
+          <h1>A bounded briefing from mail you already keep.</h1>
+          <p class="lede">
+            Read newsletters from your Thunderbird mbox — plus optional
+            LinkedIn, Reddit, and saved pages — and write a calm periodic
+            digest. Mail stays read-only. Inference stays yours.
+          </p>
+          <div class="cta-row">
+            <a class="btn primary" href="#product">See how it works</a>
+            <a class="btn ghost" href="#install">Install</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="product">
+        <div class="wrap">
+          <h2>The briefing, not another stream</h2>
+          <p class="section-lead">
+            Thunderbird owns the ongoing stream. Rollup takes a time window and
+            produces a finite reading object — Markdown, HTML, and optional
+            EPUB / e-ink. It is not an RSS reader.
+          </p>
+          <div class="feature-grid">
+            <div class="feature">
+              <h3>Digest</h3>
+              <p>
+                Classify, group, and summarise a lookback window. Default run
+                uses preview excerpts and makes no network calls.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Local web UI</h3>
+              <p>
+                Loopback Flask extra: Archive, Run Studio, Settings, Articles,
+                LinkedIn, Reddit, and Admin — same TOML and SQLite as the CLI.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Optional sources</h3>
+              <p>
+                LinkedIn, Reddit, and webpage capture are ingest transports for
+                that window, not inboxes. Credentials never live in TOML.
+              </p>
+            </div>
+            <div class="feature">
+              <h3>Local AI, when you want it</h3>
+              <p>
+                Pass <code>--ollama</code> for local summaries. Final-review QA
+                is independent. Default digest stays offline.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section muted" id="what">
+        <div class="wrap narrow">
+          <h2>What can I do with it?</h2>
+          <ul class="outcomes">
+            <li>Turn a week of newsletters into one bounded digest</li>
+            <li>Browse the archive in a loopback web UI</li>
+            <li>Schedule unattended runs with launchd or cron</li>
+            <li>Fold in LinkedIn, Reddit, or saved articles at digest time</li>
+            <li>Write Markdown, HTML, EPUB, or e-ink artifacts</li>
+          </ul>
+          <p>
+            Walkthrough:
+            <a href="./guide/EXAMPLES.html">examples</a>.
+            Not sure if this is the right tool?
+            <a href="./guide/CONTRACT.html">product contract</a>
+            ·
+            <a href="./guide/COMPARISON.html">comparison</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="privacy">
+        <div class="wrap narrow">
+          <h2>On your machine</h2>
+          <p>
+            Rollup never writes, deletes, or renames anything under your mail
+            root. Output, state, and logs stay outside the store. The default
+            digest performs no network calls. The web UI binds loopback and is
+            single-user.
+          </p>
+        </div>
+      </section>
+
+      <section class="section muted" id="how">
+        <div class="wrap narrow">
+          <h2>From a checkout to a digest</h2>
+          <ol class="steps">
+            <li>
+              Install into a venv with the web extra and confirm
+              <code>rollup doctor</code> is clean.
+            </li>
+            <li>
+              Run <code>rollup digest</code> over your Thunderbird mbox (preview
+              summaries, no network).
+            </li>
+            <li>
+              Open <code>rollup web --open</code> and browse the archive on
+              loopback.
+            </li>
+            <li>
+              Optionally pass <code>--ollama</code>, schedule with
+              <code>rollup cron print-launchd</code>, or add LinkedIn / Reddit /
+              articles.
+            </li>
+          </ol>
+          <p>
+            <a href="./guide/EXAMPLES.html">Examples</a>
+            ·
+            <a href="./guide/CONFIG.html">Config</a>
+            ·
+            <a href="./guide/WEB.html">Web UI</a>
+            ·
+            <a href="./guide/CRON.html">Cron</a>
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <div class="wrap narrow">
+          <h2>Install</h2>
+          <p>
+            Python 3.10+. Thunderbird mbox (not Maildir). No Ollama server for
+            the default digest.
+          </p>
+          <pre class="code"><code>git clone https://github.com/glen-w/rollup.git
+cd rollup
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+pip install -e ".[web]"
+rollup digest
+rollup web --open</code></pre>
+          <p>
+            Open <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>
+            (loopback). Docker: see
+            <a href="./guide/DOCKER.html">Docker</a>.
+          </p>
+          <p class="fine">
+            Details:
+            <a href="./guide/">Documentation</a>
+            ·
+            <a href="https://github.com/glen-w/rollup/blob/main/README.md"
+              >README</a
+            >
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>© Rollup contributors. Local-first software. Version 0.9.4.</p>
+        <p>
+          <a href="https://github.com/glen-w/rollup">GitHub</a>
+          ·
+          <a
+            href="https://ko-fi.com/C0C1XK8G"
+            target="_blank"
+            rel="noopener noreferrer"
+            ><img
+              height="36"
+              style="border: 0; height: 36px"
+              src="https://storage.ko-fi.com/cdn/kofi6.png?v=6"
+              alt="Buy Me a Coffee at ko-fi.com"
+          /></a>
+        </p>
+      </div>
+    </footer>
+    <script src="chrome/site_nav.js" defer></script>
+  </body>
+</html>

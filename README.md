@@ -54,10 +54,12 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 | [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
 | [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Doctor, LinkedIn session, exit codes |
-| [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, known issues, review checklist |
+| [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, reload, known issues, review checklist |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 Quick picks: [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md) · [CONTRACT](docs/CONTRACT.md)
+
+Hosted site (GitHub Pages): landing in [`website/`](website/) plus Sphinx HTML from this `docs/` tree at `/guide/`. Preview locally with `pip install -e '.[docs]' && make pages-site`, then open `_site/index.html`.
 
 ## Safety guarantee
 
@@ -84,6 +86,7 @@ All output, state, and logs are written outside the mail store.
 | LiteLLM providers | `pip install 'rollup[llm]'` |
 | EPUB writer | `pip install 'rollup[epub]'` |
 | Dev + web + tests | `pip install -e ".[dev,web]"` |
+| Hosted docs (Sphinx) | `pip install -e '.[docs]'` then `make docs` / `make pages-site` |
 | uv (from checkout) | `uv sync --extra dev --extra web` |
 | Docker (web + digest) | [docs/DOCKER.md](docs/DOCKER.md) |
 
@@ -200,6 +203,7 @@ src/rollup/web/                   # optional Flask UI ([web] extra)
 extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
 docs/                             # CONFIG, WEB, CONTRACT, COMPARISON, ROADMAP, …
+website/                          # public landing; Sphinx guide assembled beside it
 CHANGELOG.md                      # release notes
 ```
 

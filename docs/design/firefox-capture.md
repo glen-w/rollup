@@ -6,6 +6,26 @@ read-later library. Thunderbird XPI remains a [non-goal](../CONTRACT.md).
 Capture enqueues HTTPS URLs into the existing `webpage_queue`. The digest still
 fetches the page later. `rollup web` must be running.
 
+## Reload
+
+There is no signed XPI. The add-on is **Load Temporary Add-on** only
+(`about:debugging#/runtime/this-firefox` → choose
+[`extension/firefox/manifest.json`](../../extension/firefox/manifest.json)).
+
+**After Firefox restarts** the temporary add-on is gone. Load `manifest.json`
+again. Options storage does not survive the unload — paste the capture token
+from Articles if the options page is empty. `rollup web` must already be
+running.
+
+**While iterating** (Firefox still open): keep This Firefox debugging open and
+click **Reload** next to **Rollup** after editing JS/CSS/HTML. Origin and token
+in `browser.storage.local` survive Reload. Changes to `manifest.json`
+(permissions, `background.scripts`, `gecko.id`) need **Remove** then Load
+Temporary Add-on again.
+
+First-load pairing (token copy, Test connection) is in
+[`extension/firefox/README.md`](../../extension/firefox/README.md).
+
 ## Packages
 
 The add-on has **no npm/bundler dependencies**. It uses Firefox WebExtensions
@@ -39,7 +59,7 @@ No live Firefox harness; pytest covers the HTTP contract only.
 ## Known issues
 
 - **Unsigned / temporary.** Load via `about:debugging`. The add-on unloads when
-  Firefox restarts. AMO signing is out of scope.
+  Firefox restarts — [reload](#reload). AMO signing is out of scope.
 - **Firefox only.** No Chrome/Safari build. Manifest uses `background.scripts`
   (not Chrome `service_worker`).
 - **`rollup web` required.** There is no nativeMessaging helper and no enqueue

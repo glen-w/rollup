@@ -1,0 +1,127 @@
+/* Shared top chrome for marketing landing + Sphinx /guide/ pages. */
+.ru-site-chrome {
+  --ru-ink: #101820;
+  --ru-ink-soft: #3d4a55;
+  --ru-paper: #eef2f5;
+  --ru-sea: #0f6e7c;
+  --ru-line: rgba(16, 24, 32, 0.12);
+  --ru-font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --ru-font-body: "Source Sans 3", "Segoe UI", sans-serif;
+  --ru-header-height: 3.5rem;
+
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  backdrop-filter: blur(10px);
+  background: rgba(238, 242, 245, 0.92);
+  border-bottom: 1px solid var(--ru-line);
+  font-family: var(--ru-font-body);
+  color: var(--ru-ink);
+}
+
+.ru-site-chrome .wrap {
+  width: min(1080px, calc(100% - 2.5rem));
+  margin-inline: auto;
+}
+
+.ru-site-chrome .header-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: var(--ru-header-height);
+}
+
+.ru-site-chrome .brand {
+  font-family: var(--ru-font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-decoration: none;
+  color: var(--ru-ink);
+  letter-spacing: -0.02em;
+}
+
+.ru-site-chrome .nav-toggle {
+  display: none;
+  border: 1px solid var(--ru-line);
+  background: transparent;
+  color: var(--ru-ink);
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ru-site-chrome .site-nav {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.ru-site-chrome .site-nav a {
+  text-decoration: none;
+  color: var(--ru-ink-soft);
+  font-weight: 600;
+}
+
+.ru-site-chrome .site-nav a:hover,
+.ru-site-chrome .site-nav a:focus-visible {
+  color: var(--ru-sea);
+}
+
+/* Furo: keep page layout usable under the persistent chrome */
+.ru-site-chrome + .page {
+  min-height: calc(100% - var(--ru-header-height));
+}
+
+@media (max-width: 720px) {
+  .ru-site-chrome .nav-toggle {
+    display: inline-flex;
+  }
+
+  .ru-site-chrome .site-nav {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(var(--ru-header-height) - 0.1rem);
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--ru-paper);
+    border: 1px solid var(--ru-line);
+    border-radius: 0.4rem;
+  }
+
+  .ru-site-chrome .site-nav.open {
+    display: flex;
+  }
+}
+
+/* Dark docs theme: keep chrome readable without flipping brand colors */
+body[data-theme="dark"] .ru-site-chrome {
+  background: rgba(24, 28, 32, 0.92);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+  color: #e8eaed;
+}
+
+body[data-theme="dark"] .ru-site-chrome .brand {
+  color: #e8eaed;
+}
+
+body[data-theme="dark"] .ru-site-chrome .nav-toggle {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e8eaed;
+}
+
+body[data-theme="dark"] .ru-site-chrome .site-nav a {
+  color: #c4c9cf;
+}
+
+body[data-theme="dark"] .ru-site-chrome .site-nav a:hover,
+body[data-theme="dark"] .ru-site-chrome .site-nav a:focus-visible {
+  color: #7ec8d4;
+}
+
+body[data-theme="dark"] .ru-site-chrome .site-nav {
+  background: #1c2126;
+  border-color: rgba(255, 255, 255, 0.12);
+}

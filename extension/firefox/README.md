@@ -16,6 +16,13 @@ Requires `rollup web` running on loopback (default `http://127.0.0.1:8765`).
 
 Temporary add-ons unload when Firefox restarts. AMO signing is out of scope for this MVP.
 
+## Reload
+
+- **Firefox restarted:** This Firefox → **Load Temporary Add-on…** → `manifest.json` again. Re-paste the token if options are empty.
+- **Code edit, Firefox still open:** This Firefox → **Reload** next to Rollup. Manifest permission/`gecko.id` changes need Remove then load again.
+
+Developer notes: [docs/design/firefox-capture.md](../../docs/design/firefox-capture.md#reload).
+
 ## Use
 
 - Toolbar button **Add to Rollup** — current tab URL and title

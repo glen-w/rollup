@@ -10,6 +10,8 @@ __pycache__/
 .pytest_cache/
 dist/
 build/
+docs/_build/
+_site/
 .coverage
 coverage.xml
 coverage.json

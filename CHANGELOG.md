@@ -4,9 +4,12 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.4 — 2026-09-04
+
 ### Added
 
 - **Public landing + Sphinx guide**: `website/` marketing page and MyST/Furo docs over the existing `docs/` Markdown, assembled with `make pages-site` and deployed to GitHub Pages (`/guide/`).
+- Firefox Add to Rollup **reload** notes (temporary add-on after restart vs in-session Reload).
 
 ## 0.9.3 — 2026-09-04
 

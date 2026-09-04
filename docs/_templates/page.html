@@ -1,0 +1,37 @@
+{% extends "!page.html" %}
+
+{# Persist the public site header above Furo chrome on /guide/. #}
+{% block extrahead %}
+{{ super() }}
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600&display=swap"
+  rel="stylesheet"
+/>
+{% endblock %}
+
+{% block body %}
+{% set marketing_home = content_root ~ '../index.html' %}
+<header class="site-header ru-site-chrome">
+  <div class="wrap header-inner">
+    <a class="brand" href="{{ marketing_home }}">Rollup</a>
+    <button
+      class="nav-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="site-nav"
+      data-nav-toggle
+    >
+      Menu
+    </button>
+    <nav id="site-nav" class="site-nav" data-nav>
+      <a href="{{ marketing_home }}#product">See how it works</a>
+      <a href="{{ pathto(master_doc) }}">Docs</a>
+      <a href="{{ marketing_home }}#install">Install</a>
+      <a href="https://github.com/glen-w/rollup">GitHub</a>
+    </nav>
+  </div>
+</header>
+{{ super() }}
+{% endblock %}

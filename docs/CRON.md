@@ -141,7 +141,7 @@ rollup cron print-crontab \
 
 Example weekly non-AI digest (Sundays 08:00), assuming `~/.config/rollup/config.toml` sets `root` / `mail_root`:
 
-```cron
+```text
 0 8 * * 0 cd /Users/you/rollup && /Users/you/rollup/.venv/bin/python -m rollup digest --cron \
   --output-dir /Users/you/Documents/rollup-outputs \
   --state-dir /Users/you/rollup/state \
