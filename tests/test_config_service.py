@@ -129,6 +129,20 @@ def test_build_digest_argv_includes_dry_run(tmp_path: Path) -> None:
     assert "--no-ollama" in argv
     assert "--profile" in argv
     assert "--no-linkedin-article-fetch" not in argv
+    assert "--scholar-mode" not in argv
+
+
+def test_build_digest_argv_scholar_detailed(tmp_path: Path) -> None:
+    from rollup.scholar.config import ScholarConfig
+    from rollup.user_config import LoadedUserConfig
+
+    loaded = LoadedUserConfig(
+        values={"lookback_days": 1, "ollama": False, "root": str(tmp_path)},
+        scholar=ScholarConfig(mode="detailed"),
+    )
+    eff = resolve_effective(loaded, profile_name="daily")
+    argv = build_digest_argv(eff, dry_run=True)
+    assert argv[argv.index("--scholar-mode") + 1] == "detailed"
 
 
 def test_build_digest_argv_fixture_paths() -> None:

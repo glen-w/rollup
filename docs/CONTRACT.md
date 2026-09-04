@@ -42,7 +42,9 @@ These do not change without an explicit contract revision:
 - Never write, delete, or rename anything under the mail root
 - Default `rollup digest` makes **no network calls**
 - LLM summarisation is opt-in (`--ollama`). `--final-review` calls a model
-  independently and does **not** require `--ollama`
+  independently and does **not** require `--ollama`. Google Scholar `detailed`
+  mode is opt-in HTTPS enrichment of mail already in the window (not an ingest
+  transport)
 - Web UI is loopback and single-user; GET routes are read-only
 - Secrets never live in TOML or the web UI
 - Publication is staged + rename; `latest.*` and seen-state cross an
@@ -105,7 +107,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **15** (listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **16** (Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
 
 ### Primary summary variant
 

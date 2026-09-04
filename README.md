@@ -42,8 +42,8 @@ Optional sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — 
 
 | Doc | Purpose |
 |-----|---------|
-| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Docker) |
-| [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage, effort ladders |
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Scholar, Docker) |
+| [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage / Scholar, effort ladders |
 | [docs/WEB.md](docs/WEB.md) | Local web UI (Archive, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
 | [extension/firefox/README.md](extension/firefox/README.md) | Firefox Add to Rollup (temporary add-on) |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
@@ -97,7 +97,7 @@ pip install -e ".[dev,web]"
 
 The default `rollup digest` uses preview excerpts only and makes **no network
 calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
-or `--ollama`.
+`--scholar-mode detailed`, or `--ollama`.
 
 ## Network policy
 
@@ -108,6 +108,7 @@ or `--ollama`.
 | LinkedIn `fromMember` | `--linkedin` or `[linkedin].enabled` | `ROLLUP_LINKEDIN_*` in `~/.config/rollup/env` (never TOML) |
 | Reddit listings | `--reddit` or `[reddit].enabled` | None by default. Optional OAuth: `ROLLUP_REDDIT_*` in the same env file |
 | Webpage articles | default on; `--no-webpage` to skip | None (HTTPS fetch at digest time) |
+| Google Scholar alerts | `--scholar-mode detailed` or `[scholar].mode = "detailed"` | None (HTTPS fetch of paper pages; mail already in Thunderbird) |
 
 `--no-ollama` and `--dry-run` suppress message summaries, group summaries, and availability probes. `--dry-run` also skips final review. `--final-review` is not gated on `--ollama`. Summary-related flags are ignored on default runs; Rollup prints a warning if you pass them without `--ollama`.
 
@@ -174,11 +175,11 @@ CLI (rollup / python -m rollup)
   cli_parser + sticky_flags + user_config (TOML)
        │
        ├─ digest → pipeline.run_digest
-       │     mbox discovery  +  linkedin/  +  reddit/  +  webpage/
+       │     mbox discovery  +  linkedin/  +  reddit/  +  webpage/  +  scholar/
        │     parse → classify → filter / grouping
        │     summarize (preview excerpts, or --ollama / LiteLLM)
        │     render MD/HTML → output writers → publication
-       │     state/rollup.db (schema v15) + manifests + web index
+       │     state/rollup.db (schema v16) + manifests + web index
        │
        └─ web → rollup.web (Flask; [web] extra)
              Archive · Run Studio · Settings · Articles · LinkedIn · Reddit

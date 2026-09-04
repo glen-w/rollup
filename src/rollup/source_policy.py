@@ -124,9 +124,13 @@ def apply_effective_type(
 ) -> tuple[ClassifiedMessage, NewsletterType, NewsletterType, bool]:
     """Return (classified_with_effective_type, detected, effective, disagreed)."""
     detected: NewsletterType = classified.newsletter_type
+    if classified.parsed.message_key.startswith("scholar:paper:"):
+        return classified, detected, detected, False
     effective = detected
     if policy and policy.newsletter_type_override:
         effective = policy.newsletter_type_override
+    elif _should_force_scholar_item_list(classified):
+        effective = "item_list"
     disagreed = effective != detected
     if effective == detected:
         return classified, detected, effective, False
@@ -136,6 +140,12 @@ def apply_effective_type(
         effective,
         True,
     )
+
+
+def _should_force_scholar_item_list(classified: ClassifiedMessage) -> bool:
+    from rollup.scholar.detect import is_scholar_alert
+
+    return is_scholar_alert(classified.parsed)
 
 
 def resolve_display_name(policy: SourcePolicy | None, sender_fallback: str) -> str:

@@ -11,9 +11,10 @@ from typing import Literal
 from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
 from rollup.linkedin.config import LINKEDIN_FOLDER_PREFIX
 from rollup.reddit.config import REDDIT_FOLDER_PREFIX, RedditConfig, sub_from_folder_name
-from rollup.webpage.config import WEBPAGE_FOLDER_PREFIX
 from rollup.run_options import GroupingConfig
+from rollup.scholar.detect import is_scholar_paper_key
 from rollup.source_identity import normalize_email as normalize_email
+from rollup.webpage.config import WEBPAGE_FOLDER_PREFIX
 
 ReasonCode = Literal[
     "LONG_FORM_STANDALONE",
@@ -294,6 +295,16 @@ def _group_entry_list(
                     reason_code="LONG_FORM_STANDALONE",
                     message_key=parsed.message_key,
                     detail="webpage_folder=standalone",
+                )
+            )
+            standalone.append(entry)
+            continue
+        if is_scholar_paper_key(parsed.message_key):
+            decisions.append(
+                GroupingDecision(
+                    reason_code="LONG_FORM_STANDALONE",
+                    message_key=parsed.message_key,
+                    detail="scholar_paper=standalone",
                 )
             )
             standalone.append(entry)

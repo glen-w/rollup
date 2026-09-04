@@ -18,6 +18,7 @@ from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
 from rollup.reddit.config import RedditConfig, RedditSub
+from rollup.scholar.config import ScholarConfig
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
     UnknownRunProfileError,
@@ -81,6 +82,7 @@ class EffectiveConfigView:
     effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    scholar: ScholarConfig = field(default_factory=ScholarConfig)
 
 
 @dataclass
@@ -96,6 +98,7 @@ class ConfigPatch:
     effort_overrides: dict[str, EffortModelOverride] | None = None
     linkedin: LinkedInConfig | None = None
     reddit: RedditConfig | None = None
+    scholar: ScholarConfig | None = None
 
 
 def compute_revision(path: Path) -> str:
@@ -182,6 +185,7 @@ def resolve_effective(
         effort_overrides=dict(loaded.efforts),
         linkedin=loaded.linkedin,
         reddit=loaded.reddit,
+        scholar=loaded.scholar,
     )
 
 
@@ -250,6 +254,9 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 ),
                 "reddit": _reddit_to_raw(
                     patch.reddit if patch.reddit is not None else base.reddit
+                ),
+                "scholar": _scholar_to_raw(
+                    patch.scholar if patch.scholar is not None else base.scholar
                 ),
             },
             path=Path("<patch>"),
@@ -342,6 +349,14 @@ def _reddit_to_raw(reddit: RedditConfig) -> dict[str, Any]:
     return body
 
 
+def _scholar_to_raw(scholar: ScholarConfig) -> dict[str, Any]:
+    return {
+        "mode": scholar.mode,
+        "max_papers_per_email": scholar.max_papers_per_email,
+        "max_fetches_per_run": scholar.max_fetches_per_run,
+    }
+
+
 def _ui_to_raw(ui: UiPreferences) -> dict[str, Any]:
     return {
         "landing_page": ui.landing_page,
@@ -381,6 +396,24 @@ def effective_diff(
             new = _fmt(after.sticky.get(key))
         if old != new:
             rows.append((key, old, new))
+    if before.scholar.mode != after.scholar.mode:
+        rows.append(("scholar.mode", before.scholar.mode, after.scholar.mode))
+    if before.scholar.max_papers_per_email != after.scholar.max_papers_per_email:
+        rows.append(
+            (
+                "scholar.max_papers_per_email",
+                str(before.scholar.max_papers_per_email),
+                str(after.scholar.max_papers_per_email),
+            )
+        )
+    if before.scholar.max_fetches_per_run != after.scholar.max_fetches_per_run:
+        rows.append(
+            (
+                "scholar.max_fetches_per_run",
+                str(before.scholar.max_fetches_per_run),
+                str(after.scholar.max_fetches_per_run),
+            )
+        )
     effort_keys = sorted(
         set(_flatten_effort_overrides(before.effort_overrides))
         | set(_flatten_effort_overrides(after.effort_overrides))
@@ -616,6 +649,12 @@ def _apply_patch_to_doc(
                 subs_table[name] = row
             reddit_table["subs"] = subs_table
         doc["reddit"] = reddit_table
+    if patch.scholar is not None:
+        scholar_table = tomlkit.table()
+        scholar_table["mode"] = patch.scholar.mode
+        scholar_table["max_papers_per_email"] = patch.scholar.max_papers_per_email
+        scholar_table["max_fetches_per_run"] = patch.scholar.max_fetches_per_run
+        doc["scholar"] = scholar_table
 
 
 def _to_toml_value(value: Any) -> Any:
@@ -689,6 +728,7 @@ def patch_from_form_values(
     effort_overrides: dict[str, EffortModelOverride] | None = None,
     linkedin: LinkedInConfig | None = None,
     reddit: RedditConfig | None = None,
+    scholar: ScholarConfig | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
     values: dict[str, Any] = {}
@@ -746,6 +786,7 @@ def patch_from_form_values(
         effort_overrides=effort_overrides,
         linkedin=linkedin,
         reddit=reddit,
+        scholar=scholar,
     )
 
 
@@ -774,6 +815,8 @@ def build_digest_argv(
         argv.append("--reddit")
     else:
         argv.append("--no-reddit")
+    if effective.scholar.mode == "detailed":
+        argv.extend(["--scholar-mode", "detailed"])
     if dry_run:
         argv.append("--dry-run")
     if extra:

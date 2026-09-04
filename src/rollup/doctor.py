@@ -629,6 +629,31 @@ def _check_linkedin_session(config: Config) -> DoctorCheck | None:
     )
 
 
+def _check_scholar_mode(config: Config) -> DoctorCheck | None:
+    """Warn when Scholar detailed mode will fetch without LLM summaries."""
+    if not config.scholar.detailed:
+        return None
+    if config.no_ollama:
+        return DoctorCheck(
+            id="scholar_mode",
+            status="warn",
+            message=(
+                "Google Scholar mode is detailed: digest will fetch paper pages, "
+                "but paper-level LLM summaries need --ollama (otherwise previews)"
+            ),
+            fix="Pass --ollama or enable LLM summaries in Settings",
+        )
+    return DoctorCheck(
+        id="scholar_mode",
+        status="info",
+        message=(
+            "Google Scholar mode is detailed "
+            f"(up to {config.scholar.max_papers_per_email} papers/email, "
+            f"{config.scholar.max_fetches_per_run} fetches/run)"
+        ),
+    )
+
+
 def _check_mail_path_discovery(config: Config) -> DoctorCheck:
     """Advise when defaults are missing and Thunderbird discovery finds candidates."""
     from rollup.config import DEFAULT_NEWSLETTER_ROOT
@@ -713,6 +738,10 @@ def run_doctor(
     linkedin_check = _check_linkedin_session(config)
     if linkedin_check:
         checks.append(linkedin_check)
+
+    scholar_check = _check_scholar_mode(config)
+    if scholar_check:
+        checks.append(scholar_check)
 
     do_network = network or (not config.no_ollama)
     if do_network:

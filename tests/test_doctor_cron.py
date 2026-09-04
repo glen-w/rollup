@@ -64,6 +64,19 @@ def test_doctor_fast_ok(tmp_path: Path) -> None:
     assert "python_version" in ids
     assert "mbox_discoverable" in ids
     assert "msf_ignored" in ids
+    assert "scholar_mode" not in ids
+
+
+def test_doctor_scholar_detailed_warns_without_ollama(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from rollup.scholar.config import ScholarConfig
+
+    cfg = replace(_config(tmp_path), scholar=ScholarConfig(mode="detailed"))
+    report = run_doctor(cfg, RunOptions(dry_run=True), full=False, network=False)
+    check = next(c for c in report.checks if c.id == "scholar_mode")
+    assert check.status == "warn"
+    assert "--ollama" in check.message
 
 
 def test_doctor_json_stdout_pure(tmp_path: Path) -> None:

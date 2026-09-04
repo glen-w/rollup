@@ -32,6 +32,7 @@ from rollup.effort import (
 )
 from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.reddit.config import RedditConfig
+from rollup.scholar.config import SCHOLAR_MODES, ScholarConfig
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
 from rollup.render import digest_output_stem, render_stats_block
@@ -128,6 +129,17 @@ def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
 
         return replace(linkedin, article_fetch=False)
     return linkedin
+
+
+def _resolve_scholar_config(args: argparse.Namespace) -> ScholarConfig:
+    loaded = getattr(args, "_loaded_user_config", None)
+    scholar = getattr(loaded, "scholar", None) or ScholarConfig()
+    mode = getattr(args, "scholar_mode", None)
+    if mode in SCHOLAR_MODES and mode != scholar.mode:
+        from dataclasses import replace
+
+        return replace(scholar, mode=mode)
+    return scholar
 
 
 def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
@@ -300,6 +312,7 @@ def _build_config(
         no_webpage=_resolve_no_webpage(args),
         no_reddit=_resolve_no_reddit(args),
         reddit=_resolve_reddit_config(args),
+        scholar=_resolve_scholar_config(args),
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
     )

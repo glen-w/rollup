@@ -741,6 +741,7 @@ def test_list_newsletter_types(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert "unclassified" in result.stdout
+    assert "academic_paper" in result.stdout
 
 
 def test_list_summary_profiles(tmp_path: Path) -> None:

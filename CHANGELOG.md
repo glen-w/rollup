@@ -4,6 +4,16 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Public landing + Sphinx guide**: `website/` marketing page and MyST/Furo docs over the existing `docs/` Markdown, assembled with `make pages-site` and deployed to GitHub Pages (`/guide/`).
+
+## 0.9.3 — 2026-09-04
+
+### Added
+
+- **Google Scholar alert lane**: `[scholar].mode = "default"` (treat alerts as `item_list` mail) or `"detailed"` (fetch each paper landing page, cache in schema **v16** `scholar_paper_bodies`, LLM-summarise per paper). Settings panel and `--scholar-mode`. Caps: 8 papers/email, 40 fetches/run. PDFs skipped; arXiv PDF rewritten to `/abs/`. Not an ingest transport — mail already in Thunderbird. Detailed mode only fetches papers whose parent alert falls in the lookback window.
+
 ## 0.9.2 — 2026-09-03
 
 ### Added

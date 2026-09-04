@@ -169,6 +169,8 @@ def test_list_summary_profiles_ui_friendly() -> None:
 def test_list_type_routes_ui_friendly() -> None:
     routes = list_type_routes(get_builtin_summary_profile_set())
     assert any(route.newsletter_type == "unclassified" for route in routes)
+    academic = next(r for r in routes if r.newsletter_type == "academic_paper")
+    assert academic.profile_name == "deep"
 
 
 def test_type_routing_selects_expected_profile() -> None:

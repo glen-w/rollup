@@ -21,7 +21,7 @@ from rollup.state import (
 def test_fresh_db_schema_version(tmp_path: Path):
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 15
+    assert get_schema_version(conn) == SCHEMA_VERSION == 16
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()
@@ -63,6 +63,10 @@ def test_v8_to_v9_migration(tmp_path: Path):
 
     ensure_source_fetch_cache_v15(conn)
     assert get_schema_version(conn) == 15
+    from rollup.state import ensure_scholar_paper_bodies_v16
+
+    ensure_scholar_paper_bodies_v16(conn)
+    assert get_schema_version(conn) == 16
     cols = {
         row[1]
         for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
@@ -89,7 +93,7 @@ def test_repair_schema_version_without_reader_bodies_table(tmp_path: Path):
     conn.commit()
     conn.close()
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 15
+    assert get_schema_version(conn) == SCHEMA_VERSION == 16
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()

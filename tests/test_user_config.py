@@ -232,6 +232,27 @@ def test_parse_llm_provider_and_model(tmp_path: Path) -> None:
     assert cfg.values["llm_model"] == "openai/gpt-4o"
 
 
+def test_parse_scholar_table(tmp_path: Path) -> None:
+    cfg = parse_toml_dict(
+        {
+            "scholar": {
+                "mode": "detailed",
+                "max_papers_per_email": 4,
+                "max_fetches_per_run": 12,
+            }
+        },
+        path=tmp_path / "x.toml",
+    )
+    assert cfg.scholar.mode == "detailed"
+    assert cfg.scholar.max_papers_per_email == 4
+    assert cfg.scholar.max_fetches_per_run == 12
+
+
+def test_parse_rejects_bad_scholar_mode(tmp_path: Path) -> None:
+    with pytest.raises(UserConfigError, match=r"\[scholar\]\.mode"):
+        parse_toml_dict({"scholar": {"mode": "fetch-all"}}, path=tmp_path / "x.toml")
+
+
 def test_parse_rejects_bad_llm_provider(tmp_path: Path) -> None:
     with pytest.raises(UserConfigError, match="llm_provider"):
         parse_toml_dict({"llm_provider": "openai"}, path=tmp_path / "x.toml")

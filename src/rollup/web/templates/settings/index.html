@@ -179,6 +179,25 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
   </section>
 
   <section class="card-section">
+    <h2>Google Scholar</h2>
+    <p class="hint-badge ollama">mail enrichment</p>
+    <p class="note">Scholar alerts already in Thunderbird. <strong>Default</strong> treats them like other item-list mail (no extra network). <strong>Detailed</strong> fetches each paper’s landing page and summarises it (HTTPS at digest time; LLM summaries still need Enable LLM summaries). PDFs are skipped; arXiv PDF links are rewritten to abstract pages. Caps apply per email and per run.</p>
+    <label>Mode
+      <select name="scholar_mode">
+        {% for mode in scholar_modes %}
+        <option value="{{ mode }}" {% if scholar.mode == mode %}selected{% endif %}>{{ mode }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Papers fetched per email
+      <input type="number" name="scholar_max_papers_per_email" min="1" max="50" value="{{ scholar.max_papers_per_email }}">
+    </label>
+    <label>Fetches per digest run
+      <input type="number" name="scholar_max_fetches_per_run" min="1" max="200" value="{{ scholar.max_fetches_per_run }}">
+    </label>
+  </section>
+
+  <section class="card-section">
     <h2>Folder presentation</h2>
     <p class="note">Emoji, accent, display name, and order. Preview uses placeholder cards.</p>
     <div class="folder-theme-grid">

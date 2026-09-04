@@ -11,6 +11,10 @@
   </p>
   <p class="note">Registry management — inferred facts vs user overrides. Content browsing lives under Quality.</p>
 
+  {% if scholar_alert %}
+  <p class="banner">This looks like <strong>Google Scholar</strong> alerts. Mode is currently <code>{{ scholar_mode }}</code> — change it under Settings (Google Scholar). Default keeps the email as an item list; detailed fetches and summarises each paper.</p>
+  {% endif %}
+
   <details class="panel" open>
     <summary>Inferred / observed facts</summary>
     <div class="card-body">

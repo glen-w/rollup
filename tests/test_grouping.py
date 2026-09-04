@@ -31,10 +31,11 @@ def _entry(
     body: str = "short update body",
     days_ago: int = 1,
     newsletter_type: str | None = None,
+    message_key: str | None = None,
 ) -> DigestEntry:
     now = datetime.now(timezone.utc)
     parsed = ParsedMessage(
-        message_key=f"mid:{subject}-{days_ago}",
+        message_key=message_key or f"mid:{subject}-{days_ago}",
         content_hash="x" * 64,
         folder_name=folder,
         relative_folder_path=folder,
@@ -147,6 +148,28 @@ def test_webpage_folder_entries_stay_standalone() -> None:
     assert len(result.dated_items) == 3
     assert any(
         d.detail == "webpage_folder=standalone" for d in result.reason_codes
+    )
+
+
+def test_scholar_paper_entries_stay_standalone() -> None:
+    entries = tuple(
+        _entry(
+            subject=f"Paper title {i}",
+            sender="A. Author",
+            folder="Newsletters",
+            body="abstract text " * 20,
+            newsletter_type="academic_paper",
+            days_ago=i,
+            message_key=f"scholar:paper:{'a' * 63}{i}",
+        )
+        for i in range(3)
+    )
+    result = apply_grouping(entries, (), GroupingConfig(enabled=True, min_group_size=3))
+    groups = [i for i in result.dated_items if isinstance(i, DigestGroup)]
+    assert groups == []
+    assert len(result.dated_items) == 3
+    assert any(
+        d.detail == "scholar_paper=standalone" for d in result.reason_codes
     )
 
 

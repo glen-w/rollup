@@ -183,6 +183,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force fresh LinkedIn fetch (bypass listing cache for this run)",
     )
+    dig.add_argument(
+        "--scholar-mode",
+        choices=("default", "detailed"),
+        default=None,
+        help=(
+            "Google Scholar alert handling: default keeps the email as an "
+            "item list; detailed fetches each paper and summarises it "
+            "(TOML [scholar].mode otherwise)"
+        ),
+    )
     dig.add_argument("--include-seen-undated", action="store_true", default=False)
     dig.add_argument(
         "--rebuild-summaries",

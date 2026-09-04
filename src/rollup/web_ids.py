@@ -11,7 +11,7 @@ from typing import Literal
 # Keys are mid:/fb:/li:activity: or list:/from:/li:member: — bounded for URL safety.
 MAX_KEY_LEN = 512
 _MESSAGE_KEY_RE = re.compile(
-    r"^(mid|fb|li:activity|li:fb|web:url|reddit:t3):[^\s/\\]+$"
+    r"^(mid|fb|li:activity|li:fb|web:url|reddit:t3|scholar:paper):[^\s/\\]+$"
 )
 _SOURCE_KEY_RE = re.compile(
     r"^(list|from|li:member|web:host|reddit:sub):[^\s/\\]+$"

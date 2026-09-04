@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rollup.cache_keys import canonicalize_provider_options
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -504,6 +504,18 @@ CREATE TABLE IF NOT EXISTS linkedin_article_bodies (
 );
 """
 
+SCHOLAR_PAPER_BODIES_V16 = """
+CREATE TABLE IF NOT EXISTS scholar_paper_bodies (
+    url_hash TEXT PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT,
+    body_text TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scholar_paper_bodies_fetched
+    ON scholar_paper_bodies(fetched_at);
+"""
+
 _V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fetched_title", "TEXT"),
     ("body_text", "TEXT"),
@@ -549,6 +561,7 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "linkedin_posts",
         "linkedin_listing_snapshots",
         "linkedin_article_bodies",
+        "scholar_paper_bodies",
     }
 )
 
@@ -1263,6 +1276,31 @@ def ensure_source_fetch_cache_v15(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_scholar_paper_bodies_v16(conn: sqlite3.Connection) -> None:
+    """Schema v16: cached Scholar paper landing-page bodies."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    if ver >= 16 and "scholar_paper_bodies" in _existing_tables(conn):
+        return
+    if ver < 15:
+        ensure_source_fetch_cache_v15(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, SCHOLAR_PAPER_BODIES_V16)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after scholar_paper_bodies v16: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 16)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -1276,6 +1314,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_webpage_queue_v13(conn)
     ensure_reddit_catalog_v14(conn)
     ensure_source_fetch_cache_v15(conn)
+    ensure_scholar_paper_bodies_v16(conn)
     validate_canonical_schema(conn)
 
 

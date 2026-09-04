@@ -62,6 +62,7 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - Optional LinkedIn `fromMember` folders, Reddit subreddits, webpage article queue
 - **Reddit + LinkedIn listing cache** (`rollup.db` schema v15): persist network listings; `--reddit-refresh` / `--linkedin-refresh` force a live pull
 - **Firefox Add to Rollup**: toolbar/context-menu capture into `webpage_queue` via `POST /articles/capture` (Bearer token in `{state_dir}/extension_token`). Ingest-only; `rollup web` must be running.
+- **Google Scholar detailed mode**: `[scholar].mode = "detailed"` / `--scholar-mode detailed` fetches paper landing pages from Scholar alert emails and summarises each paper (schema v16 cache). Default mode keeps alerts as `item_list` mail.
 
 ## Standing rule (network sources)
 
@@ -121,4 +122,4 @@ reading than a mobile app.
 | [DOCKER.md](DOCKER.md) | Optional container setup |
 | [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
 | [CHANGELOG.md](../CHANGELOG.md) | What shipped |
-| [design/firefox-capture.md](design/firefox-capture.md) | Firefox Add to Rollup (packages, SLOC, known issues, review) |
+| [design/firefox-capture.md](design/firefox-capture.md) | Firefox Add to Rollup (packages, SLOC, reload, known issues, review) |

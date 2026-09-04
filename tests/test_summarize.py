@@ -41,6 +41,7 @@ NEWSLETTER_TYPES = (
     "essay",
     "link_roundup",
     "item_list",
+    "academic_paper",
     "unclassified",
 )
 

@@ -40,6 +40,12 @@ from rollup.effort import (
 from rollup.folder_theme import FolderThemeOverride, folder_display_name, folder_slug, theme_for
 from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.reddit.config import RedditConfig
+from rollup.scholar.config import (
+    MAX_FETCHES_PER_RUN,
+    MAX_PAPERS_PER_EMAIL,
+    SCHOLAR_MODES,
+    ScholarConfig,
+)
 from rollup.webpage.queue import count_items
 from rollup.output_writers import discover_writers
 from rollup.run_profiles import list_run_profiles
@@ -124,6 +130,26 @@ def _reddit_enabled_from_form(base: RedditConfig) -> RedditConfig:
         mode=base.mode,
         time_filter=base.time_filter,
         subs=base.subs,
+    )
+
+
+def _scholar_from_form(base: ScholarConfig) -> ScholarConfig:
+    mode_raw = (request.form.get("scholar_mode") or base.mode).strip()
+    mode = mode_raw if mode_raw in SCHOLAR_MODES else base.mode
+    papers_raw = request.form.get("scholar_max_papers_per_email", "").strip()
+    fetches_raw = request.form.get("scholar_max_fetches_per_run", "").strip()
+    try:
+        max_papers = int(papers_raw) if papers_raw else base.max_papers_per_email
+    except ValueError:
+        max_papers = base.max_papers_per_email
+    try:
+        max_fetches = int(fetches_raw) if fetches_raw else base.max_fetches_per_run
+    except ValueError:
+        max_fetches = base.max_fetches_per_run
+    return ScholarConfig(
+        mode=mode,  # type: ignore[arg-type]
+        max_papers_per_email=min(max(1, max_papers), MAX_PAPERS_PER_EMAIL),
+        max_fetches_per_run=min(max(1, max_fetches), MAX_FETCHES_PER_RUN),
     )
 
 
@@ -239,11 +265,14 @@ def _patch_from_request() -> ConfigPatch:
         loaded = _load_doc().loaded
         base_linkedin = loaded.linkedin
         base_reddit = loaded.reddit
+        base_scholar = loaded.scholar
     except Exception:
         base_linkedin = LinkedInConfig()
         base_reddit = RedditConfig()
+        base_scholar = ScholarConfig()
     linkedin = _linkedin_enabled_from_form(base_linkedin)
     reddit = _reddit_enabled_from_form(base_reddit)
+    scholar = _scholar_from_form(base_scholar)
     return patch_from_form_values(
         mail_root=request.form.get("mail_root"),
         root=request.form.get("root"),
@@ -270,6 +299,7 @@ def _patch_from_request() -> ConfigPatch:
         effort_overrides=_effort_overrides_from_form(),
         linkedin=linkedin,
         reddit=reddit,
+        scholar=scholar,
     )
 
 
@@ -415,6 +445,8 @@ def settings_index():
         effort_ladders=effort_editor_rows(doc.loaded.efforts if doc else {}),
         linkedin=doc.loaded.linkedin if doc else LinkedInConfig(),
         reddit=doc.loaded.reddit if doc else RedditConfig(),
+        scholar=doc.loaded.scholar if doc else ScholarConfig(),
+        scholar_modes=sorted(SCHOLAR_MODES),
         preview_token=None,
         diff_rows=None,
         patch_summary=None,
@@ -466,6 +498,7 @@ def settings_preview():
                 patch.linkedin if patch.linkedin is not None else doc.loaded.linkedin
             ),
             reddit=patch.reddit if patch.reddit is not None else doc.loaded.reddit,
+            scholar=patch.scholar if patch.scholar is not None else doc.loaded.scholar,
             sources=doc.loaded.sources,
         )
         if patch.remove_profiles:
@@ -480,6 +513,7 @@ def settings_preview():
                 efforts=after_loaded.efforts,
                 linkedin=after_loaded.linkedin,
                 reddit=after_loaded.reddit,
+                scholar=after_loaded.scholar,
                 sources=after_loaded.sources,
             )
         after = resolve_effective(after_loaded)

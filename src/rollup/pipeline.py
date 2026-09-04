@@ -1063,6 +1063,67 @@ def stage_parse_webpage(
     return messages, warnings, degraded, ingest_map
 
 
+def stage_enrich_scholar(
+    config: Config,
+    parse_result: ParseResult,
+    *,
+    allow_network: bool,
+    dry_run: bool,
+    generated_at: datetime,
+) -> ParseResult:
+    """Expand Scholar alerts into per-paper messages when mode is detailed."""
+    if not config.scholar.detailed:
+        return parse_result
+    from rollup.scholar.detect import PAPER_MESSAGE_KEY_PREFIX
+    from rollup.scholar.enrich import enrich_scholar_messages
+
+    conn = None
+    if not dry_run:
+        from rollup.state import init_db
+
+        conn = init_db(config.db_path)
+    try:
+        messages, raw_warnings = enrich_scholar_messages(
+            parse_result.messages,
+            config,
+            allow_network=allow_network,
+            conn=conn,
+            generated_at=generated_at,
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+    extra: list[StageWarning] = [
+        StageWarning(code=code, message=message) for code, message in raw_warnings
+    ]
+    paper_count = sum(
+        1 for m in messages if m.message_key.startswith(PAPER_MESSAGE_KEY_PREFIX)
+    )
+    if paper_count:
+        extra.append(
+            StageWarning(
+                code="scholar_papers",
+                message=f"Scholar detailed mode: {paper_count} paper(s)",
+                count=paper_count,
+            )
+        )
+    return ParseResult(
+        messages=tuple(messages),
+        counts=ParseCounts(
+            messages_seen=parse_result.counts.messages_seen,
+            messages_parsed=len(messages),
+            parse_fatal_errors=parse_result.counts.parse_fatal_errors,
+            parse_anomalies=parse_result.counts.parse_anomalies,
+            folders_failed=parse_result.counts.folders_failed,
+        ),
+        warnings=parse_result.warnings + tuple(extra),
+        errors=parse_result.errors,
+        mutated_folders=parse_result.mutated_folders,
+        mutation_codes=parse_result.mutation_codes,
+    )
+
+
 def merge_webpage_parse(
     parse_result: ParseResult,
     webpage_messages: list[ParsedMessage],
@@ -1539,6 +1600,13 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     parse_result = merge_webpage_parse(parse_result, wp_messages, wp_warnings)
     aggregated.webpage_degraded = webpage_degraded
     aggregated.webpage_queue_ingest = wp_ingest
+    parse_result = stage_enrich_scholar(
+        config,
+        parse_result,
+        allow_network=effective_run.allow_scholar_network,
+        dry_run=run_options.dry_run,
+        generated_at=generated_at,
+    )
     aggregated.parse = parse_result
     if parse_result.mutated_folders:
         aggregated.mbox_mutation_detected = True

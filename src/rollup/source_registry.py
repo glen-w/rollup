@@ -45,6 +45,7 @@ NEWSLETTER_TYPES = frozenset(
         "essay",
         "link_roundup",
         "item_list",
+        "academic_paper",
         "unclassified",
     }
 )

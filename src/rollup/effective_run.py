@@ -87,6 +87,7 @@ class EffectiveRun:
     allow_linkedin_network: bool
     allow_reddit_network: bool
     allow_webpage_network: bool
+    allow_scholar_network: bool
     apply_policy: ApplyPolicy | None
 
     @property
@@ -119,6 +120,7 @@ def resolve_effective_run(
     allow_linkedin_network = not run_options.dry_run and config.linkedin_enabled
     allow_reddit_network = not run_options.dry_run and config.reddit_enabled
     allow_webpage_network = not run_options.dry_run and config.webpage_enabled
+    allow_scholar_network = not run_options.dry_run and config.scholar.detailed
 
     return EffectiveRun(
         root=config.root,
@@ -188,6 +190,7 @@ def resolve_effective_run(
         allow_linkedin_network=allow_linkedin_network,
         allow_reddit_network=allow_reddit_network,
         allow_webpage_network=allow_webpage_network,
+        allow_scholar_network=allow_scholar_network,
         apply_policy=apply_policy,
     )
 

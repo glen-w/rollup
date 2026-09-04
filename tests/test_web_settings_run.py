@@ -118,6 +118,7 @@ def test_settings_get(app) -> None:
     assert b"First-run checklist" in resp.data
     assert b"effort_model_balanced_rough" in resp.data
     assert b"effort_model_high_max" in resp.data
+    assert b"Google Scholar" in resp.data
 
 
 def test_run_studio_get(app) -> None:

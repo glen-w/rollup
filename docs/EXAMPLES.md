@@ -22,7 +22,7 @@ See [README.md](../README.md) for setup, safety guarantees, and configuration de
 Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
 Position: [COMPARISON.md](COMPARISON.md). Roadmap: [ROADMAP.md](ROADMAP.md). Docker: [DOCKER.md](DOCKER.md).
 
-**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
+**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), `--scholar-mode detailed` (or `[scholar].mode = "detailed"`), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
 If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
 
@@ -243,6 +243,28 @@ rollup sources disable reddit:sub:python
 ```
 
 Optional script-app OAuth (never TOML) goes in `~/.config/rollup/env` — see [CONFIG.md](CONFIG.md#optional-oauth-environment-only). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#reddit-fetch-failed-429--missing-sub).
+
+## Google Scholar alerts
+
+Scholar emails already in Thunderbird. Default mode keeps them as item-list mail
+(no extra network). Detailed mode fetches each paper and summarises it.
+Reference: [CONFIG.md](CONFIG.md#google-scholar-alerts-optional-detailed-mode).
+
+```toml
+[scholar]
+mode = "detailed"
+max_papers_per_email = 8
+max_fetches_per_run = 40
+```
+
+```bash
+python -m rollup digest --scholar-mode default
+python -m rollup digest --ollama --scholar-mode detailed
+python -m rollup digest --scholar-mode detailed --dry-run   # parse papers, no HTTP
+```
+
+Or set mode and caps in **Settings → Google Scholar**. Registry source detail
+shows a banner when the source looks like Scholar.
 
 ## Webpage articles (opt-in network)
 

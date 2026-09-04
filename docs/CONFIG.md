@@ -54,10 +54,11 @@ asserted in tests. The sticky key `profile` is resolved via `--profile` /
 | `output` | `--output` |
 | `profile` | `--profile` (not sticky→argv body) |
 
-`[linkedin]`, `[reddit]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
+`[linkedin]`, `[reddit]`, `[scholar]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
 separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled`
 still inject `--linkedin` / `--reddit` when neither enable nor disable flag is on
-the CLI.
+the CLI. `[scholar].mode = "detailed"` (or `--scholar-mode detailed`) is mail
+enrichment, not a new ingest source.
 
 Scheduler helpers use a **separate** `cron_helpers.build_scheduled_digest_argv` (paths +
 `--cron`); do not confuse it with the sticky registry.
@@ -146,6 +147,7 @@ Built-in summary profiles (`--list-summary-profiles`) and default type routes:
 | `multi_section_digest`, `unclassified` | `standard` |
 | `essay` | `max` |
 | `item_list` | `preserve` |
+| `academic_paper` | `deep` |
 
 Custom profile JSON, `think` / `num_predict`, and routing flags: [EXAMPLES.md](EXAMPLES.md#digest-with-ollama-recommended-full-run).
 
@@ -357,6 +359,29 @@ ROLLUP_REDDIT_PASSWORD=…
 ## Webpage articles (optional)
 
 HTTPS article URLs live in SQLite (`webpage_queue`), not TOML. Add URLs from the web **Articles** page (`/articles`) or the Firefox **Add to Rollup** add-on (`POST /articles/capture`). The next digest fetches pending rows once into folder `webpage:queue` and stores the extracted body. Later runs **reuse that cache** (no refetch) and include an article when it was **saved within the lookback window**, the same date rule as mbox messages. `date_parsed` is the save time (`created_at`). Failed fetches are retryable from the GUI. Pass `--no-webpage` to skip. Caps: 50 fetches per run, 1s backoff, 2MB per page. Message identity is `web:url:<sha256(canonical_url)>`; source key is `web:host:<netloc>`.
+
+## Google Scholar alerts (optional detailed mode)
+
+Scholar alert emails already live in Thunderbird. Rollup detects them from
+`scholaralerts-noreply@google.com` / List-ID `scholar-alerts.google.com` (or a
+`Scholar Alert:` subject). This is **mail enrichment**, not a new ingest
+transport — there is no Scholar API and no extra mailbox.
+
+```toml
+[scholar]
+mode = "default"          # default | detailed
+max_papers_per_email = 8
+max_fetches_per_run = 40
+```
+
+| Mode | Behaviour | Network |
+|------|-----------|---------|
+| `default` (ship default) | Treat as other mail. Auto-force newsletter type `item_list` unless the source has a type override, so `preserve` keeps every paper line. | None |
+| `detailed` | Replace the alert card with one card per paper. Fetch each landing-page abstract (cached in `scholar_paper_bodies`). LLM summarises each paper when `--ollama` is on; otherwise the abstract excerpt is the preview. | HTTPS at digest time |
+
+CLI `--scholar-mode default|detailed` wins over TOML. Settings (`/settings`) has the same controls. Dry-run never fetches.
+
+`detailed` unwraps `scholar.google.com/scholar_url?url=…`, rewrites `arxiv.org/pdf/…` to `/abs/…`, and skips raw PDFs (`scholar_pdf_skipped` — email title/authors/snippet only). Fetch failures fall back to the email snippet (`scholar_fetch_failed`) and do not fail the digest. Papers stay in the Thunderbird folder section, standalone, with `message_key` `scholar:paper:<sha256(url)>` and the parent Scholar `source_key`. They are **not** added to the Articles queue.
 
 ## Run profiles vs effort
 

@@ -78,7 +78,7 @@ def _minimal_config(tmp_path: Path, **overrides) -> Config:
 def test_schema_v13_webpage_body_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 15
+    assert get_schema_version(conn) == SCHEMA_VERSION == 16
     cols = {
         row[1] for row in conn.execute("PRAGMA table_info(webpage_queue)").fetchall()
     }

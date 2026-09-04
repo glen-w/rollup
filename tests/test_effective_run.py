@@ -80,6 +80,7 @@ def test_effective_run_network_arms_disabled_by_dry_run() -> None:
     assert effective.allow_linkedin_network is False
     assert effective.allow_reddit_network is False
     assert effective.allow_webpage_network is False
+    assert effective.allow_scholar_network is False
 
 
 def test_effective_run_network_arms_enabled_by_stage() -> None:
@@ -102,6 +103,7 @@ def test_effective_run_network_arms_enabled_by_stage() -> None:
     assert effective.allow_linkedin_network is True
     assert effective.allow_reddit_network is True
     assert effective.allow_webpage_network is True
+    assert effective.allow_scholar_network is False
 
 
 def test_effective_run_network_arms_respect_disabled_stages() -> None:
@@ -124,6 +126,7 @@ def test_effective_run_network_arms_respect_disabled_stages() -> None:
     assert effective.allow_linkedin_network is False
     assert effective.allow_reddit_network is False
     assert effective.allow_webpage_network is False
+    assert effective.allow_scholar_network is False
     assert effective.apply_policy is None
 
 
@@ -147,6 +150,7 @@ def test_webpage_network_on_by_default_when_not_dry_run() -> None:
     assert effective.allow_webpage_network is True
     assert effective.allow_linkedin_network is False
     assert effective.allow_reddit_network is False
+    assert effective.allow_scholar_network is False
 
 
 def test_toml_enables_linkedin_and_reddit_without_cli_flags(tmp_path: Path) -> None:
@@ -172,6 +176,59 @@ def test_toml_enables_linkedin_and_reddit_without_cli_flags(tmp_path: Path) -> N
     effective = resolve_effective_run(config, RunOptions(dry_run=False))
     assert effective.allow_linkedin_network is True
     assert effective.allow_reddit_network is True
+
+
+def test_scholar_detailed_enables_network_when_not_dry_run() -> None:
+    from rollup.scholar.config import ScholarConfig
+
+    effective = resolve_effective_run(
+        _config(scholar=ScholarConfig(mode="detailed")),
+        RunOptions(dry_run=False),
+    )
+    assert effective.allow_scholar_network is True
+    dry = resolve_effective_run(
+        _config(scholar=ScholarConfig(mode="detailed")),
+        RunOptions(dry_run=True),
+    )
+    assert dry.allow_scholar_network is False
+
+
+def test_cli_scholar_mode_overrides_toml(tmp_path: Path) -> None:
+    from rollup.cli import _apply_loaded_config, _build_config
+    from rollup.cli_parser import build_parser
+    from rollup.user_config import load_user_config
+
+    cfg = tmp_path / "rollup.toml"
+    cfg.write_text('[scholar]\nmode = "detailed"\n', encoding="utf-8")
+    loaded = load_user_config(explicit_path=cfg)
+    parser = build_parser()
+    raw = ["digest", "--scholar-mode", "default"]
+    args = parser.parse_args(raw)
+    args._loaded_user_config = loaded
+    _apply_loaded_config(args, loaded, raw)
+    config = _build_config(args)
+    assert config.scholar.mode == "default"
+    effective = resolve_effective_run(config, RunOptions(dry_run=False))
+    assert effective.allow_scholar_network is False
+
+
+def test_toml_scholar_detailed_enables_network(tmp_path: Path) -> None:
+    from rollup.cli import _apply_loaded_config, _build_config
+    from rollup.cli_parser import build_parser
+    from rollup.user_config import load_user_config
+
+    cfg = tmp_path / "rollup.toml"
+    cfg.write_text('[scholar]\nmode = "detailed"\n', encoding="utf-8")
+    loaded = load_user_config(explicit_path=cfg)
+    parser = build_parser()
+    raw = ["digest"]
+    args = parser.parse_args(raw)
+    args._loaded_user_config = loaded
+    _apply_loaded_config(args, loaded, raw)
+    config = _build_config(args)
+    assert config.scholar.mode == "detailed"
+    effective = resolve_effective_run(config, RunOptions(dry_run=False))
+    assert effective.allow_scholar_network is True
 
 
 def test_cli_no_linkedin_overrides_toml_enabled(tmp_path: Path) -> None:

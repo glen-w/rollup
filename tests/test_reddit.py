@@ -559,7 +559,7 @@ def test_fetch_posts_for_subs_does_not_retry_404(monkeypatch) -> None:
 def test_schema_v15_source_fetch_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 15
+    assert get_schema_version(conn) == SCHEMA_VERSION == 16
     for table in (
         "reddit_posts",
         "reddit_listing_snapshots",

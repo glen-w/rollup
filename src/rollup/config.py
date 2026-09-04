@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from rollup.linkedin.config import LinkedInConfig
 from rollup.reddit.config import RedditConfig
+from rollup.scholar.config import ScholarConfig
 
 if TYPE_CHECKING:
     from rollup.effort import EffortModelOverride
@@ -97,6 +98,7 @@ class Config:
     no_webpage: bool = False
     no_reddit: bool = True
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    scholar: ScholarConfig = field(default_factory=ScholarConfig)
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
 

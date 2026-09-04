@@ -52,6 +52,21 @@ def _effective_summary_profiles() -> frozenset[str]:
         return frozenset(get_builtin_summary_profile_set().profiles)
 
 
+def _scholar_banner(record) -> tuple[bool, str]:
+    from rollup.scholar.detect import is_scholar_source_key
+    from rollup.web.config import load_web_config_document
+
+    alert = is_scholar_source_key(
+        record.source_key, record.observation.observed_list_id
+    )
+    mode = "default"
+    try:
+        mode = load_web_config_document().loaded.scholar.mode
+    except Exception:
+        mode = "default"
+    return alert, mode
+
+
 def parse_override_form(form) -> dict | None:
     """Adapt Flask form → core parse_override_updates."""
     return parse_override_updates(
@@ -145,6 +160,7 @@ def source_detail(id_enc: str):
         "ORDER BY alias_key",
         (record.source_key,),
     ).fetchall()
+    scholar_alert, scholar_mode = _scholar_banner(record)
     return render_template(
         "sources/detail.html",
         record=record,
@@ -156,6 +172,8 @@ def source_detail(id_enc: str):
         cadence_labels=sorted(CADENCE_LABELS),
         summary_profiles=sorted(_effective_summary_profiles()),
         alias_preview=None,
+        scholar_alert=scholar_alert,
+        scholar_mode=scholar_mode,
     )
 
 
@@ -389,6 +407,7 @@ def source_alias_preview(id_enc: str):
         "ORDER BY alias_key",
         (can_rec.source_key,),
     ).fetchall()
+    scholar_alert, scholar_mode = _scholar_banner(can_rec)
     return render_template(
         "sources/detail.html",
         record=can_rec,
@@ -399,6 +418,8 @@ def source_alias_preview(id_enc: str):
         grouping_policies=sorted(GROUPING_POLICIES),
         cadence_labels=sorted(CADENCE_LABELS),
         summary_profiles=sorted(_effective_summary_profiles()),
+        scholar_alert=scholar_alert,
+        scholar_mode=scholar_mode,
         alias_preview={
             "alias_key": alias_raw,
             "canonical_key": canonical,

@@ -112,6 +112,7 @@ def test_prompts_bundled_in_package() -> None:
         "essay",
         "link_roundup",
         "item_list",
+        "academic_paper",
         "unclassified",
     ):
         assert (prompts_dir / f"{name}.txt").is_file()

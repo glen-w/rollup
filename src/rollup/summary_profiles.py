@@ -266,6 +266,7 @@ def get_builtin_summary_profile_set() -> SummaryProfileSet:
             "multi_section_digest": "standard",
             "essay": "max",
             "item_list": "preserve",
+            "academic_paper": "deep",
             "unclassified": "standard",
         },
         name="builtin",

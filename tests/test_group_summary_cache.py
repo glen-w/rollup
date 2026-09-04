@@ -19,7 +19,7 @@ from rollup.state import (
 def test_schema_version_is_six(tmp_path: Path) -> None:
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     assert get_schema_version(conn) == SCHEMA_VERSION
-    assert SCHEMA_VERSION == 15
+    assert SCHEMA_VERSION == 16
     conn.close()
 
 

@@ -1,0 +1,8 @@
+Newsletter subject: {subject}
+From: {sender}
+Type: {newsletter_type}
+
+Paper record:
+{body_excerpt}
+
+Summarise this academic paper from the provided title, authors, venue, and abstract/page text only. Write 3–5 sentences covering the contribution, method or setting if stated, and why a reader in this field might care. Do not invent results, citations, or affiliations that are not in the record. If the abstract is missing, say so and summarise only what the title and metadata support. Start with the first sentence — no intro line, no heading, no bullet list unless the record is itself a list of findings.

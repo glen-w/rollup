@@ -24,7 +24,7 @@ Per-source overrides (CLI):
 | enabled / disabled | Disabled sources are excluded after the date window |
 | always-surface | Include undated seen messages from this source (does **not** bypass the lookback window) |
 | priority | 0–100; higher sorts earlier in MD/HTML |
-| type | Preferred newsletter type (classifier still runs; override is effective type). Use `item_list` for job alerts, scholar updates, and journal TOCs that need every entry preserved. |
+| type | Preferred newsletter type (classifier still runs; override is effective type). Use `item_list` for job alerts, scholar updates, and journal TOCs that need every entry preserved. Google Scholar alerts are auto-forced to `item_list` in default Scholar mode unless you set an override. |
 | grouping | `auto`, `standalone`, `sender_batch`, `notification_stream`, `daily_editions` |
 | summary-profile | Preferred summary profile name |
 | display-name | Render label |
@@ -76,3 +76,4 @@ Observations are regenerable from mail; back up overrides and aliases.
 - Shared ESP From addresses without List-ID collapse to one source.
 - Reproducibility across machines depends on registry state (`policy_state_revision` in manifests); `config_fingerprint` does not include per-source overrides.
 - LinkedIn `li:member:` keys follow Voyager actor ids; mute noisy authors with `rollup sources disable li:member:…` (see [CONFIG.md](CONFIG.md#linkedin-content-searches-optional)).
+- Google Scholar alerts share one source key (`from:scholaralerts-noreply@google.com` or `list:scholar-alerts.google.com`). Detailed vs default handling is `[scholar].mode` / Settings, not a per-source registry field. See [CONFIG.md](CONFIG.md#google-scholar-alerts-optional-detailed-mode).

@@ -42,6 +42,12 @@ def test_webpage_keys():
     assert decode_opaque(encode_opaque(sk), kind="source") == sk
 
 
+def test_scholar_paper_keys():
+    mk = "scholar:paper:" + "a" * 64
+    assert validate_message_key(mk) == mk
+    assert decode_opaque(encode_opaque(mk), kind="message") == mk
+
+
 def test_reddit_keys():
     mk = "reddit:t3:1w4cy5b"
     sk = "reddit:sub:xteink"

@@ -57,6 +57,14 @@ def _pick_best_type(scores: dict[str, float]) -> NewsletterType:
 def classify_message(parsed: ParsedMessage) -> ClassifiedMessage:
     """Classify a parsed message using deterministic heuristics."""
     try:
+        from rollup.scholar.detect import is_scholar_paper_key
+
+        if is_scholar_paper_key(parsed.message_key):
+            return ClassifiedMessage(
+                parsed=parsed,
+                newsletter_type="academic_paper",
+                classification_scores=(("academic_paper", 1.0),),
+            )
         if not parsed.body_text.strip():
             return ClassifiedMessage(
                 parsed=parsed,

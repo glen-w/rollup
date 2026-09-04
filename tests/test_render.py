@@ -577,6 +577,7 @@ def test_render_html_item_type_in_card_body() -> None:
 def test_format_newsletter_type() -> None:
     assert _format_newsletter_type("short_update") == "Short update"
     assert _format_newsletter_type("link_roundup") == "Link roundup"
+    assert _format_newsletter_type("academic_paper") == "Academic paper"
 
 
 def test_render_html_folder_accent_classes() -> None:
