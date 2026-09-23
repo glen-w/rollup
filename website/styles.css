@@ -217,6 +217,27 @@ a {
   font-weight: 700;
   margin: 0 0 0.4rem;
   letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.mark {
+  flex: 0 0 auto;
+  width: 2.05rem;
+  height: 2.05rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.6rem;
+  color: var(--sea-deep);
+  background: color-mix(in srgb, var(--sea) 16%, #fff);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sea) 55%, transparent);
+}
+
+.mark svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  display: block;
 }
 
 .feature p {
