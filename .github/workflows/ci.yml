@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compose-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose preview digest (no Ollama, no override.yml)
+        run: ./scripts/ci-compose-preview.sh
+      - name: Upload preview digest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-digest
+          path: ci-artifact/preview-digest.md
+          if-no-files-found: error

@@ -38,6 +38,15 @@ open http://localhost:8765
 
 Configure paths and run digests from the UI (Settings / Run Studio). Details: [docs/DOCKER.md](docs/DOCKER.md).
 
+The stranger proof does not use `docker-compose.override.yml` and does not need Ollama. **Preview** is the default digest mode (`rollup digest` with no `--ollama`); it is not a dry-run. Thunderbird mbox is the v1 input. A Gmail API backend is post-1.0.
+
+```bash
+docker compose -f docker-compose.ci.yml build
+./scripts/ci-compose-preview.sh
+```
+
+That is CI job **`compose-preview`**. It runs the same script: fixture `tests/fixtures/Newsletters.sbd` → preview digest containing `Quick thoughts on learning`, exit 0, artifact ≤256KB. An empty lookback window prints `empty_window:` and exits 0. An unreadable store prints `store_unreadable:` and exits non-zero.
+
 Host Python / venv install is an advanced alternative — see [Install](#install) below. Sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Documentation
