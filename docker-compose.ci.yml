@@ -1,0 +1,15 @@
+# CI-only stack. Does not load docker-compose.override.yml.
+# Stranger proof: docker compose -f docker-compose.ci.yml
+# then ./scripts/ci-compose-preview.sh
+name: rollup-ci
+
+services:
+  rollup:
+    build: .
+    image: rollup:ci
+    network_mode: none
+    restart: "no"
+    volumes:
+      - ./tests/fixtures:/fixtures:ro
+    entrypoint: ["rollup"]
+    command: ["--help"]

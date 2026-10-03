@@ -704,6 +704,24 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+_STORE_UNREADABLE_PREFIXES = (
+    "Newsletter root is not a directory",
+    "No readable mbox folders",
+    "No folders were readable",
+    "All candidate messages failed parsing",
+)
+
+
+def _store_failure_line(message: str) -> str:
+    """Prefix unreadable-store failures so CI can tell them from an empty week."""
+    text = str(message)
+    if text.startswith("store_unreadable:"):
+        return text
+    if any(text.startswith(prefix) for prefix in _STORE_UNREADABLE_PREFIXES):
+        return f"store_unreadable: {text}"
+    return text
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     conflict = _effort_profile_set_conflict_error(args)
     if conflict:
@@ -724,7 +742,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
     try:
         warnings = _validate_config(config, generated_at=generated_at)
     except SafetyError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"ERROR: {_store_failure_line(str(exc))}", file=sys.stderr)
         return 1
 
     for w in warnings:
@@ -830,7 +848,16 @@ def cmd_digest(args: argparse.Namespace) -> int:
         )
 
     if result.error_message:
-        print(f"ERROR: {result.error_message}", file=sys.stderr)
+        print(
+            f"ERROR: {_store_failure_line(result.error_message)}",
+            file=sys.stderr,
+        )
+    if (
+        result.exit_code == 0
+        and not run_options.dry_run
+        and result.aggregated.messages_included == 0
+    ):
+        print("empty_window: no mail in the lookback window", file=sys.stderr)
     if result.secondary_manifest_error:
         print(
             f"ERROR: Secondary manifest write failed: {result.secondary_manifest_error}",

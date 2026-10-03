@@ -4,6 +4,12 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- CI job **`compose-preview`**: `docker compose -f docker-compose.ci.yml` plus `./scripts/ci-compose-preview.sh` builds a preview digest from `tests/fixtures/Newsletters.sbd` with no Ollama and no `docker-compose.override.yml`.
+- Named outcomes: `empty_window:` (exit 0, no mail in the lookback) and `store_unreadable:` (non-zero, store cannot be read).
+- MIT `LICENSE`.
+
 ## 0.9.5 — 2026-09-04
 
 ### Changed

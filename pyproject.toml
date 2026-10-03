@@ -7,6 +7,7 @@ name = "rollup"
 version = "0.9.5"
 description = "Local-first personal briefing engine over a read-only Thunderbird mail store"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.12",
