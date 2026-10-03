@@ -26,3 +26,9 @@ htmlcov/
 .env
 .env.*
 docker-compose.override.yml
+
+# Local watch / assessment run logs
+assessments/
+
+# Local Compose preview excerpt from scripts/ci-compose-preview.sh
+ci-artifact/
