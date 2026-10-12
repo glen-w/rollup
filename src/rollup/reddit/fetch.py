@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
+from collections.abc import Callable
 from typing import Literal, Protocol
 
 from rollup.reddit.config import (
@@ -352,6 +353,7 @@ def fetch_posts_for_subs(
     client: RedditClient | None = None,
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    on_sub_fetched: Callable[[RedditSub, list[RedditPost]], None] | None = None,
 ) -> tuple[dict[str, list[RedditPost]], list[str]]:
     http = client or build_reddit_client()
     result: dict[str, list[RedditPost]] = {}
@@ -394,6 +396,8 @@ def fetch_posts_for_subs(
                     window_end=window_end,
                 )
                 result[sub.name] = posts
+                if on_sub_fetched is not None:
+                    on_sub_fetched(sub, posts)
             except (RedditSessionError, RedditFetchError) as exc:
                 message = f"r/{sub.name}: {exc}"
                 retriable = getattr(exc, "retriable", True)

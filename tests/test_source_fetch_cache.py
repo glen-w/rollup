@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
+
 import pytest
 
 from rollup.config import Config
@@ -18,6 +20,8 @@ from rollup.linkedin.models import LinkedInPost
 from rollup.pipeline import stage_parse_reddit
 from rollup.reddit.cache import (
     count_subs_needing_fetch,
+    fetch_and_cache_reddit_subs,
+    get_listing_snapshot,
     partition_reddit_subs,
     save_listing_snapshot as save_reddit_snapshot,
 )
@@ -183,6 +187,58 @@ def test_reddit_limit_increase_refetches(tmp_path: Path) -> None:
         now=now,
     )
     assert to_fetch == [sub]
+    conn.close()
+
+
+def test_fetch_and_cache_persists_each_sub_before_batch_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("rollup.reddit.fetch.time.sleep", lambda _s: None)
+    db = tmp_path / "rollup.db"
+    conn = init_db(db)
+    when = datetime.now(timezone.utc)
+    config = RedditConfig(enabled=True, sort="hot", limit=10, fetch_ttl_hours=24)
+
+    class _FlakyClient:
+        def fetch_listing(
+            self,
+            sub: str,
+            sort: str,
+            *,
+            time_filter: str | None = None,
+            limit: int = 25,
+        ) -> tuple[Literal["json", "rss"], str]:
+            del sort, time_filter, limit
+            if sub == "bad":
+                from rollup.reddit.session import RedditSessionError
+
+                raise RedditSessionError(
+                    "Reddit JSON r/bad/hot failed (429): content-type=text/html"
+                )
+            json_path = FIXTURES / "listing_hot.json"
+            return "json", json_path.read_text(encoding="utf-8")
+
+    subs = (
+        RedditSub(name="python", enabled=True),
+        RedditSub(name="bad", enabled=True),
+    )
+    posts_by_sub, failures, _ = fetch_and_cache_reddit_subs(
+        conn,
+        subs,
+        config=config,
+        lookback_days=3650,
+        window_start=None,
+        window_end=None,
+        fetched_at=when,
+        client=_FlakyClient(),
+    )
+    assert "python" in posts_by_sub
+    assert failures
+    snapshot = get_listing_snapshot(
+        conn, subreddit="python", sort="hot", time_filter=None
+    )
+    assert snapshot is not None
+    assert get_listing_snapshot(conn, subreddit="bad", sort="hot", time_filter=None) is None
     conn.close()
 
 

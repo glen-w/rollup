@@ -326,16 +326,8 @@ def fetch_and_cache_reddit_subs(
     client=None,
 ) -> tuple[dict[str, list[RedditPost]], list[str], list[tuple[str, RedditListingSnapshot | None]]]:
     """Fetch subs over the network, persist snapshots, return posts and failures."""
-    posts_by_sub, failures = fetch_posts_for_subs(
-        subs,
-        config=config,
-        lookback_days=lookback_days,
-        client=client,
-        window_start=window_start,
-        window_end=window_end,
-    )
-    for sub_name, posts in posts_by_sub.items():
-        sub = next(s for s in subs if s.name == sub_name)
+
+    def _persist_sub(sub: RedditSub, posts: list[RedditPost]) -> None:
         save_listing_snapshot(
             conn,
             sub=sub,
@@ -344,6 +336,16 @@ def fetch_and_cache_reddit_subs(
             posts=posts,
             fetched_at=fetched_at,
         )
+
+    posts_by_sub, failures = fetch_posts_for_subs(
+        subs,
+        config=config,
+        lookback_days=lookback_days,
+        client=client,
+        window_start=window_start,
+        window_end=window_end,
+        on_sub_fetched=_persist_sub,
+    )
     stale_candidates: list[tuple[str, RedditListingSnapshot | None]] = []
     for failure in failures:
         if failure.startswith("r/"):
