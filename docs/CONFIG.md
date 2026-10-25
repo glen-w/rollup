@@ -131,6 +131,10 @@ global `llm_provider` for those jobs only.
 
 `--final-review` is independent of `--ollama`: it can run whole-digest QA on a
 preview-summary digest. `--group-summaries` still requires `--ollama`.
+When the fitted review prompt still exceeds the model context window, review is
+**skipped** (`review_source=skipped`, sidecar written) rather than failing the
+run: dated digest and `latest.*` may still publish. Apply mode never patches a
+skipped review.
 
 Built-in summary profiles (`--list-summary-profiles`) and default type routes:
 

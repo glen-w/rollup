@@ -206,6 +206,10 @@ def _tiny_edit(original: str, tag: str = "!") -> str:
         ({"echo": "other"}, "fingerprint_mismatch"),
         ({"safe": False}, "unsafe_to_publish"),
         ({"source": "error", "status": "fail", "safe": False}, "review_source_error"),
+        (
+            {"source": "skipped", "status": "pass_with_warnings", "safe": True},
+            "review_source_skipped",
+        ),
         ({"status": "fail", "safe": True}, "overall_status_fail"),
         ({"patches": ()}, "no_patches"),
     ],

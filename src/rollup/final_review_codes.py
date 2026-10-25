@@ -11,6 +11,7 @@ from typing import Literal
 
 ApplySkipReason = Literal[
     "review_source_error",
+    "review_source_skipped",
     "overall_status_fail",
     "unsafe_to_publish",
     "no_patches",
@@ -59,6 +60,7 @@ GroupSummaryErrorCode = Literal[
 APPLY_SKIP_REASONS: frozenset[str] = frozenset(
     {
         "review_source_error",
+        "review_source_skipped",
         "overall_status_fail",
         "unsafe_to_publish",
         "no_patches",

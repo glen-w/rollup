@@ -29,6 +29,7 @@ from rollup.final_review_profiles import (
     FINAL_REVIEW_DEFAULT_NUM_CTX,
     FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
     FinalReviewConfigError,
+    FinalReviewProfile,
     resolve_final_review_profile,
     validate_final_review_config,
 )
@@ -193,6 +194,44 @@ def test_build_fitted_final_review_prompt_fits_context() -> None:
     _, prompt, _ = build_fitted_final_review_prompt(report, profile)
     assert not prompt_exceeds_context(prompt, profile)
     assert estimate_prompt_tokens(prompt) < profile.num_ctx
+
+
+def test_execute_final_review_skips_when_prompt_exceeds_context(tmp_path: Path) -> None:
+    """Pre-call overflow soft-skips instead of failing the digest run."""
+    report = _report(
+        entries_by_folder={
+            "tech": tuple(
+                _entry(
+                    message_key=f"k{i}",
+                    subject=f"Subject {i} with extra title padding",
+                    summary="summary body " * 40,
+                )
+                for i in range(80)
+            )
+        }
+    )
+    tiny = FinalReviewProfile(
+        name="strict",
+        provider="ollama",
+        model="qwen2.5:7b",
+        temperature=0.1,
+        num_ctx=512,
+        timeout_seconds=180,
+        prompt_style="strict",
+        options={"format": "json"},
+    )
+    with patch(
+        "rollup.final_review.resolve_final_review_profile", return_value=tiny
+    ), patch(
+        "rollup.final_review.call_final_review_model",
+        side_effect=AssertionError("model must not be called on overflow skip"),
+    ):
+        result = execute_final_review(report, _config(tmp_path))
+    assert result.review_source == "skipped"
+    assert result.overall_status == "pass_with_warnings"
+    assert result.safe_to_publish is True
+    assert "exceeds the model context window" in result.issues[0].description
+    assert result.issues[0].severity == "major"
 
 
 def test_parse_final_review_empty_response_includes_context_hint() -> None:

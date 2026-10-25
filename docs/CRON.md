@@ -56,6 +56,7 @@ Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `
 | Optional writer failure | 2 | Required pubs already succeeded |
 | Final-review sidecar write fails | 2 | Dated digest remains usable; sidecar is outside the required dated set |
 | Final-review overall status is `fail` | 2 | Dated digest remains usable; inspect the final-review sidecar or manifest block |
+| Final-review **context overflow skip** (prompt still too large after shrink ladder; `review_source=skipped`) | 0 if otherwise success | Dated digest + **`latest.*` allowed**; sidecar records that review did not run (digest not model-QA'd). Editorial `fail` from a completed model review still yields exit 2 |
 | `latest.*` publication fails | 2 | Dated digest remains source of truth; seen-state runs only after required pubs succeeded |
 | Manifest write fails after a usable digest | 2 | Original failure diagnosis preserved; minimal fallback diagnostic on stderr / run events |
 | Seen-state update fails after required pubs | 2 | Dated digest may exist; undated items may repeat on future runs |

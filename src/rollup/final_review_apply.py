@@ -55,6 +55,8 @@ def should_globally_skip_apply(
     """Return a stable skip code, or None to proceed past publication gates."""
     if result.review_source == "error":
         return "review_source_error"
+    if result.review_source == "skipped":
+        return "review_source_skipped"
     if result.overall_status == "fail":
         return "overall_status_fail"
     if result.safe_to_publish is not True:

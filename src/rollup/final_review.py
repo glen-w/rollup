@@ -440,6 +440,41 @@ def _error_result(
     )
 
 
+def _skip_result(
+    *,
+    message: str,
+    profile_name: str,
+    model: str,
+    generated_at: datetime,
+    digest_fingerprint: str,
+    review_input_hash: str,
+) -> FinalReviewResult:
+    """Non-blocking skip: review did not run; digest may still publish latest.*."""
+    return FinalReviewResult(
+        overall_status="pass_with_warnings",
+        safe_to_publish=True,
+        issues=(
+            FinalReviewIssue(
+                severity="major",
+                type="other",
+                location="final_review",
+                entry_id=None,
+                description=message,
+                suggested_fix=None,
+                safe_auto_fix=False,
+            ),
+        ),
+        patches=(),
+        review_source="skipped",
+        profile_name=profile_name,
+        model=model,
+        prompt_version=FINAL_REVIEW_PROMPT_VERSION,
+        generated_at=generated_at,
+        digest_fingerprint=digest_fingerprint,
+        review_input_hash=review_input_hash,
+    )
+
+
 def parse_final_review_response(
     raw: str,
     *,
@@ -712,13 +747,13 @@ def execute_final_review(
 
     if prompt_exceeds_context(prompt, profile):
         est_tokens = estimate_prompt_tokens(prompt)
-        return _error_result(
+        return _skip_result(
             message=(
-                "Final review prompt exceeds the model context window even after "
-                f"shrinking summaries to {summary_limit} chars "
+                "Final review skipped: prompt exceeds the model context window even "
+                f"after shrinking summaries to {summary_limit} chars "
                 f"(~{len(prompt)} prompt chars, ~{est_tokens} est. tokens, "
-                f"num_ctx={profile.num_ctx}). Try a smaller lookback window or "
-                "a model with a larger context."
+                f"num_ctx={profile.num_ctx}). Digest was not model-QA'd. "
+                "Try a smaller lookback window or a model with a larger context."
             ),
             profile_name=profile.name,
             model=profile.model,
@@ -891,8 +926,11 @@ def format_final_review_digest_summary(result: FinalReviewResult) -> str:
 
 def print_final_review_summary(result: FinalReviewResult, path: Path) -> None:
     counts = count_final_review_issues_by_severity(result)
+    status_label = (
+        "skipped" if result.review_source == "skipped" else result.overall_status
+    )
     print(
-        f"Final review: {result.overall_status} | "
+        f"Final review: {status_label} | "
         f"safe_to_publish={str(result.safe_to_publish).lower()} | "
         f"{counts['critical']} critical, {counts['major']} major, {counts['minor']} minor"
     )

@@ -16,7 +16,7 @@ from rollup.config import Config
 from rollup.doctor import run_doctor
 from rollup.final_review import compute_digest_fingerprint
 from rollup.models import FinalReviewResult
-from rollup.pipeline import EXIT_FAILURE, EXIT_PARTIAL, run_digest
+from rollup.pipeline import EXIT_FAILURE, EXIT_PARTIAL, EXIT_SUCCESS, run_digest
 from rollup.publication import publish_latest_outputs
 from rollup.run_lock import acquire_run_lock
 from rollup.run_options import GroupingConfig, RunOptions
@@ -325,6 +325,47 @@ def test_sidecar_write_failure_partial_dated_ok(tmp_path: Path, monkeypatch) -> 
     assert result.aggregated.final_review_failed is True
     assert _digest_files(config.output_dir, "md")
     assert _digest_files(config.output_dir, "html")
+
+
+def _skipped_review(report) -> FinalReviewResult:
+    fingerprint = compute_digest_fingerprint(report)
+    return FinalReviewResult(
+        overall_status="pass_with_warnings",
+        safe_to_publish=True,
+        issues=(),
+        patches=(),
+        review_source="skipped",
+        profile_name="strict",
+        model="llama3.2:3b",
+        prompt_version="final_review_v1",
+        generated_at=NOW,
+        digest_fingerprint=fingerprint,
+        review_input_hash="input-hash",
+        echoed_digest_fingerprint=None,
+        review_mode="report",
+    )
+
+
+def test_final_review_context_overflow_skip_allows_latest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path, final_review_enabled=True)
+
+    monkeypatch.setattr(
+        "rollup.final_review.execute_final_review",
+        lambda report, *_args, **_kwargs: _skipped_review(report),
+    )
+
+    result = _run(config, run_options=RunOptions(publish_latest=True, write_manifest=True))
+
+    assert result.exit_code == EXIT_SUCCESS
+    assert result.aggregated.final_review_failed is False
+    assert (config.output_dir / "latest.md").exists()
+    assert (config.output_dir / "latest.html").exists()
+    sidecars = sorted(config.output_dir.glob("*.final-review.json"))
+    assert sidecars
+    payload = json.loads(sidecars[0].read_text(encoding="utf-8"))
+    assert payload["review_source"] == "skipped"
 
 
 def test_programmatic_run_options_dry_run(tmp_path: Path, monkeypatch) -> None:
