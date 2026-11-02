@@ -178,6 +178,45 @@ def _attention_chip_md(entry: DigestEntry) -> str:
     return f"- **Attention:** {label}"
 
 
+def _coverage_index(report: DigestReport) -> tuple[dict[str, object], dict[str, str]]:
+    from rollup.briefing import iter_digest_entries
+
+    clusters = {c.cluster_id: c for c in report.coverage_clusters}
+    subjects: dict[str, str] = {}
+    for items in report.dated_by_folder.values():
+        for entry in iter_digest_entries(items):
+            subjects[entry.classified.parsed.message_key] = entry.classified.parsed.subject
+    for entry in iter_digest_entries(report.undated):
+        subjects[entry.classified.parsed.message_key] = entry.classified.parsed.subject
+    return clusters, subjects
+
+
+def _coverage_note_md(entry: DigestEntry, coverage) -> str:
+    if not coverage or not entry.coverage_cluster_id:
+        return ""
+    clusters, subjects = coverage
+    cluster = clusters.get(entry.coverage_cluster_id)
+    if cluster is None:
+        return ""
+    n = len(cluster.member_keys)
+    if entry.classified.parsed.message_key == cluster.representative_key:
+        return f"- **Covered {n} ways:** {cluster.theme_label}"
+    rep = subjects.get(cluster.representative_key, cluster.theme_label)
+    return f"- **Also in this window:** {rep}"
+
+
+def _coverage_note_html(entry: DigestEntry, coverage) -> str:
+    note = _coverage_note_md(entry, coverage)
+    if not note:
+        return ""
+    text = note.split(": ", 1)[-1] if ": " in note else note
+    label = "Covered" if "Covered" in note else "Also in this window"
+    return (
+        f"<p class='coverage-note'><span class='attention-chip'>{html_module.escape(label)}</span> "
+        f"{html_module.escape(text)}</p>"
+    )
+
+
 def _attention_chip_html(entry: DigestEntry) -> str:
     band = entry.attention_band
     if not band:
@@ -754,16 +793,17 @@ def _render_item_md(
     item: DigestItem,
     max_display_links: int,
     folder_themes: FolderThemeMap | None = None,
+    coverage=None,
 ) -> str:
     if isinstance(item, DigestGroup):
         return _render_group_md(item, max_display_links)
-    return _render_entry_md(item, max_display_links, folder_themes)
+    return _render_entry_md(item, max_display_links, folder_themes, coverage=coverage)
 
 
-def _render_item_html(item: DigestItem, max_display_links: int) -> str:
+def _render_item_html(item: DigestItem, max_display_links: int, coverage=None) -> str:
     if isinstance(item, DigestGroup):
         return _render_group_html(item, max_display_links)
-    return _render_entry_html(item, max_display_links)
+    return _render_entry_html(item, max_display_links, coverage=coverage)
 
 
 def _hidden_link_cue_text(hidden_count: int) -> str:
@@ -774,6 +814,7 @@ def _render_entry_md(
     entry: DigestEntry,
     max_display_links: int,
     folder_themes: FolderThemeMap | None = None,
+    coverage=None,
 ) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
@@ -800,6 +841,9 @@ def _render_entry_md(
     chip = _attention_chip_md(entry)
     if chip:
         lines.append(chip)
+    cover = _coverage_note_md(entry, coverage)
+    if cover:
+        lines.append(cover)
     lines.extend(["",])
     if entry.summary:
         summary = clean_summary_output(entry.summary)
@@ -844,17 +888,26 @@ def render_markdown(
     ]
     lines.extend(_render_start_here_md(report))
     lines.extend(_render_toc_md(report, folder_themes))
+    coverage = _coverage_index(report)
     for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
         entries = report.dated_by_folder[folder]
         lines.append(f"## {_folder_display_name(folder, folder_themes)}")
         lines.append("")
         for item in _sort_digest_items(entries):
-            lines.append(_render_item_md(item, max_display_links, folder_themes))
+            lines.append(
+                _render_item_md(
+                    item, max_display_links, folder_themes, coverage=coverage
+                )
+            )
     if report.undated:
         lines.append("## Undated / needs review")
         lines.append("")
         for item in _sort_digest_items(report.undated):
-            lines.append(_render_item_md(item, max_display_links, folder_themes))
+            lines.append(
+                _render_item_md(
+                    item, max_display_links, folder_themes, coverage=coverage
+                )
+            )
     lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -862,6 +915,7 @@ def render_markdown(
 def _render_entry_html(
     entry: DigestEntry,
     max_display_links: int,
+    coverage=None,
 ) -> str:
     p = entry.classified.parsed
     ntype = entry.classified.newsletter_type
@@ -895,6 +949,9 @@ def _render_entry_html(
     parts.append(
         f"<p class='item-type'>{html_module.escape(_format_newsletter_type(ntype))}</p>"
     )
+    cover = _coverage_note_html(entry, coverage)
+    if cover:
+        parts.append(cover)
     if entry.summary:
         summary = clean_summary_output(entry.summary)
         if summary:
@@ -1010,6 +1067,7 @@ def render_html(
         ),
     ]
     section_ids = {folder: section_id for folder, section_id, _ in anchor_map}
+    coverage = _coverage_index(report)
     for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
         entries = report.dated_by_folder[folder]
         section_id = section_ids[folder]
@@ -1022,7 +1080,7 @@ def render_html(
             f"{_render_section_byline_html(entries)}"
         )
         for item in sorted_entries:
-            body_parts.append(_render_item_html(item, max_display_links))
+            body_parts.append(_render_item_html(item, max_display_links, coverage=coverage))
         body_parts.append("</section>")
     if report.undated:
         body_parts.append(
@@ -1030,7 +1088,9 @@ def render_html(
             f"{_render_section_byline_html(report.undated)}"
         )
         for item in _sort_digest_items(report.undated):
-            body_parts.append(_render_item_html(item, max_display_links))
+            body_parts.append(
+                _render_item_html(item, max_display_links, coverage=coverage)
+            )
         body_parts.append("</section>")
     body_parts.append(_render_run_details_html(report))
     body_parts.append(_EXPAND_COLLAPSE_SCRIPT)

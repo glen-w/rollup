@@ -67,6 +67,8 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("interest file", "--interest-file"),
     ("no attention", "--no-attention"),
     ("attention report", "--attention-report"),
+    ("no coverage", "--no-coverage"),
+    ("coverage report", "--coverage-report"),
     ("reddit digest", "--reddit"),
     ("no reddit", "--no-reddit"),
     ("reddit config ref", "CONFIG.md#reddit-subreddits"),

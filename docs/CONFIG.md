@@ -407,6 +407,10 @@ non-empty profile; failures keep the heuristic bands.
 Settings → Interest profile has the same textarea. Cutoffs are documented
 constants, not TOML knobs. See [design/briefing-arc.md](design/briefing-arc.md).
 
+Cross-source **coverage** clustering is on by default (lexical URL/title overlap).
+`--no-coverage` skips it. `--coverage-report` prints clusters. Cards stay in
+their folders; the overlay only adds “Covered N ways”.
+
 `detailed` unwraps `scholar.google.com/scholar_url?url=…`, rewrites `arxiv.org/pdf/…` to `/abs/…`, and skips raw PDFs (`scholar_pdf_skipped` — email title/authors/snippet only). Fetch failures fall back to the email snippet (`scholar_fetch_failed`) and do not fail the digest. Papers stay in the Thunderbird folder section, standalone, with `message_key` `scholar:paper:<sha256(url)>` and the parent Scholar `source_key`. They are **not** added to the Articles queue.
 
 ## Run profiles vs effort

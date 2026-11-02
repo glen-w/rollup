@@ -103,6 +103,8 @@ class Config:
     interest: InterestConfig = field(default_factory=InterestConfig)
     no_attention: bool = False
     attention_report: bool = False
+    no_coverage: bool = False
+    coverage_report: bool = False
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
 

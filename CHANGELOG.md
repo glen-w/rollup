@@ -8,6 +8,7 @@ All notable changes to Rollup are documented in this file.
 
 - Briefing-layer contracts (`AttentionBand`, coverage clusters, synthesis types) and [docs/design/briefing-arc.md](docs/design/briefing-arc.md).
 - **Attention / skip-safely:** `[interest].profile`, `--interest-file`, `--no-attention`, `--attention-report`. Heuristic ranking (interest prose + Quality + saved/dismissed + source priority) with optional LLM reband. Start here / safely skip chrome. Never drops included mail.
+- **Cross-source coverage:** URL/title clusters with “Covered N ways” chrome. `--coverage-report` / `--no-coverage`. Does not replace same-source grouping.
 
 ## 0.9.6 — 2026-11-02
 

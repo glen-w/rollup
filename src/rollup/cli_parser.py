@@ -140,6 +140,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--interest-file",
         help="Replace [interest].profile with the contents of this file",
     )
+    dig.add_argument(
+        "--no-coverage",
+        action="store_true",
+        default=False,
+        help="Skip cross-source coverage clustering (inclusion is unchanged)",
+    )
+    dig.add_argument(
+        "--coverage-report",
+        action="store_true",
+        default=False,
+        help="Print coverage clusters to stdout",
+    )
     ollama_group = dig.add_mutually_exclusive_group()
     ollama_group.add_argument(
         "--ollama",

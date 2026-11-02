@@ -24,10 +24,9 @@ material at digest time; Rollup takes a window and produces the rollup.
    plus Quality / saved / dismissed / source priority. Bands: high relevance /
    worth scanning / background / safely skip. Ranking never silently drops
    material. Optional LLM reband with `--ollama`.
-3. **Cross-source consolidation.** Detect redundancy, overlapping coverage,
-   and recurring themes across newsletters, LinkedIn, Reddit, and articles in
-   the same window. The briefing should say “this showed up three ways” rather
-   than reprint it three times.
+3. **Cross-source consolidation.** **Shipped.** URL / title overlap overlay
+   (`CoverageCluster`); cards stay in their folders with “Covered N ways”.
+   `--no-coverage` / `--coverage-report`. Same-source grouping is unchanged.
 4. **Briefing-level synthesis.** Beyond per-item summaries and final-review
    QA: a “what actually mattered this week?” layer over the collection window.
    The output stays a finished reading object, not a ranked feed.
@@ -64,6 +63,7 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - **Firefox Add to Rollup**: toolbar/context-menu capture into `webpage_queue` via `POST /articles/capture` (Bearer token in `{state_dir}/extension_token`). Ingest-only; `rollup web` must be running.
 - **Google Scholar detailed mode**: `[scholar].mode = "detailed"` / `--scholar-mode detailed` fetches paper landing pages from Scholar alert emails and summarises each paper (schema v16 cache). Default mode keeps alerts as `item_list` mail.
 - **Attention / skip-safely**: `[interest].profile`, `--interest-file`, `--no-attention`, `--attention-report`. Heuristic bands plus optional LLM reband. Start here / safely skip chrome. Inclusion invariant.
+- **Cross-source coverage**: `--coverage-report` / `--no-coverage`. Overlay clusters, not a new group type.
 
 ## Standing rule (network sources)
 

@@ -294,6 +294,8 @@ profile = "I care about local-first tools and LLM evals."
 python -m rollup digest --no-ollama --interest-file ./interest.txt --attention-report
 python -m rollup digest --no-attention
 python -m rollup digest --no-ollama --attention-report
+python -m rollup digest --no-ollama --coverage-report
+python -m rollup digest --no-coverage
 ```
 
 Or set mode and caps in **Settings → Google Scholar**. Registry source detail

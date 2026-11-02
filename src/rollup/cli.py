@@ -331,6 +331,8 @@ def _build_config(
         interest=_resolve_interest_config(args),
         no_attention=getattr(args, "no_attention", False),
         attention_report=getattr(args, "attention_report", False),
+        no_coverage=getattr(args, "no_coverage", False),
+        coverage_report=getattr(args, "coverage_report", False),
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
     )
@@ -890,6 +892,15 @@ def cmd_digest(args: argparse.Namespace) -> int:
         from rollup.attention import format_attention_report
 
         print(format_attention_report(result.report.attention_metadata))
+
+    if (
+        config.coverage_report
+        and result.report is not None
+        and not run_options.quiet
+    ):
+        from rollup.coverage import format_coverage_report
+
+        print(format_coverage_report(result.report.coverage_clusters))
 
     if result.error_message:
         print(

@@ -539,6 +539,19 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             complete=complete,
         )
 
+    coverage_clusters = ()
+    if not getattr(config, "no_coverage", False):
+        from rollup.coverage.stage import apply_coverage
+
+        dated_items, undated_items, coverage_clusters = apply_coverage(
+            tuple(dated_items),
+            tuple(undated_items),
+            allow_llm=effective_run.allow_attention_llm,
+            complete=_attention_complete(config)
+            if effective_run.allow_attention_llm
+            else None,
+        )
+
     all_rendered = list(summarize_result.dated_entries) + list(
         summarize_result.undated_entries
     )
@@ -580,6 +593,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         if grouping.enabled
         else None,
         attention_metadata=attention_metadata,
+        coverage_clusters=coverage_clusters,
     )
 
     if effective_run.allow_group_summary_network:
