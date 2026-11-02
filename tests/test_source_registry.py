@@ -10,7 +10,9 @@ from rollup.source_registry import (
     alias_sources,
     get_source_record,
     load_SourceRegistrySnapshot,
+    load_source_registry_snapshot,
     observe_sources,
+    parse_override_updates,
     set_overrides,
 )
 from rollup.state import SCHEMA_VERSION, get_schema_version, init_db, init_db_with_summaries
@@ -128,4 +130,15 @@ def test_snapshot_bounded(tmp_path: Path) -> None:
     assert "from:a@b.co" in snap.policies
     assert "from:other@b.co" not in snap.policies
     assert snap.known_count == 2
+    assert load_source_registry_snapshot is load_SourceRegistrySnapshot
     conn.close()
+
+
+def test_parse_override_updates_inherit_and_set() -> None:
+    updates = parse_override_updates(
+        fields={"enabled", "priority", "display_name"},
+        values={"enabled": "true", "priority": "10", "display_name": "Tech"},
+    )
+    assert updates == {"enabled": True, "priority": 10, "display_name": "Tech"}
+    cleared = parse_override_updates(fields={"enabled"}, values={}, clear_all=True)
+    assert cleared is None

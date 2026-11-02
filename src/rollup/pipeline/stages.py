@@ -438,7 +438,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     snapshot = None
     if not run_options.dry_run:
         from rollup.source_registry import (
-            load_SourceRegistrySnapshot,
+            load_source_registry_snapshot,
             observe_sources,
         )
         from rollup.state import ensure_final_review_schema, init_db, load_seen_keys
@@ -456,7 +456,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             session.conn, parse_result.messages, generated_at=generated_at
         )
         needed = {m.source_key for m in parse_result.messages if m.source_key}
-        snapshot = load_SourceRegistrySnapshot(
+        snapshot = load_source_registry_snapshot(
             session.conn,
             needed,
             discovered_this_run=observe_result.discovered_this_run,
