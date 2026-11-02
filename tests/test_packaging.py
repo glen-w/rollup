@@ -132,3 +132,5 @@ def test_gitignore_excludes_local_paths() -> None:
     gi = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
     for line in ("fixtures/", "output/", "state/", "logs/", ".venv/"):
         assert line in gi
+    assert "/state/" in gi
+    assert (PROJECT_ROOT / "src" / "rollup" / "state" / "schema.py").is_file()

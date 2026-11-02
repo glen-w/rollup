@@ -58,7 +58,8 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - Output-writer plugin seam + builtins (xteink, txt, json, epub) ([OUTPUT_WRITERS.md](OUTPUT_WRITERS.md))
 - Loopback web UI: Archive, Quality, Registry, Admin, reader bodies ([WEB.md](WEB.md))
 - Configuration Centre (`/settings`) and Run Studio (`/run`) on the real TOML + CLI digest path
-- Shared `sticky_flags` registry; `cli_parser` extraction; `run_digest` phase helpers
+- Shared `sticky_flags` registry; `cli_parser` extraction; `run_digest` on the `rollup.pipeline` package (types / status / ingest / stages / publish)
+- SQLite `rollup.state` package (schema + migrations; `init_db` facade) and source-registry listing helpers
 - Optional LinkedIn `fromMember` folders, Reddit subreddits, webpage article queue
 - **Reddit + LinkedIn listing cache** (`rollup.db` schema v15): persist network listings; `--reddit-refresh` / `--linkedin-refresh` force a live pull
 - **Firefox Add to Rollup**: toolbar/context-menu capture into `webpage_queue` via `POST /articles/capture` (Bearer token in `{state_dir}/extension_token`). Ingest-only; `rollup web` must be running.

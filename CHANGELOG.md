@@ -4,8 +4,16 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.9.6 — 2026-11-02
+
+### Changed
+
+- Internal package split with a stable public API: `rollup.pipeline` (types, status, ingest, session, stages, publish), `rollup.state` (schema + migrations), source-registry listing helpers, and smaller CLI/Settings catalogue assembly. `run_digest`, `init_db`, and `load_source_registry_snapshot` stay on the package facades.
+- `.gitignore` now ignores only the root `/state/` runtime directory so `src/rollup/state/` can be tracked.
+
 ### Added
 
+- Tests for the pipeline and state package facades, registry listing pagination, and schema-readability fail-closed paths.
 - CI job **`compose-preview`**: `docker compose -f docker-compose.ci.yml` plus `./scripts/ci-compose-preview.sh` builds a preview digest from `tests/fixtures/Newsletters.sbd` with no Ollama and no `docker-compose.override.yml`.
 - Named outcomes: `empty_window:` (exit 0, no mail in the lookback) and `store_unreadable:` (non-zero, store cannot be read).
 - MIT `LICENSE`.

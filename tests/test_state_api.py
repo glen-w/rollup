@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from rollup import state
 from rollup.state import (
     SCHEMA_VERSION,
     SOURCE_REGISTRY_SCHEMA_V7,
+    SchemaCompatibilityError,
     apply_connection_pragmas,
+    assert_schema_readable,
     connect_db,
     ensure_source_registry_schema,
     get_schema_version,
@@ -36,4 +40,42 @@ def test_public_names_are_package_reexports() -> None:
 def test_init_db_uses_schema_package(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
     assert get_schema_version(conn) == SCHEMA_VERSION
+    assert assert_schema_readable(conn) == SCHEMA_VERSION
     conn.close()
+
+
+def test_assert_schema_readable_fail_closed(tmp_path: Path) -> None:
+    empty = connect_db(tmp_path / "empty.db")
+    with pytest.raises(SchemaCompatibilityError, match="no schema_version"):
+        assert_schema_readable(empty)
+    empty.close()
+
+    old = connect_db(tmp_path / "old.db")
+    old.executescript(
+        """
+        CREATE TABLE schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL
+        );
+        INSERT INTO schema_version (id, version) VALUES (1, 7);
+        """
+    )
+    old.commit()
+    with pytest.raises(SchemaCompatibilityError, match="too old"):
+        assert_schema_readable(old)
+    old.close()
+
+    future = connect_db(tmp_path / "future.db")
+    future.executescript(
+        f"""
+        CREATE TABLE schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL
+        );
+        INSERT INTO schema_version (id, version) VALUES (1, {SCHEMA_VERSION + 1});
+        """
+    )
+    future.commit()
+    with pytest.raises(SchemaCompatibilityError, match="unsupported schema"):
+        assert_schema_readable(future)
+    future.close()
