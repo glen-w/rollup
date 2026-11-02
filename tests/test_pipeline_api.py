@@ -39,6 +39,7 @@ def test_public_names_are_package_reexports() -> None:
     assert EXIT_PARTIAL == 2
     assert EXIT_FAILURE == 1
     assert run_digest is pipeline.run_digest
+    assert run_digest.__module__ == "rollup.pipeline"
     assert stage_parse is stage_parse_mbox
     assert merge_linkedin_parse is pipeline.merge_linkedin_parse
 

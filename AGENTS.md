@@ -56,7 +56,7 @@ python -m pytest tests/ -q
 
 - Never write under the mail root; all state/output/logs stay outside it.
 - Ollama is optional and local-loopback only by default.
-- Sticky TOML ↔ CLI flags: `rollup.sticky_flags` (single registry). Config load/save for web: `rollup.config_service`. Parser construction: `rollup.cli_parser` (re-exported as `rollup.cli.build_parser`). Digest orchestration: `rollup.pipeline.run_digest` (public API on the package; stage types in `pipeline.types`, status/no-input gate in `pipeline.status`, ingest transports in `pipeline.ingest`).
+- Sticky TOML ↔ CLI flags: `rollup.sticky_flags` (single registry). Config load/save for web: `rollup.config_service`. Parser construction: `rollup.cli_parser` (re-exported as `rollup.cli.build_parser`). Digest orchestration: `rollup.pipeline.run_digest` (public API on the package; types / status / ingest / stages / session / publish modules).
 - Docs: [README.md](README.md), [docs/CONFIG.md](docs/CONFIG.md), [docs/WEB.md](docs/WEB.md), [docs/DOCKER.md](docs/DOCKER.md), [docs/EXAMPLES.md](docs/EXAMPLES.md), [docs/CONTRACT.md](docs/CONTRACT.md), [docs/COMPARISON.md](docs/COMPARISON.md), [docs/ROADMAP.md](docs/ROADMAP.md), [docs/design/firefox-capture.md](docs/design/firefox-capture.md). Hosted view: `pip install -e '.[docs]'` then `make docs` (Sphinx HTML) or `make pages-site` (`website/` + `/guide/` in `_site/`). Markdown under `docs/` remains the corpus.
 
 ### Docker (default user deploy)
