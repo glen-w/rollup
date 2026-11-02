@@ -6,6 +6,7 @@ import sqlite3
 
 from rollup.state.schema import *  # noqa: F403
 from rollup.state.schema import (  # noqa: F401
+    MESSAGE_CORPUS_FTS_V17,
     _SUMMARIES_COMPOSITE_PK,
     _SUMMARY_GENERATIONS_INPUT_HASH_PK,
     _V7_REQUIRED_TABLES,
@@ -747,6 +748,35 @@ def ensure_scholar_paper_bodies_v16(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_message_corpus_fts_v17(conn: sqlite3.Connection) -> None:
+    """Schema v17: FTS5 corpus over reader bodies, titles, and summaries."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    if ver >= 17 and "message_corpus_fts" in _existing_tables(conn):
+        return
+    if ver < 16:
+        ensure_scholar_paper_bodies_v16(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            _exec_ddl_statements(conn, MESSAGE_CORPUS_FTS_V17)
+        except sqlite3.OperationalError as exc:
+            raise sqlite3.DatabaseError(
+                "SQLite FTS5 is required for schema v17 (message_corpus_fts); "
+                f"this build cannot create the corpus index: {exc}"
+            ) from exc
+        from rollup.corpus import rebuild_corpus
+
+        rebuild_corpus(conn)
+        _bump_schema_version_in_txn(conn, 17)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -761,6 +791,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_reddit_catalog_v14(conn)
     ensure_source_fetch_cache_v15(conn)
     ensure_scholar_paper_bodies_v16(conn)
+    ensure_message_corpus_fts_v17(conn)
     validate_canonical_schema(conn)
 
 

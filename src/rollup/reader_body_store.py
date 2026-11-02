@@ -187,6 +187,7 @@ def upsert_reader_bodies(
         )
     if to_insert or to_update:
         _bump_maintenance_generation(conn)
+        _sync_corpus_for_writes(conn, writes)
     return BodyUpsertStats(
         inserted=len(to_insert),
         updated=len(to_update),
@@ -311,12 +312,21 @@ def upsert_reader_bodies_v2(
         )
     if to_insert or to_update:
         _bump_maintenance_generation(conn)
+        _sync_corpus_for_writes(conn, writes)
     return BodyUpsertStats(
         inserted=len(to_insert),
         updated=len(to_update),
         unchanged=len(to_touch),
         conflicts=conflicts,
     )
+
+
+def _sync_corpus_for_writes(
+    conn: sqlite3.Connection, writes: Sequence[ReaderBodyWrite]
+) -> None:
+    from rollup.corpus import sync_corpus_keys
+
+    sync_corpus_keys(conn, [w.message_key for w in writes if w.message_key])
 
 
 def count_reader_bodies(conn: sqlite3.Connection) -> int:

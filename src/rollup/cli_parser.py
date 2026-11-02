@@ -531,6 +531,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_bodies_subparser(sub)
 
+    from rollup.corpus_cmd import add_search_ask_subparsers
+
+    add_search_ask_subparsers(sub)
+
     from rollup.web.cli_web import register_web_parser
 
     register_web_parser(sub)

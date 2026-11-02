@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Search — Rollup{% endblock %}
+{% block content %}
+<h1>Search</h1>
+<p class="note">Full-text search over cached reader bodies, titles, and summaries. This is the convenience cache, not a second mailbox. Missing bodies are searched by title and summary only.</p>
+
+<form method="get" action="{{ url_for('search.search_index') }}" class="stack-form" role="search">
+  <label>Query
+    <input type="search" name="q" value="{{ query }}" maxlength="500" placeholder="Search the rollup cache" autofocus>
+  </label>
+  <button type="submit" class="primary">Search</button>
+</form>
+
+{% if ask_enabled %}
+<form method="post" action="{{ url_for('search.ask_post') }}" class="stack-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Ask Rollup
+    <input type="text" name="q" value="{{ query }}" maxlength="500" placeholder="Question grounded in matching excerpts">
+  </label>
+  <button type="submit">Ask</button>
+</form>
+{% else %}
+<p class="note">Ask Rollup is off until LLM summaries are enabled in Settings (<code>ollama = true</code>).</p>
+{% endif %}
+
+{% if ask_result %}
+<section class="card-section">
+  <h2>Answer</h2>
+  <p>{{ ask_result.answer }}</p>
+  {% if ask_result.citations %}
+  <p class="note">Citations: {{ ask_result.citations | join(', ') }}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if query %}
+<section class="card-section">
+  <h2>Results <span class="hint-badge">{{ hits|length }}</span></h2>
+  {% if not hits %}
+  <p class="empty">{{ refuse_message }}</p>
+  {% else %}
+  <ul class="search-hits">
+    {% for hit in hits %}
+    <li>
+      <strong>{% if hit.body_url %}<a href="{{ hit.body_url }}">{{ hit.title }}</a>{% else %}{{ hit.title }}{% endif %}</strong>
+      <div class="muted">{{ hit.message_key }}{% if hit.folder %} · {{ hit.folder }}{% endif %}{% if hit.sender %} · {{ hit.sender }}{% endif %}</div>
+      {% if hit.snippet %}<p>{{ hit.snippet }}</p>{% elif hit.summary %}<p>{{ hit.summary }}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

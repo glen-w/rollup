@@ -29,10 +29,10 @@ material at digest time; Rollup takes a window and produces the rollup.
    `--no-coverage` / `--coverage-report`. Same-source grouping is unchanged.
 4. **Briefing-level synthesis.** **Shipped.** Deterministic glance always;
    `--briefing-synthesis` opt-in LLM narrative. Not final-review.
-5. **Search the accumulated corpus.** SQLite FTS over cached reader bodies,
-   titles, and summaries. Then optionally a tightly grounded “Ask Rollup” over
-   that corpus. Makes the archive useful after the weekly reading event without
-   turning Rollup into a notes app. Reader bodies stay a convenience cache.
+5. **Search the accumulated corpus.** **Shipped.** Schema v17 FTS5
+   (`message_corpus_fts`) over cached reader bodies, titles, and summaries.
+   `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask`. Reader
+   bodies stay a convenience cache.
 6. **Feedback → source intelligence.** Turn existing Quality / rating data into
    suggestions: unused for eight weeks, mostly duplicate, overlapping coverage,
    consider lowering priority. Suggestions only; never auto-unsubscribe or
@@ -63,6 +63,8 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - **Google Scholar detailed mode**: `[scholar].mode = "detailed"` / `--scholar-mode detailed` fetches paper landing pages from Scholar alert emails and summarises each paper (schema v16 cache). Default mode keeps alerts as `item_list` mail.
 - **Attention / skip-safely**: `[interest].profile`, `--interest-file`, `--no-attention`, `--attention-report`. Heuristic bands plus optional LLM reband. Start here / safely skip chrome. Inclusion invariant.
 - **Cross-source coverage**: `--coverage-report` / `--no-coverage`. Overlay clusters, not a new group type.
+- **Briefing synthesis**: deterministic glance always; `--briefing-synthesis` opt-in LLM narrative
+- **Corpus FTS + Ask** (`rollup.db` schema v17): `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask` over reader-body / title / summary cache
 
 ## Standing rule (network sources)
 

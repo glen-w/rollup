@@ -1,0 +1,6 @@
+Answer the question using only the excerpts below.
+Do not use prior knowledge. Do not invent items that are not in the excerpts.
+Every factual claim must cite a message_key from the excerpts.
+If the excerpts are insufficient, say you cannot tell from the Rollup cache.
+Return JSON only:
+{"answer": string, "citations": [message_key, ...]}

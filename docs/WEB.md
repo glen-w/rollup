@@ -5,6 +5,8 @@ Local, single-user browser UI for browsing digests, rating emails, reviewing new
 | Path | Surface |
 |------|---------|
 | `/rollups` | Archive (indexed digests) |
+| `/search` | Corpus search (FTS over reader bodies / titles / summaries) |
+| `POST /ask` | Grounded Ask over search hits (CSRF; requires sticky `ollama`) |
 | `/run` | Run Studio (compose + background digest) |
 | `/settings` | Configuration Centre (real TOML) |
 | `/articles` | Webpage article queue |
@@ -77,6 +79,10 @@ Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage
 
 **Firefox Add to Rollup:** load the unsigned add-on from [`extension/firefox`](../extension/firefox/README.md) (`about:debugging` → Load Temporary Add-on). Copy the capture token from Articles (file `{state_dir}/extension_token`, mode `0600`; never TOML). The toolbar button and context menu POST `{"url", "title"}` to `POST /articles/capture` with `Authorization: Bearer`. Session CSRF is unchanged; this route does not send CORS headers. `rollup web` must be running. Capture is ingest-only — not a read-later inbox. Rotate the token on Articles to invalidate the old value immediately. After a Firefox restart, load `manifest.json` again ([reload](design/firefox-capture.md#reload)). Developer notes (packages, SLOC, known issues, review, reload): [design/firefox-capture.md](design/firefox-capture.md).
 
+## Search (`/search`)
+
+Full-text search over the convenience cache (`message_corpus_fts`, schema v17): reader bodies, titles, and summaries. `GET /search?q=` is CSRF-free and read-only. Ask Rollup (`POST /ask`) retrieves top FTS hits and may only answer from those excerpts; empty hits return a fixed refuse message. Ask is hidden until sticky `ollama = true`. No conversation memory.
+
 ## LinkedIn (`/linkedin`)
 
 Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, choose TOC layout (`feed` default / `per_source` / `per_search`), and set `fetch_ttl_hours` (default 24). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
@@ -87,7 +93,7 @@ Add public subreddit names, checkbox which subs to roll up, set global or per-su
 
 ## Read-only GET contract
 
-Every web **GET** (Archive, Quality, Registry, Admin, Settings, Run, Articles, LinkedIn, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes.
+Every web **GET** (Archive, Search, Quality, Registry, Admin, Settings, Run, Articles, LinkedIn, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes. `POST /ask` is CSRF-protected and still uses the read-only connection; it does not write SQLite.
 
 Admin deep diagnostics are **POST-only** (`POST /admin/deep-check` with CSRF). Deep-check opens **no write connection** — mutation routes open a short-lived mutator only after CSRF and form validation.
 

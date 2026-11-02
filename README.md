@@ -150,7 +150,9 @@ calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
 | `config` | Print effective merged TOML + profile + defaults (`config print`) |
 | `sources` | Manage persistent newsletter source registry |
 | `bodies` | Reader-body cache stats, check, backfill, prune |
-| `web` | Local loopback UI (Archive, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
+| `search` | Full-text search over cached reader bodies, titles, and summaries |
+| `ask` | Grounded question over search hits (requires `--ollama`) |
+| `web` | Local loopback UI (Archive, Search, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
 
 Runnable recipes: [docs/EXAMPLES.md](docs/EXAMPLES.md). Flag and TOML reference: [docs/CONFIG.md](docs/CONFIG.md). `rollup digest --help` is the complete flag list.
 
@@ -204,7 +206,7 @@ CLI (rollup / python -m rollup)
        │     parse → classify → filter / grouping
        │     summarize (preview excerpts, or --ollama / LiteLLM)
        │     render MD/HTML → output writers → publication
-       │     state/rollup.db (schema v16) + manifests + web index
+       │     state/rollup.db (schema v17) + manifests + web index
        │
        └─ web → rollup.web (Flask; [web] extra)
              Archive · Run Studio · Settings · Articles · LinkedIn · Reddit

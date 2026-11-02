@@ -594,6 +594,13 @@ def index_rollup_run(db_path: Path, payload: RunIndexPayload) -> None:
                 upsert_reader_bodies_v2(conn, payload.reader_bodies, seen_at=indexed_at)
             else:
                 upsert_reader_bodies(conn, payload.reader_bodies, seen_at=indexed_at)
+        if get_schema_version(conn) >= 17:
+            from rollup.corpus import sync_corpus_keys
+
+            keys = [e.message_key for e in payload.entries]
+            if payload.reader_bodies:
+                keys.extend(w.message_key for w in payload.reader_bodies)
+            sync_corpus_keys(conn, keys)
         conn.commit()
     except Exception:
         conn.rollback()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -511,6 +511,18 @@ CREATE INDEX IF NOT EXISTS idx_scholar_paper_bodies_fetched
     ON scholar_paper_bodies(fetched_at);
 """
 
+MESSAGE_CORPUS_FTS_V17 = """
+CREATE VIRTUAL TABLE IF NOT EXISTS message_corpus_fts USING fts5(
+    message_key UNINDEXED,
+    title,
+    sender,
+    folder,
+    body_text,
+    summary,
+    tokenize = 'porter unicode61'
+)
+"""
+
 _V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fetched_title", "TEXT"),
     ("body_text", "TEXT"),
@@ -557,6 +569,7 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "linkedin_listing_snapshots",
         "linkedin_article_bodies",
         "scholar_paper_bodies",
+        "message_corpus_fts",
     }
 )
 

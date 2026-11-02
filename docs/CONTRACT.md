@@ -107,7 +107,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **16** (Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **17** (FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
 
 ### Primary summary variant
 

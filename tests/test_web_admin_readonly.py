@@ -105,7 +105,7 @@ def _seed(tmp_path: Path):
 def test_get_routes_use_readonly_and_no_store(tmp_path: Path):
     app, db, _state = _seed(tmp_path)
     client = app.test_client()
-    for path in ("/rollups", "/sources", "/sources/registry", "/admin"):
+    for path in ("/rollups", "/search", "/sources", "/sources/registry", "/admin"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert "no-store" in resp.headers.get("Cache-Control", "")

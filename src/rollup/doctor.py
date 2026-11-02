@@ -188,6 +188,56 @@ def _check_sqlite(config: Config) -> DoctorCheck:
     )
 
 
+def _check_corpus_fts(config: Config) -> list[DoctorCheck]:
+    """FTS table present; unmatched FTS vs bodies is a warning, not a blocker."""
+    try:
+        from rollup.corpus import corpus_health
+        from rollup.state import init_db
+
+        conn = init_db(config.db_path)
+        try:
+            health = corpus_health(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        return [
+            DoctorCheck(
+                id="corpus_fts",
+                status="warn",
+                message=f"Could not inspect corpus FTS: {exc}",
+            )
+        ]
+    if not health.table_present:
+        return [
+            DoctorCheck(
+                id="corpus_fts",
+                status="fail",
+                message="message_corpus_fts is missing",
+                fix="Run a digest or restart rollup web so schema v17 can migrate",
+            )
+        ]
+    out = [
+        DoctorCheck(
+            id="corpus_fts",
+            status="pass",
+            message=f"corpus FTS present ({health.fts_rows} row(s))",
+        )
+    ]
+    if health.body_rows > health.fts_rows:
+        out.append(
+            DoctorCheck(
+                id="corpus_fts_coverage",
+                status="warn",
+                message=(
+                    f"FTS has {health.fts_rows} row(s) vs {health.body_rows} "
+                    "reader bodies; unmatched cache is not a blocker"
+                ),
+                fix="Run a digest or rollup bodies backfill to refresh the corpus index",
+            )
+        )
+    return out
+
+
 def _check_source_registry(config: Config) -> list[DoctorCheck]:
     try:
         from rollup.source_doctor import run_source_doctor
@@ -723,6 +773,7 @@ def run_doctor(
         checks.append(_check_msf_ignored(config))
 
     checks.append(_check_sqlite(config))
+    checks.extend(_check_corpus_fts(config))
     checks.extend(_check_source_registry(config))
     checks.extend(_check_web_index(config))
     checks.extend(_check_last_manifest(config))

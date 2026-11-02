@@ -1030,7 +1030,7 @@ def main(argv: list[str] | None = None) -> None:
     args._loaded_user_config = loaded  # noqa: SLF001
 
     try:
-        if args.command in {"digest", "inventory", "doctor", "config"}:
+        if args.command in {"digest", "inventory", "doctor", "config", "search", "ask"}:
             _apply_loaded_config(args, loaded, raw)
             _apply_path_discovery(args, loaded, raw)
         elif args.command == "cron":
@@ -1070,6 +1070,14 @@ def main(argv: list[str] | None = None) -> None:
         from rollup.bodies_cmd import cmd_bodies
 
         sys.exit(cmd_bodies(args))
+    elif args.command == "search":
+        from rollup.corpus_cmd import cmd_search
+
+        sys.exit(cmd_search(args))
+    elif args.command == "ask":
+        from rollup.corpus_cmd import cmd_ask
+
+        sys.exit(cmd_ask(args))
     else:
         parser.print_help()
         sys.exit(1)

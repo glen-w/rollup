@@ -10,6 +10,17 @@ def test_cli_reexports_build_parser() -> None:
     assert cli.build_parser is cli_parser.build_parser
 
 
+def test_build_parser_search_and_ask() -> None:
+    parser = cli.build_parser()
+    search = parser.parse_args(["search", "local", "first", "--limit", "5", "--json"])
+    assert search.command == "search"
+    assert search.query == ["local", "first"]
+    assert search.limit == 5
+    ask = parser.parse_args(["ask", "what", "shipped", "--ollama"])
+    assert ask.command == "ask"
+    assert ask.ollama is True
+
+
 def test_build_parser_digest_subcommand() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(

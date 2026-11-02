@@ -794,9 +794,22 @@ button.secondary {
   margin: 0.5rem 0;
 }
 .stack-form input[type="url"],
-.stack-form input[type="text"] {
+.stack-form input[type="text"],
+.stack-form input[type="search"] {
   width: 100%;
   max-width: 40rem;
+}
+.search-hits {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+.search-hits li {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.search-hits p {
+  margin: 0.35rem 0 0;
 }
 .token-row {
   display: flex;

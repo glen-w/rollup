@@ -293,7 +293,7 @@ def test_parse_scholar_config(tmp_path: Path) -> None:
 
 def test_schema_v16_scholar_paper_bodies(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 16
+    assert get_schema_version(conn) == SCHEMA_VERSION == 17
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='scholar_paper_bodies'"
     ).fetchone()

@@ -1,7 +1,8 @@
 # Design note: briefing layers toward 1.0
 
-**Status:** contracts landed; attention, coverage, synthesis, FTS, and source
-intelligence ship in follow-on waves. Not a commitment calendar.
+**Status:** contracts, attention, coverage, synthesis, and corpus FTS/Ask have
+landed. Source intelligence is the remaining 1.0 briefing-layer wave. Not a
+commitment calendar.
 
 Rollup reduces a collection window into a **bounded reading object**. These
 layers deepen that briefing. They do not add another stream to triage.

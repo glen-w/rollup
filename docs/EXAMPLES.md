@@ -343,6 +343,13 @@ python -m rollup digest --no-webpage   # skip webpage queue even when pending ro
 python -m rollup digest --folder webpage:queue --no-ollama   # queue only
 ```
 
+Search the local corpus (no LLM) and optionally ask a grounded question:
+
+```bash
+python -m rollup search "local-first evals" --state-dir ./state --json
+python -m rollup ask "what shipped this week?" --state-dir ./state --ollama
+```
+
 Mute a noisy site in the source registry:
 
 ```bash
