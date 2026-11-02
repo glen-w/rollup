@@ -722,18 +722,51 @@ def _store_failure_line(message: str) -> str:
     return text
 
 
-def cmd_digest(args: argparse.Namespace) -> int:
-    conflict = _effort_profile_set_conflict_error(args)
-    if conflict:
-        print(f"ERROR: {conflict}", file=sys.stderr)
-        return 1
-    loaded: LoadedUserConfig = getattr(args, "_loaded_user_config", LoadedUserConfig())
+def _digest_listing_exit(args: argparse.Namespace, loaded: LoadedUserConfig) -> int | None:
+    """Handle digest flags that print catalogues and never run the pipeline."""
     if getattr(args, "list_efforts", False):
         _print_effort_listing(loaded.efforts)
         return 0
     if getattr(args, "list_profiles", False):
         _print_run_profile_listing(loaded)
         return 0
+    return None
+
+
+def _digest_profile_meta_exit(config: Config, run_options, profile_set) -> int | None:
+    """Handle summary-profile list/export flags after config is built."""
+    if config.list_newsletter_types:
+        _print_newsletter_types()
+        return 0
+    if config.list_summary_profiles:
+        _print_summary_profile_listing(profile_set)
+        return 0
+    if config.export_summary_profile_set_path:
+        if run_options.dry_run:
+            logger.info(
+                "Dry run — skipping summary profile set export to %s",
+                config.export_summary_profile_set_path,
+            )
+            return 0
+        from rollup.summary_profiles import export_summary_profile_set
+
+        export_summary_profile_set(profile_set, config.export_summary_profile_set_path)
+        print(
+            f"Exported summary profile set to {config.export_summary_profile_set_path}"
+        )
+        return 0
+    return None
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    conflict = _effort_profile_set_conflict_error(args)
+    if conflict:
+        print(f"ERROR: {conflict}", file=sys.stderr)
+        return 1
+    loaded: LoadedUserConfig = getattr(args, "_loaded_user_config", LoadedUserConfig())
+    listing_exit = _digest_listing_exit(args, loaded)
+    if listing_exit is not None:
+        return listing_exit
 
     config = _build_config(args, folder_themes=loaded.folder_themes)
     run_options = _build_run_options(args)
@@ -758,26 +791,9 @@ def cmd_digest(args: argparse.Namespace) -> int:
         run_options.dry_run,
     )
     profile_set = _load_and_validate_profile_set(config)
-    if config.list_newsletter_types:
-        _print_newsletter_types()
-        return 0
-    if config.list_summary_profiles:
-        _print_summary_profile_listing(profile_set)
-        return 0
-    if config.export_summary_profile_set_path:
-        if run_options.dry_run:
-            logger.info(
-                "Dry run — skipping summary profile set export to %s",
-                config.export_summary_profile_set_path,
-            )
-            return 0
-        from rollup.summary_profiles import export_summary_profile_set
-
-        export_summary_profile_set(profile_set, config.export_summary_profile_set_path)
-        print(
-            f"Exported summary profile set to {config.export_summary_profile_set_path}"
-        )
-        return 0
+    meta_exit = _digest_profile_meta_exit(config, run_options, profile_set)
+    if meta_exit is not None:
+        return meta_exit
     for warning in _ignored_ollama_flag_warnings(config):
         logger.warning(warning)
 

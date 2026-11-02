@@ -360,17 +360,9 @@ def _onboarding_steps(doc, effective) -> list[tuple[str, bool, str]]:
     ]
 
 
-@bp.get("")
-@bp.get("/")
-def settings_index():
-    try:
-        doc = _load_doc()
-    except UserConfigError as exc:
-        flash(f"Could not load config: {exc}")
-        doc = None
-    effective = resolve_effective(doc.loaded) if doc else None
+def _settings_page_context(doc, effective, *, db=None) -> dict:
+    """Assemble Configuration Centre template data (no Flask response)."""
     sticky = effective.sticky if effective else {}
-    writers = []
     try:
         writers = sorted(discover_writers())
     except Exception:
@@ -383,7 +375,7 @@ def settings_index():
         exclude=sticky.get("exclude_folder") or (),
     )
     webpage_names = list_webpage_folder_names(
-        item_count=count_items(g.db_ro) if doc else 0,
+        item_count=count_items(db) if doc and db is not None else 0,
         include=sticky.get("folder") or (),
         exclude=sticky.get("exclude_folder") or (),
     )
@@ -409,7 +401,6 @@ def settings_index():
                 "preview_label": folder_display_name(name, preview_themes),
             }
         )
-    # Include theme-only slugs not discovered on disk
     known = {r["slug"] for r in folder_rows}
     for slug, override in raw_themes.items():
         if slug not in known:
@@ -427,29 +418,39 @@ def settings_index():
                     ),
                 }
             )
+    return {
+        "doc": doc,
+        "effective": effective,
+        "sticky": sticky,
+        "writers": writers,
+        "folder_rows": folder_rows,
+        "profiles": list_run_profiles(toml_profiles=doc.loaded.profiles if doc else {}),
+        "onboarding": _onboarding_steps(doc, effective) if doc and effective else [],
+        "landing_pages": sorted(UI_LANDING_PAGES),
+        "preferred_views": sorted(UI_PREFERRED_VIEWS),
+        "effort_ladders": effort_editor_rows(doc.loaded.efforts if doc else {}),
+        "linkedin": doc.loaded.linkedin if doc else LinkedInConfig(),
+        "reddit": doc.loaded.reddit if doc else RedditConfig(),
+        "scholar": doc.loaded.scholar if doc else ScholarConfig(),
+        "scholar_modes": sorted(SCHOLAR_MODES),
+        "preview_token": None,
+        "diff_rows": None,
+        "patch_summary": None,
+    }
 
-    profiles = list_run_profiles(toml_profiles=doc.loaded.profiles if doc else {})
-    sticky = effective.sticky if effective else {}
-    onboarding = _onboarding_steps(doc, effective) if doc and effective else []
+
+@bp.get("")
+@bp.get("/")
+def settings_index():
+    try:
+        doc = _load_doc()
+    except UserConfigError as exc:
+        flash(f"Could not load config: {exc}")
+        doc = None
+    effective = resolve_effective(doc.loaded) if doc else None
     return render_template(
         "settings/index.html",
-        doc=doc,
-        effective=effective,
-        sticky=sticky,
-        writers=writers,
-        folder_rows=folder_rows,
-        profiles=profiles,
-        onboarding=onboarding,
-        landing_pages=sorted(UI_LANDING_PAGES),
-        preferred_views=sorted(UI_PREFERRED_VIEWS),
-        effort_ladders=effort_editor_rows(doc.loaded.efforts if doc else {}),
-        linkedin=doc.loaded.linkedin if doc else LinkedInConfig(),
-        reddit=doc.loaded.reddit if doc else RedditConfig(),
-        scholar=doc.loaded.scholar if doc else ScholarConfig(),
-        scholar_modes=sorted(SCHOLAR_MODES),
-        preview_token=None,
-        diff_rows=None,
-        patch_summary=None,
+        **_settings_page_context(doc, effective, db=getattr(g, "db_ro", None)),
     )
 
 
