@@ -220,6 +220,7 @@ Every non-dry-run digest writes a privacy-safe JSON manifest under `state/manife
 src/rollup/                       # package source
 src/rollup/cli.py                 # command handlers; re-exports build_parser
 src/rollup/pipeline/              # digest orchestration (`run_digest` plus types/status/ingest/stages/publish)
+src/rollup/state/                 # SQLite schema, migrations, and caches (`init_db` public API)
 src/rollup/web/                   # optional Flask UI ([web] extra)
 extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data

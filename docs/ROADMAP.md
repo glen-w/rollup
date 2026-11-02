@@ -84,8 +84,9 @@ These expand surface. They wait until the briefing itself is distinct.
   if LinkedIn exposes a working content-search query again; company/org posts;
   follows/mentions. v1 stays author-list URLs mapped through Voyager
   `profileUpdatesV2`.
-- Engineering hygiene when the next feature forces the edit: `state.py` /
-  `source_registry.py` splits; `render.py` MD/HTML shared structure.
+- Engineering hygiene when the next feature forces the edit: `render.py`
+  MD/HTML shared structure. (`state` and `source_registry` listing already
+  split; keep migration bodies and `classify_link` as-is.)
 
 ## Non-goals (still)
 

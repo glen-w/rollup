@@ -1,6 +1,6 @@
 /fixtures/
 output/
-state/
+/state/
 logs/
 .venv/
 .release-test-env*/

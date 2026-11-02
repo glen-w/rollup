@@ -120,9 +120,9 @@ def test_v9_migration_rollback_hook(tmp_path: Path, monkeypatch):
     )
     conn.commit()
 
-    import rollup.state as st
+    import rollup.state.migrations as st_migrations
 
-    original = st._exec_ddl_statements
+    original = st_migrations._exec_ddl_statements
     calls = {"n": 0}
 
     def flaky(conn, script):
@@ -131,7 +131,7 @@ def test_v9_migration_rollback_hook(tmp_path: Path, monkeypatch):
         if calls["n"] >= 1:
             raise RuntimeError("injected failure")
 
-    monkeypatch.setattr(st, "_exec_ddl_statements", flaky)
+    monkeypatch.setattr(st_migrations, "_exec_ddl_statements", flaky)
     with pytest.raises(RuntimeError):
         ensure_message_reader_bodies_v9(conn)
     conn2 = connect_db(db)

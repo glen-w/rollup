@@ -14,6 +14,7 @@ def test_core_modules_do_not_import_flask():
         ROOT / "cli.py",
         ROOT / "run_index.py",
         *sorted((ROOT / "pipeline").glob("*.py")),
+        *sorted((ROOT / "state").glob("*.py")),
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8")
