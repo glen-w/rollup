@@ -130,6 +130,7 @@ def test_effective_run_network_arms_respect_disabled_stages() -> None:
     assert effective.allow_webpage_network is False
     assert effective.allow_scholar_network is False
     assert effective.allow_attention_llm is False
+    assert effective.allow_briefing_synthesis_llm is False
     assert effective.apply_policy is None
 
 

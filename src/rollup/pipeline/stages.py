@@ -630,6 +630,17 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
                 gsm.stream_failures,
                 gsm.cache_write_errors,
             )
+    from rollup.synthesis import apply_synthesis
+
+    session.report = apply_synthesis(
+        session.report,
+        allow_llm=effective_run.allow_briefing_synthesis_llm,
+        complete=(
+            _attention_complete(config)
+            if effective_run.allow_briefing_synthesis_llm
+            else None
+        ),
+    )
     return None
 
 

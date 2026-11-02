@@ -1,0 +1,5 @@
+Write a short "what actually mattered" briefing for one collection window.
+Use only the listed titles, glance bullets, and coverage clusters.
+Do not invent stories. Prefer fewer bullets over padding.
+Return JSON only:
+{"headline": string, "bullets": [string], "what_to_skip": [string]}

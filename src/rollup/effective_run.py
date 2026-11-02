@@ -89,6 +89,7 @@ class EffectiveRun:
     allow_webpage_network: bool
     allow_scholar_network: bool
     allow_attention_llm: bool
+    allow_briefing_synthesis_llm: bool
     apply_policy: ApplyPolicy | None
 
     @property
@@ -127,6 +128,11 @@ def resolve_effective_run(
         and config.llm_enabled
         and not config.no_attention
         and config.interest.present
+    )
+    allow_briefing_synthesis_llm = (
+        not run_options.dry_run
+        and config.llm_enabled
+        and config.briefing_synthesis
     )
 
     return EffectiveRun(
@@ -199,6 +205,7 @@ def resolve_effective_run(
         allow_webpage_network=allow_webpage_network,
         allow_scholar_network=allow_scholar_network,
         allow_attention_llm=allow_attention_llm,
+        allow_briefing_synthesis_llm=allow_briefing_synthesis_llm,
         apply_policy=apply_policy,
     )
 

@@ -27,9 +27,8 @@ material at digest time; Rollup takes a window and produces the rollup.
 3. **Cross-source consolidation.** **Shipped.** URL / title overlap overlay
    (`CoverageCluster`); cards stay in their folders with “Covered N ways”.
    `--no-coverage` / `--coverage-report`. Same-source grouping is unchanged.
-4. **Briefing-level synthesis.** Beyond per-item summaries and final-review
-   QA: a “what actually mattered this week?” layer over the collection window.
-   The output stays a finished reading object, not a ranked feed.
+4. **Briefing-level synthesis.** **Shipped.** Deterministic glance always;
+   `--briefing-synthesis` opt-in LLM narrative. Not final-review.
 5. **Search the accumulated corpus.** SQLite FTS over cached reader bodies,
    titles, and summaries. Then optionally a tightly grounded “Ask Rollup” over
    that corpus. Makes the archive useful after the weekly reading event without

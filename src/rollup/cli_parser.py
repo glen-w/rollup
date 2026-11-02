@@ -152,6 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Print coverage clusters to stdout",
     )
+    dig.add_argument(
+        "--briefing-synthesis",
+        action="store_true",
+        default=False,
+        help="Opt-in LLM 'what mattered' narrative (requires --ollama); glance is always offline",
+    )
     ollama_group = dig.add_mutually_exclusive_group()
     ollama_group.add_argument(
         "--ollama",

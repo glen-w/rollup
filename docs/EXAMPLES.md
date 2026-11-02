@@ -296,6 +296,8 @@ python -m rollup digest --no-attention
 python -m rollup digest --no-ollama --attention-report
 python -m rollup digest --no-ollama --coverage-report
 python -m rollup digest --no-coverage
+python -m rollup digest --no-ollama   # glance synthesis is always offline
+python -m rollup digest --ollama --briefing-synthesis
 ```
 
 Or set mode and caps in **Settings → Google Scholar**. Registry source detail

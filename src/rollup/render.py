@@ -227,6 +227,41 @@ def _attention_chip_html(entry: DigestEntry) -> str:
     return f"<span class='attention-chip attention-{html_module.escape(band)}'>{label}</span>"
 
 
+def _render_synthesis_md(report: DigestReport) -> list[str]:
+    synthesis = report.briefing_synthesis
+    if synthesis is None or not synthesis.bullets:
+        return []
+    title = synthesis.headline or "This window at a glance"
+    lines = [f"## {title}", ""]
+    for bullet in synthesis.bullets:
+        lines.append(f"- {bullet}")
+    if synthesis.what_to_skip:
+        lines.append("")
+        lines.append("Safely skip:")
+        for bullet in synthesis.what_to_skip:
+            lines.append(f"- {bullet}")
+    lines.append("")
+    return lines
+
+
+def _render_synthesis_html(report: DigestReport) -> str:
+    synthesis = report.briefing_synthesis
+    if synthesis is None or not synthesis.bullets:
+        return ""
+    title = html_module.escape(synthesis.headline or "This window at a glance")
+    parts = [f"<section class='briefing-synthesis'><h2>{title}</h2><ul>"]
+    for bullet in synthesis.bullets:
+        parts.append(f"<li>{html_module.escape(bullet)}</li>")
+    parts.append("</ul>")
+    if synthesis.what_to_skip:
+        parts.append("<p><strong>Safely skip</strong></p><ul>")
+        for bullet in synthesis.what_to_skip:
+            parts.append(f"<li>{html_module.escape(bullet)}</li>")
+        parts.append("</ul>")
+    parts.append("</section>")
+    return "\n".join(parts)
+
+
 def _render_start_here_md(report: DigestReport) -> list[str]:
     from rollup.attention.annotate import high_relevance_entries
 
@@ -886,6 +921,7 @@ def render_markdown(
         f"_Week of {ws} to {we} · {total} newsletters_",
         "",
     ]
+    lines.extend(_render_synthesis_md(report))
     lines.extend(_render_start_here_md(report))
     lines.extend(_render_toc_md(report, folder_themes))
     coverage = _coverage_index(report)
@@ -1038,6 +1074,7 @@ def render_html(
         ".summary p{margin:0.5rem 0;}",
         ".link-domain{color:#666;font-size:0.9em;}",
         ".item-type{margin:0 0 0.75rem;font-size:0.9rem;color:#666;}",
+        ".briefing-synthesis{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ddd;border-radius:6px;background:#fafafa;}",
         ".start-here{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #cde;border-radius:6px;background:#f7fbff;}",
         ".attention-chip{display:inline-block;margin-left:0.5rem;font-size:0.75rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:999px;background:#eee;color:#444;vertical-align:middle;}",
         ".attention-high_relevance{background:#dceeff;color:#084;}",
@@ -1059,6 +1096,7 @@ def render_html(
         f"<img class='rollup-logo' src='{LOGO_FILENAME}' alt='{ROLLUP_TITLE} logo'>",
         "</header>",
         f"<p class='rollup-subhead'><em>{html_module.escape(window_label)} · {total} newsletters</em></p>",
+        _render_synthesis_html(report),
         _render_start_here_html(report),
         _render_toc_html(
             anchor_map,

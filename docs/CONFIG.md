@@ -411,6 +411,10 @@ Cross-source **coverage** clustering is on by default (lexical URL/title overlap
 `--no-coverage` skips it. `--coverage-report` prints clusters. Cards stay in
 their folders; the overlay only adds “Covered N ways”.
 
+A **glance** (“this window at a glance”) is always built offline from Start here
+titles, coverage themes, and folder counts. `--briefing-synthesis` (requires
+`--ollama`) may replace it with an LLM narrative. Final-review stays editorial QA.
+
 `detailed` unwraps `scholar.google.com/scholar_url?url=…`, rewrites `arxiv.org/pdf/…` to `/abs/…`, and skips raw PDFs (`scholar_pdf_skipped` — email title/authors/snippet only). Fetch failures fall back to the email snippet (`scholar_fetch_failed`) and do not fail the digest. Papers stay in the Thunderbird folder section, standalone, with `message_key` `scholar:paper:<sha256(url)>` and the parent Scholar `source_key`. They are **not** added to the Articles queue.
 
 ## Run profiles vs effort

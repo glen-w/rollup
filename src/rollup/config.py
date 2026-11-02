@@ -105,6 +105,7 @@ class Config:
     attention_report: bool = False
     no_coverage: bool = False
     coverage_report: bool = False
+    briefing_synthesis: bool = False
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
 

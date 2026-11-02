@@ -333,6 +333,7 @@ def _build_config(
         attention_report=getattr(args, "attention_report", False),
         no_coverage=getattr(args, "no_coverage", False),
         coverage_report=getattr(args, "coverage_report", False),
+        briefing_synthesis=getattr(args, "briefing_synthesis", False),
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
     )
