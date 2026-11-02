@@ -12,9 +12,16 @@ from rollup.pipeline import (
     DigestRunResult,
     ParseCounts,
     ParseResult,
+    StageWarning,
     derive_run_status,
     evaluate_no_input,
+    merge_linkedin_parse,
+    merge_parse,
+    merge_reddit_parse,
+    merge_webpage_parse,
     run_digest,
+    stage_parse,
+    stage_parse_mbox,
     status_to_exit_code,
 )
 from rollup.pipeline import status as pipeline_status
@@ -32,6 +39,8 @@ def test_public_names_are_package_reexports() -> None:
     assert EXIT_PARTIAL == 2
     assert EXIT_FAILURE == 1
     assert run_digest is pipeline.run_digest
+    assert stage_parse is stage_parse_mbox
+    assert merge_linkedin_parse is pipeline.merge_linkedin_parse
 
 
 def test_aggregated_results_aliases() -> None:
@@ -56,3 +65,14 @@ def test_evaluate_no_input_empty_discovery() -> None:
     )
     assert reason is not None
     assert "No readable mbox folders" in reason
+
+
+def test_merge_parse_is_shared_by_transport_wrappers() -> None:
+    prior = ParseResult(messages=(), counts=ParseCounts(messages_seen=2, messages_parsed=2))
+    warning = StageWarning(code="transport_dry_run", message="would fetch")
+    via_generic = merge_parse(prior, [], [warning])
+    assert merge_linkedin_parse(prior, [], [warning]) == via_generic
+    assert merge_reddit_parse(prior, [], [warning]) == via_generic
+    assert merge_webpage_parse(prior, [], [warning]) == via_generic
+    assert via_generic.counts.messages_seen == 2
+    assert via_generic.warnings == (warning,)
