@@ -4,6 +4,7 @@
 {% block content %}
 <h1>Source registry</h1>
 <p class="note">Operational controls. Quality ranking is under <a href="{{ url_for('sources.list_sources') }}">Sources</a>.</p>
+{% include "partials/suggestion_cards.html" %}
 
 <form method="get" class="registry-filters">
   <label>Filter

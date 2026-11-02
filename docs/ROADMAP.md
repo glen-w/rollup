@@ -33,10 +33,11 @@ material at digest time; Rollup takes a window and produces the rollup.
    (`message_corpus_fts`) over cached reader bodies, titles, and summaries.
    `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask`. Reader
    bodies stay a convenience cache.
-6. **Feedback → source intelligence.** Turn existing Quality / rating data into
-   suggestions: unused for eight weeks, mostly duplicate, overlapping coverage,
-   consider lowering priority. Suggestions only; never auto-unsubscribe or
-   mutate Thunderbird. The source registry is the right home.
+6. **Feedback → source intelligence.** **Shipped.** Live suggestions from
+   Quality / registry / recent coverage overlap: unused for eight weeks, mostly
+   dismissed, overlapping coverage, consider lowering priority, mostly
+   duplicate. `rollup sources suggest`; Quality and Registry cards. Apply is
+   existing `set_overrides` only. Never auto-unsubscribe or mutate Thunderbird.
 7. **Reading destinations.** The writer seam is already the right extension
    point. OPDS for e-readers; then optional send-to-Kindle / Calibre-style
    delivery as plugins. Reinforces “produce something worth reading away from
@@ -65,6 +66,7 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - **Cross-source coverage**: `--coverage-report` / `--no-coverage`. Overlay clusters, not a new group type.
 - **Briefing synthesis**: deterministic glance always; `--briefing-synthesis` opt-in LLM narrative
 - **Corpus FTS + Ask** (`rollup.db` schema v17): `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask` over reader-body / title / summary cache
+- **Source intelligence**: `rollup sources suggest`; Quality/Registry suggestion cards; doctor `suggestions: N`
 
 ## Standing rule (network sources)
 

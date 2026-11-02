@@ -1,0 +1,26 @@
+{% if suggestions %}
+<section class="card-section suggestions-panel">
+  <h2>Suggestions <span class="hint-badge">{{ suggestions|length }}</span></h2>
+  <p class="note">Computed from Quality, registry, and recent coverage overlap. Nothing is applied until you choose.</p>
+  <ul class="suggestion-list">
+    {% for s in suggestions %}
+    <li>
+      <strong>{{ s.display_name or s.source_key }}</strong>
+      <span class="muted">{{ s.code }}</span>
+      <div>{{ s.message }}</div>
+      <p class="suggestion-actions">
+        <a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.source_key)) }}">manage</a>
+        {% if s.apply %}
+        <form method="post" action="{{ url_for('sources.suggest_apply', id_enc=encode_opaque(s.source_key)) }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="{{ s.apply }}">
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button type="submit">{% if s.apply == 'disable' %}Disable{% else %}Lower priority{% endif %}</button>
+        </form>
+        {% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

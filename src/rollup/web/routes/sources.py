@@ -14,6 +14,7 @@ from rollup.payload_limits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from rollup.run_lock import RunLockError, acquire_state_lock
 from rollup.source_models import CADENCE_LABELS, GROUPING_POLICIES
 from rollup.source_quality import score_sources
+from rollup.source_suggestions import collect_suggestions
 from rollup.source_registry import (
     NEWSLETTER_TYPES,
     SourceNotFound,
@@ -94,9 +95,11 @@ def list_sources():
     rows = score_sources(g.db_ro, now=now, limit=page_size + 1, offset=offset)
     has_next = len(rows) > page_size
     rows = rows[:page_size]
+    suggestions = collect_suggestions(g.db_ro, now=now)
     return render_template(
         "sources/list.html",
         sources=rows,
+        suggestions=suggestions,
         page=page,
         page_size=page_size,
         has_prev=page > 1,
@@ -133,9 +136,11 @@ def list_registry():
         )
     except SourceRegistryError as exc:
         return render_template("errors/400.html", message=str(exc)), 400
+    suggestions = collect_suggestions(g.db_ro)
     return render_template(
         "sources/registry.html",
         page_result=result,
+        suggestions=suggestions,
         sort=sort,
         enabled_filter=enabled_filter,
         q=q or "",
@@ -260,6 +265,92 @@ def source_policy(id_enc: str):
         lock.release()
 
     return redirect(url_for("sources.source_detail", id_enc=encode_opaque(record.source_key)))
+
+
+def _safe_next(nxt: str | None) -> str:
+    if (
+        not nxt
+        or not nxt.startswith("/")
+        or nxt.startswith("//")
+        or "\\" in nxt
+        or "://" in nxt
+    ):
+        return url_for("sources.list_sources")
+    return nxt
+
+
+@bp.post("/sources/<id_enc>/suggest-apply")
+def suggest_apply(id_enc: str):
+    """Apply a suggestion via existing set_overrides. Never touches mail."""
+    if not csrf_ok(request.form.get("csrf_token")):
+        return render_template("errors/400.html", message="CSRF validation failed"), 400
+    action = (request.form.get("action") or "").strip()
+    if action not in {"disable", "lower_priority"}:
+        return render_template("errors/400.html", message="Invalid suggestion action"), 400
+    try:
+        source_key = decode_opaque(id_enc, kind="source")
+    except IdError:
+        return render_template("errors/404.html", message="Invalid source id"), 404
+
+    from rollup.source_registry import load_overrides
+    from rollup.source_suggestions import LOWER_PRIORITY_STEP
+
+    state_dir = Path(current_app.config["STATE_DIR"])
+    try:
+        lock = acquire_state_lock(
+            state_dir, run_id=str(uuid.uuid4()), operation="web-source-suggest"
+        )
+    except RunLockError:
+        return (
+            render_template(
+                "errors/503.html",
+                message="Database busy (digest or another writer). Retry shortly.",
+            ),
+            503,
+        )
+    try:
+        with mutation_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                record = get_source_record(conn, source_key)
+            except SourceNotFound:
+                conn.rollback()
+                return render_template("errors/404.html", message="Source not found"), 404
+            if action == "disable":
+                updates = {"enabled": False}
+            else:
+                current = load_overrides(conn, record.source_key).priority
+                if current is None:
+                    new_p = 0
+                else:
+                    new_p = max(0, int(current) - LOWER_PRIORITY_STEP)
+                updates = {"priority": new_p}
+            try:
+                set_overrides(
+                    conn,
+                    record.source_key,
+                    updates=updates,
+                    updated_by="web",
+                    commit=False,
+                    summary_profile_names=_effective_summary_profiles(),
+                )
+                conn.commit()
+            except SourceRegistryError as exc:
+                conn.rollback()
+                return render_template("errors/400.html", message=str(exc)), 400
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+            return (
+                render_template(
+                    "errors/503.html",
+                    message="Database busy (digest or another writer). Retry shortly.",
+                ),
+                503,
+            )
+        raise
+    finally:
+        lock.release()
+    return redirect(_safe_next(request.form.get("next")))
 
 
 @bp.post("/sources/bulk")

@@ -353,6 +353,7 @@ python -m rollup ask "what shipped this week?" --state-dir ./state --ollama
 Mute a noisy site in the source registry:
 
 ```bash
+python -m rollup sources suggest --json
 python -m rollup sources disable web:host:example.com
 ```
 

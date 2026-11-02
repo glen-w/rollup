@@ -272,6 +272,34 @@ def _check_source_registry(config: Config) -> list[DoctorCheck]:
     return out
 
 
+def _check_source_suggestions(config: Config) -> list[DoctorCheck]:
+    """Non-blocking count of live source-intelligence suggestions."""
+    try:
+        from rollup.source_suggestions import collect_suggestions
+        from rollup.state import init_db
+
+        conn = init_db(config.db_path)
+        try:
+            items = collect_suggestions(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        return [
+            DoctorCheck(
+                id="source_suggestions",
+                status="info",
+                message=f"Could not compute source suggestions: {exc}",
+            )
+        ]
+    return [
+        DoctorCheck(
+            id="source_suggestions",
+            status="info",
+            message=f"suggestions: {len(items)}",
+        )
+    ]
+
+
 def _check_web_index(config: Config) -> list[DoctorCheck]:
     """Compare latest successful outputs vs rollup_runs entry index."""
     try:
@@ -775,6 +803,7 @@ def run_doctor(
     checks.append(_check_sqlite(config))
     checks.extend(_check_corpus_fts(config))
     checks.extend(_check_source_registry(config))
+    checks.extend(_check_source_suggestions(config))
     checks.extend(_check_web_index(config))
     checks.extend(_check_last_manifest(config))
 

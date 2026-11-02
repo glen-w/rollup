@@ -62,6 +62,7 @@ def cmd_sources(args: argparse.Namespace) -> int:
         "export": _cmd_export,
         "import": _cmd_import,
         "doctor": _cmd_doctor,
+        "suggest": _cmd_suggest,
     }
     handler = handlers.get(command)
     if handler is None:
@@ -359,6 +360,30 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         conn.close()
 
 
+def _cmd_suggest(args: argparse.Namespace) -> int:
+    from rollup.source_suggestions import (
+        collect_suggestions,
+        format_suggestions,
+        suggestion_to_dict,
+    )
+
+    conn, _ = _open_db(args)
+    try:
+        items = collect_suggestions(conn)
+        if getattr(args, "json", False):
+            _print_json(
+                {
+                    "schema_version": SOURCES_JSON_SCHEMA_VERSION,
+                    "suggestions": [suggestion_to_dict(s) for s in items],
+                }
+            )
+        else:
+            print(format_suggestions(items))
+        return 0
+    finally:
+        conn.close()
+
+
 def add_sources_subparser(sub) -> None:
     sources = sub.add_parser("sources", help="Manage persistent newsletter sources")
     src_sub = sources.add_subparsers(dest="sources_command", required=True)
@@ -428,3 +453,10 @@ def add_sources_subparser(sub) -> None:
     p_doc = src_sub.add_parser("doctor", help="Check source registry health")
     common(p_doc)
     p_doc.add_argument("--json", action="store_true")
+
+    p_sug = src_sub.add_parser(
+        "suggest",
+        help="List source-intelligence suggestions (never auto-applied)",
+    )
+    common(p_sug)
+    p_sug.add_argument("--json", action="store_true")

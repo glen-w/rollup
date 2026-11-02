@@ -148,7 +148,7 @@ calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
 | `doctor` | Setup, safety, and environment diagnostics |
 | `cron` | Print launchd/crontab snippets; show last-run status |
 | `config` | Print effective merged TOML + profile + defaults (`config print`) |
-| `sources` | Manage persistent newsletter source registry |
+| `sources` | Manage persistent newsletter source registry (`suggest` for live intelligence) |
 | `bodies` | Reader-body cache stats, check, backfill, prune |
 | `search` | Full-text search over cached reader bodies, titles, and summaries |
 | `ask` | Grounded question over search hits (requires `--ollama`) |

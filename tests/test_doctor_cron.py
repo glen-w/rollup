@@ -65,6 +65,9 @@ def test_doctor_fast_ok(tmp_path: Path) -> None:
     assert "mbox_discoverable" in ids
     assert "msf_ignored" in ids
     assert "scholar_mode" not in ids
+    sug = next(c for c in report.checks if c.id == "source_suggestions")
+    assert sug.status == "info"
+    assert sug.message.startswith("suggestions:")
 
 
 def test_doctor_scholar_detailed_warns_without_ollama(tmp_path: Path) -> None:

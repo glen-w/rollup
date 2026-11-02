@@ -107,8 +107,9 @@ Manifest diagnostics are allowlisted, truncated, and redacted (no subjects, send
 
 ## Source registry
 
-- **Quality** (`/sources`): Bayesian ranking / content browsing
-- **Registry** (`/sources/registry`): enable/disable, priority, always-surface, overrides, bulk actions
+- **Quality** (`/sources`): Bayesian ranking / content browsing, plus live suggestion cards
+- **Registry** (`/sources/registry`): enable/disable, priority, always-surface, overrides, bulk actions, same suggestion cards
+- Suggestion apply (`POST /sources/<id>/suggest-apply`) calls existing `set_overrides` (disable / lower priority). Never auto-applied, never writes mail.
 - Detail pages show inferred/observed facts vs user overrides with provenance
 - Alias **preview + confirm** creation/merge only (no unalias in this UI)
 
