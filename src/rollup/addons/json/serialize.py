@@ -11,7 +11,10 @@ from rollup.addons.artifact_write import atomic_write_digest_artifact
 from rollup.final_review import final_review_result_to_dict
 from rollup.links import prepare_links_for_render
 from rollup.models import (
+    AttentionMetadata,
+    BriefingSynthesis,
     ClassifiedLink,
+    CoverageCluster,
     DigestEntry,
     DigestGroup,
     DigestItem,
@@ -94,6 +97,10 @@ def entry_to_dict(entry: DigestEntry, max_display_links: int) -> dict[str, Any]:
         "summary": entry.summary,
         "summary_source": entry.summary_source,
         "summary_original": entry.summary_original,
+        "attention_band": entry.attention_band,
+        "attention_score": entry.attention_score,
+        "attention_reasons": list(entry.attention_reasons),
+        "coverage_cluster_id": entry.coverage_cluster_id,
         "parse_warnings": list(p.parse_warnings),
         "html_heading_count": p.html_heading_count,
         "html_link_count": p.html_link_count,
@@ -217,6 +224,45 @@ def _group_summary_metadata_to_dict(report: DigestReport) -> dict[str, Any] | No
     }
 
 
+def _attention_metadata_to_dict(
+    metadata: AttentionMetadata | None,
+) -> dict[str, Any] | None:
+    if metadata is None:
+        return None
+    return {
+        "profile_present": metadata.profile_present,
+        "llm_refined": metadata.llm_refined,
+        "band_counts": [
+            {"band": band, "count": count} for band, count in metadata.band_counts
+        ],
+        "degraded": metadata.degraded,
+    }
+
+
+def _coverage_cluster_to_dict(cluster: CoverageCluster) -> dict[str, Any]:
+    return {
+        "cluster_id": cluster.cluster_id,
+        "theme_label": cluster.theme_label,
+        "member_keys": list(cluster.member_keys),
+        "representative_key": cluster.representative_key,
+        "source_count": cluster.source_count,
+    }
+
+
+def _briefing_synthesis_to_dict(
+    synthesis: BriefingSynthesis | None,
+) -> dict[str, Any] | None:
+    if synthesis is None:
+        return None
+    return {
+        "headline": synthesis.headline,
+        "bullets": list(synthesis.bullets),
+        "what_to_skip": list(synthesis.what_to_skip),
+        "source": synthesis.source,
+        "degraded": synthesis.degraded,
+    }
+
+
 def report_to_dict(report: DigestReport, max_display_links: int) -> dict[str, Any]:
     """Full structured rollup payload (schema v1)."""
     dated: dict[str, list[dict[str, Any]]] = {}
@@ -233,6 +279,11 @@ def report_to_dict(report: DigestReport, max_display_links: int) -> dict[str, An
         "summary_metadata": _summary_metadata_to_dict(report),
         "grouping_metadata": _grouping_metadata_to_dict(report),
         "group_summary_metadata": _group_summary_metadata_to_dict(report),
+        "attention_metadata": _attention_metadata_to_dict(report.attention_metadata),
+        "coverage_clusters": [
+            _coverage_cluster_to_dict(cluster) for cluster in report.coverage_clusters
+        ],
+        "briefing_synthesis": _briefing_synthesis_to_dict(report.briefing_synthesis),
         "final_review": (
             final_review_result_to_dict(report.final_review)
             if report.final_review is not None

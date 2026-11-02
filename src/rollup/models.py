@@ -27,6 +27,15 @@ GroupType = Literal[
     "subreddit_digest",
 ]
 GroupRenderMode = Literal["compact", "expandable"]
+AttentionBand = Literal[
+    "high_relevance",
+    "worth_scanning",
+    "background",
+    "safely_skip",
+]
+BriefingSynthesisSource = Literal[
+    "glance", "ollama", "litellm", "cache", "none"
+]
 FinalReviewIssueType = Literal[
     "style_drift",
     "duplication",
@@ -147,6 +156,10 @@ class DigestEntry:
     summary: str | None
     summary_source: SummarySource
     summary_original: str | None = None
+    attention_band: AttentionBand | None = None
+    attention_score: float | None = None
+    attention_reasons: tuple[str, ...] = ()
+    coverage_cluster_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +277,38 @@ class GroupSummaryMetadata:
 
 
 @dataclass(frozen=True)
+class AttentionMetadata:
+    """Run-level attention annotation stats. Ranking never drops included mail."""
+
+    profile_present: bool = False
+    llm_refined: bool = False
+    band_counts: tuple[tuple[str, int], ...] = ()
+    degraded: bool = False
+
+
+@dataclass(frozen=True)
+class CoverageCluster:
+    """Cross-source overlap overlay. Members stay in their folder cards."""
+
+    cluster_id: str
+    theme_label: str
+    member_keys: tuple[str, ...]
+    representative_key: str
+    source_count: int
+
+
+@dataclass(frozen=True)
+class BriefingSynthesis:
+    """Collection-window 'what mattered' layer. Not final-review QA."""
+
+    headline: str | None
+    bullets: tuple[str, ...]
+    what_to_skip: tuple[str, ...] = ()
+    source: BriefingSynthesisSource = "none"
+    degraded: bool = False
+
+
+@dataclass(frozen=True)
 class DigestReport:
     generated_at: datetime
     lookback_days: int
@@ -276,6 +321,9 @@ class DigestReport:
     final_review: FinalReviewResult | None = None
     grouping_metadata: GroupingMetadata | None = None
     group_summary_metadata: GroupSummaryMetadata | None = None
+    attention_metadata: AttentionMetadata | None = None
+    coverage_clusters: tuple[CoverageCluster, ...] = ()
+    briefing_synthesis: BriefingSynthesis | None = None
 
 
 @dataclass(frozen=True)

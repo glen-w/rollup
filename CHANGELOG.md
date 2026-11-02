@@ -4,6 +4,10 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Briefing-layer contracts (`AttentionBand`, coverage clusters, synthesis types) and [docs/design/briefing-arc.md](docs/design/briefing-arc.md). Digest behavior is unchanged; JSON artifacts emit empty briefing fields.
+
 ## 0.9.6 — 2026-11-02
 
 ### Changed

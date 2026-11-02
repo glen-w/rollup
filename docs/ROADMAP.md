@@ -18,7 +18,8 @@ material at digest time; Rollup takes a window and produces the rollup.
 
 1. **Documentation consolidation.** README is the product entry; `docs/` is the
    reference. The contract stays short and authoritative. Remaining work is
-   keeping the split honest as features land.
+   keeping the split honest as features land. Briefing-layer invariants:
+   [design/briefing-arc.md](design/briefing-arc.md).
 2. **Attention / relevance / skip-safely.** Explicit interest profiles (simple
    prose, not dozens of weights) that rank or annotate entries: high relevance /
    worth scanning / background / safely skip. **Preserve deterministic
@@ -125,3 +126,4 @@ reading than a mobile app.
 | [EXAMPLES.md](EXAMPLES.md) | Runnable recipes |
 | [CHANGELOG.md](../CHANGELOG.md) | What shipped |
 | [design/firefox-capture.md](design/firefox-capture.md) | Firefox Add to Rollup (packages, SLOC, reload, known issues, review) |
+| [design/briefing-arc.md](design/briefing-arc.md) | Briefing-layer invariants toward 1.0 (attention, coverage, synthesis, FTS) |

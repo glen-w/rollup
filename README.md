@@ -66,6 +66,7 @@ Host Python / venv install is an advanced alternative — see [Install](#install
 | [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Doctor, LinkedIn session, exit codes |
 | [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, reload, known issues, review checklist |
+| [docs/design/briefing-arc.md](docs/design/briefing-arc.md) | Briefing-layer invariants (attention, coverage, synthesis, FTS) |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 Quick picks: [DOCKER](docs/DOCKER.md) · [EXAMPLES](docs/EXAMPLES.md) · [CONFIG](docs/CONFIG.md) · [WEB](docs/WEB.md)

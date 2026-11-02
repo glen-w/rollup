@@ -79,6 +79,9 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "final_review",
         "group_summaries",
         "source_registry",
+        "attention",
+        "coverage",
+        "briefing_synthesis",
     }
 )
 
