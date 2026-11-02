@@ -28,7 +28,7 @@ class RunContext:
     """Identity and timing for a single digest run.
 
     Stage outputs and counts live in typed stage results aggregated by
-    pipeline.py — not here.
+    rollup.pipeline — not here.
     """
 
     run_id: str

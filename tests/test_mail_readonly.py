@@ -39,7 +39,13 @@ def _run(*args: str) -> subprocess.CompletedProcess:
 
 def test_inventory_does_not_modify_fixture_tree() -> None:
     before = _snapshot_tree(FIXTURE_ROOT)
-    result = _run("inventory", "--root", str(FIXTURE_ROOT))
+    result = _run(
+        "inventory",
+        "--root",
+        str(FIXTURE_ROOT),
+        "--mail-root",
+        str(FIXTURE_ROOT.parent),
+    )
     assert result.returncode == 0, result.stderr
     after = _snapshot_tree(FIXTURE_ROOT)
     assert before == after
@@ -51,6 +57,8 @@ def test_digest_dry_run_does_not_modify_fixture_tree() -> None:
         "digest",
         "--root",
         str(FIXTURE_ROOT),
+        "--mail-root",
+        str(FIXTURE_ROOT.parent),
         "--dry-run",
         "--no-ollama",
         "--no-linkedin",

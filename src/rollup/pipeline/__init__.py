@@ -47,365 +47,66 @@ from rollup.summary_profiles import (
     get_canonical_newsletter_types,
     require_valid_summary_profile_set,
 )
+from rollup.pipeline.status import (
+    EXIT_FAILURE,
+    EXIT_PARTIAL,
+    EXIT_SUCCESS,
+    derive_run_status,
+    evaluate_no_input,
+    status_to_exit_code,
+)
+from rollup.pipeline.types import (
+    DEFAULT_DEGRADATION_POLICY,
+    AggregatedResults,
+    DegradationPolicy,
+    DigestRunResult,
+    DiscoveryResult,
+    FilterCounts,
+    FilterResult,
+    GroupingResult,
+    ParseCounts,
+    ParseResult,
+    RenderResult,
+    ReviewResult,
+    StageError,
+    StageWarning,
+    SummarizeResult,
+)
 
 logger = logging.getLogger(__name__)
 
-EXIT_SUCCESS = 0
-EXIT_FAILURE = 1
-EXIT_PARTIAL = 2
-
-
-@dataclass(frozen=True)
-class StageWarning:
-    code: str
-    message: str
-    folder: str | None = None
-    count: int = 1
-
-
-@dataclass(frozen=True)
-class StageError:
-    code: str
-    message: str
-    folder: str | None = None
-
-
-@dataclass(frozen=True)
-class ParseCounts:
-    messages_seen: int = 0
-    messages_parsed: int = 0
-    parse_fatal_errors: int = 0
-    parse_anomalies: int = 0
-    folders_failed: int = 0
-
-
-@dataclass(frozen=True)
-class FilterCounts:
-    skipped_outside_window: int = 0
-    skipped_seen_undated: int = 0
-    deduped_messages: int = 0
-    dated_included: int = 0
-    undated_included: int = 0
-    skipped_disabled_source: int = 0
-    always_surface_included: int = 0
-    type_overrides_applied: int = 0
-    classifier_disagreements: int = 0
-    grouping_overrides_applied: int = 0
-
-
-@dataclass(frozen=True)
-class DiscoveryResult:
-    folders: tuple[MboxFolder, ...]
-    linkedin_searches: tuple[LinkedInSearch, ...] = ()
-    reddit_subs: tuple["RedditSub", ...] = ()
-    webpage_items: tuple[WebpageQueueItem, ...] = ()
-    warnings: tuple[StageWarning, ...] = ()
-
-
-@dataclass(frozen=True)
-class ParseResult:
-    messages: tuple[ParsedMessage, ...]
-    counts: ParseCounts
-    warnings: tuple[StageWarning, ...] = ()
-    errors: tuple[StageError, ...] = ()
-    mutated_folders: tuple[str, ...] = ()
-    mutation_codes: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class FilterResult:
-    dated_entries: tuple[DigestEntry, ...]
-    undated_entries: tuple[DigestEntry, ...]
-    counts: FilterCounts
-    warnings: tuple[StageWarning, ...] = ()
-
-
-@dataclass(frozen=True)
-class GroupingResult:
-    dated_items: tuple[Any, ...]  # DigestEntry | DigestGroup
-    undated_items: tuple[Any, ...]
-    groups: tuple[Any, ...] = ()
-    reason_codes: tuple[Any, ...] = ()
-    warnings: tuple[StageWarning, ...] = ()
-
-
-@dataclass(frozen=True)
-class SummarizeResult:
-    dated_entries: tuple[DigestEntry, ...]
-    undated_entries: tuple[DigestEntry, ...]
-    summary_metadata: DigestSummaryMetadata | None
-    rendered_variants: dict[str, tuple[list[DigestEntry], list[DigestEntry]]]
-    execution: Any | None = None
-    warnings: tuple[StageWarning, ...] = ()
-    errors: tuple[StageError, ...] = ()
-
-
-@dataclass(frozen=True)
-class ReviewResult:
-    report: DigestReport
-    final_review: FinalReviewResult | None = None
-    warnings: tuple[StageWarning, ...] = ()
-    errors: tuple[StageError, ...] = ()
-
-
-@dataclass(frozen=True)
-class RenderResult:
-    markdown: str
-    html: str
-    output_stem: str
-    variant_name: str | None = None
-    md_path: Path | None = None
-    html_path: Path | None = None
-
-
-@dataclass(frozen=True)
-class DegradationPolicy:
-    """Fixed thresholds for when recoverable issues become material."""
-
-    parse_fatal_rate: float = 0.05
-    parse_fatal_absolute: int = 10
-    summary_error_rate: float = 0.20
-    folder_open_failure_is_partial: bool = True
-
-
-DEFAULT_DEGRADATION_POLICY = DegradationPolicy()
-
-
-@dataclass
-class AggregatedResults:
-    discovery: DiscoveryResult | None = None
-    parse: ParseResult | None = None
-    filter: FilterResult | None = None
-    grouping: GroupingResult | None = None
-    summarize: SummarizeResult | None = None
-    review: ReviewResult | None = None
-    renders: list[RenderResult] = field(default_factory=list)
-    dated_outputs_written: bool = False
-    latest_outputs_updated: bool = False
-    usable_digest: bool = False
-    source_snapshot: Any | None = None
-    hard_failure: bool = False
-    hard_failure_reason: str | None = None
-    final_review_failed: bool = False
-    ollama_enabled: bool = False
-
-    @property
-    def llm_enabled(self) -> bool:
-        return self.ollama_enabled
-    publication_failed: bool = False
-    seen_state_failed: bool = False
-    seen_state_updated: bool = False
-    manifest_write_failed: bool = False
-    group_summaries_degraded: bool = False
-    apply_patches_applied: int = 0
-    apply_patches_attempted: int = 0
-    apply_global_skip_reason: str | None = None
-    apply_reject_counts: dict[str, int] = field(default_factory=dict)
-    contains_auto_edited_prose: bool = False
-    group_summary_ollama_calls: int = 0
-    group_summary_cache_hits: int = 0
-    group_summary_stream_failures: int = 0
-    group_summary_cache_write_errors: int = 0
-    group_summary_error_counts: dict[str, int] = field(default_factory=dict)
-    apply_policy_unattended: bool | None = None
-    apply_policy_max_patches: int | None = None
-    apply_policy_max_changed_chars: int | None = None
-    web_index_failed: bool = False
-    web_index_error: str | None = None
-    required_writer_failed: bool = False
-    optional_writer_failed: bool = False
-    writer_artifacts: list[Path] = field(default_factory=list)
-    mbox_mutation_detected: bool = False
-    linkedin_degraded: bool = False
-    reddit_degraded: bool = False
-    webpage_degraded: bool = False
-    webpage_queue_ingest: list[tuple[int, str]] = field(default_factory=list)
-    no_input_reason: str | None = None
-    messages_included: int = 0
-
-    # Compatibility alias used during rename migration in tests/helpers.
-    @property
-    def outputs_published(self) -> bool:
-        return self.dated_outputs_written
-
-    @outputs_published.setter
-    def outputs_published(self, value: bool) -> None:
-        self.dated_outputs_written = value
-
-
-@dataclass(frozen=True)
-class DigestRunResult:
-    status: RunStatus
-    exit_code: int
-    context: RunContext
-    report: DigestReport | None
-    stats: DigestStats | None
-    aggregated: AggregatedResults
-    md_path: Path | None = None
-    html_path: Path | None = None
-    manifest_path: Path | None = None
-    secondary_manifest_error: str | None = None
-    error_message: str | None = None
-
-
-def derive_run_status(
-    aggregated: AggregatedResults,
-    *,
-    dry_run: bool = False,
-    policy: DegradationPolicy = DEFAULT_DEGRADATION_POLICY,
-) -> RunStatus:
-    """Sole authority for run status. Maps to exit codes in status_to_exit_code."""
-    if dry_run and not aggregated.hard_failure:
-        return "dry_run"
-    if aggregated.hard_failure or not aggregated.usable_digest:
-        return "failure"
-
-    if policy.folder_open_failure_is_partial and aggregated.parse:
-        if aggregated.parse.counts.folders_failed > 0:
-            return "partial"
-
-    if aggregated.parse:
-        seen = aggregated.parse.counts.messages_seen
-        fatals = aggregated.parse.counts.parse_fatal_errors
-        if seen > 0:
-            rate = fatals / seen
-            threshold = min(
-                policy.parse_fatal_rate * seen,
-                float(policy.parse_fatal_absolute),
-            )
-            if fatals > threshold:
-                return "partial"
-        elif fatals > policy.parse_fatal_absolute:
-            return "partial"
-
-    if aggregated.llm_enabled and aggregated.summarize:
-        meta = aggregated.summarize.summary_metadata
-        if meta is not None:
-            total = (
-                meta.summaries_ollama
-                + meta.summaries_litellm
-                + meta.summaries_cache
-                + meta.summaries_fallback
-                + meta.summaries_errors
-            )
-            if total > 0 and (meta.summaries_errors / total) > policy.summary_error_rate:
-                return "partial"
-
-    if aggregated.final_review_failed:
-        return "partial"
-
-    if aggregated.publication_failed:
-        return "partial"
-
-    if aggregated.group_summaries_degraded:
-        return "partial"
-
-    if aggregated.seen_state_failed:
-        return "partial"
-
-    if aggregated.manifest_write_failed:
-        return "partial"
-
-    if aggregated.optional_writer_failed:
-        return "partial"
-
-    if aggregated.mbox_mutation_detected:
-        return "partial"
-
-    if aggregated.linkedin_degraded:
-        return "partial"
-
-    if aggregated.reddit_degraded:
-        return "partial"
-
-    if aggregated.webpage_degraded:
-        return "partial"
-
-    if aggregated.required_writer_failed:
-        return "failure"
-
-    # web_index_failed is secondary: does not alone force partial
-    return "success"
-
-
-def status_to_exit_code(status: RunStatus) -> int:
-    if status in ("success", "dry_run"):
-        return EXIT_SUCCESS
-    if status == "partial":
-        return EXIT_PARTIAL
-    return EXIT_FAILURE
-
-
-def evaluate_no_input(
-    *,
-    folders_include: tuple[str, ...],
-    discovery: DiscoveryResult,
-    parse: ParseResult,
-) -> str | None:
-    """Return a hard-failure reason when the run has no usable input, else None."""
-    has_mbox = bool(discovery.folders)
-    has_linkedin = bool(discovery.linkedin_searches)
-    has_reddit = bool(discovery.reddit_subs)
-    has_webpage = bool(discovery.webpage_items)
-
-    if folders_include and not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
-        return (
-            "No folders matched explicit include "
-            f"({', '.join(folders_include)}); refusing to publish"
-        )
-    if not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
-        return (
-            "No readable mbox folders, LinkedIn searches, Reddit subs, or webpage "
-            "queue items; refusing to publish"
-        )
-
-    if has_mbox:
-        if (
-            parse.counts.messages_parsed == 0
-            and parse.counts.messages_seen > 0
-            and parse.counts.parse_fatal_errors > 0
-        ):
-            return "All candidate messages failed parsing; refusing to publish"
-        if (
-            parse.counts.messages_parsed == 0
-            and parse.counts.folders_failed >= len(discovery.folders)
-        ):
-            return "No folders were readable; refusing to publish"
-
-    if not has_mbox and has_linkedin and parse.counts.messages_parsed == 0:
-        linkedin_failed = any(
-            w.code.startswith("linkedin_") and w.code != "linkedin_dry_run"
-            for w in parse.warnings
-        )
-        if linkedin_failed:
-            return (
-                "LinkedIn fetch failed and no other input sources; "
-                "refusing to publish"
-            )
-
-    if not has_mbox and not has_linkedin and has_webpage and parse.counts.messages_parsed == 0:
-        webpage_failed = any(
-            w.code.startswith("webpage_") and w.code != "webpage_dry_run"
-            for w in parse.warnings
-        )
-        if webpage_failed:
-            return (
-                "Webpage fetch failed and no other input sources; "
-                "refusing to publish"
-            )
-
-    if not has_mbox and not has_linkedin and not has_webpage and has_reddit and parse.counts.messages_parsed == 0:
-        reddit_failed = any(
-            w.code.startswith("reddit_") and w.code != "reddit_dry_run"
-            for w in parse.warnings
-        )
-        if reddit_failed:
-            return (
-                "Reddit fetch failed and no other input sources; "
-                "refusing to publish"
-            )
-
-    return None
+__all__ = (
+    "EXIT_FAILURE",
+    "EXIT_PARTIAL",
+    "EXIT_SUCCESS",
+    "AggregatedResults",
+    "DEFAULT_DEGRADATION_POLICY",
+    "DegradationPolicy",
+    "DigestRunResult",
+    "DiscoveryResult",
+    "FilterCounts",
+    "FilterResult",
+    "GroupingResult",
+    "ParseCounts",
+    "ParseResult",
+    "RenderResult",
+    "ReviewResult",
+    "StageError",
+    "StageWarning",
+    "SummarizeResult",
+    "derive_run_status",
+    "evaluate_no_input",
+    "merge_linkedin_parse",
+    "merge_reddit_parse",
+    "merge_webpage_parse",
+    "run_digest",
+    "stage_discover",
+    "stage_parse",
+    "stage_parse_linkedin",
+    "stage_parse_reddit",
+    "stage_parse_webpage",
+    "status_to_exit_code",
+)
 
 
 def stage_discover(

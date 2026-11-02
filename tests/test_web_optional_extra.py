@@ -8,10 +8,17 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "rollup"
 
 
 def test_core_modules_do_not_import_flask():
-    for name in ("pipeline.py", "doctor.py", "sources_cmd.py", "cli.py", "run_index.py"):
-        text = (ROOT / name).read_text(encoding="utf-8")
-        assert "import flask" not in text
-        assert "from flask" not in text
+    paths = [
+        ROOT / "doctor.py",
+        ROOT / "sources_cmd.py",
+        ROOT / "cli.py",
+        ROOT / "run_index.py",
+        *sorted((ROOT / "pipeline").glob("*.py")),
+    ]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "import flask" not in text, path.name
+        assert "from flask" not in text, path.name
 
 
 def test_web_cli_lazy_loads_flask():

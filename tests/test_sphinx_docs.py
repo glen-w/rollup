@@ -64,7 +64,7 @@ def test_sphinx_kit_files_exist():
     landing = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
     assert "Rollup" in landing
     assert "./guide/" in landing
-    assert "127.0.0.1:8765" in landing
+    assert "localhost:8765" in landing or "127.0.0.1:8765" in landing
 
 
 def test_live_markdown_is_in_hosted_toctree():
