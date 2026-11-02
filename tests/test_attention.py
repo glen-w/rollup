@@ -15,7 +15,7 @@ from rollup.attention.annotate import (
     sort_items_by_attention,
 )
 from rollup.attention.config import InterestConfig, parse_interest_config
-from rollup.attention.llm import parse_band_overrides
+from rollup.attention.llm import complete_band_overrides, parse_band_overrides
 from rollup.attention.score import AttentionSignals, score_entry
 from rollup.attention.stage import apply_attention
 from rollup.briefing import report_included_message_keys
@@ -163,6 +163,20 @@ def test_render_start_here_and_skip_class() -> None:
     assert "Start here" in html
     assert "safely-skip" in html
     assert high_relevance_entries(report)[0].classified.parsed.message_key == "k-h"
+
+
+def test_complete_band_overrides_fail_closed() -> None:
+    def boom(_prompt: str) -> str:
+        raise RuntimeError("provider down")
+
+    assert (
+        complete_band_overrides(
+            (_entry("k1", "Hello"),),
+            profile_text="hello",
+            complete=boom,
+        )
+        == {}
+    )
 
 
 def test_no_attention_complete_is_not_called() -> None:

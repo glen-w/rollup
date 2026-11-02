@@ -1,3 +1,3 @@
 """Rollup — local read-only Thunderbird newsletter digest."""
 
-__version__ = "0.9.6"
+__version__ = "0.10.0"

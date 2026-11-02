@@ -415,6 +415,12 @@ A **glance** (“this window at a glance”) is always built offline from Start 
 titles, coverage themes, and folder counts. `--briefing-synthesis` (requires
 `--ollama`) may replace it with an LLM narrative. Final-review stays editorial QA.
 
+Corpus **search** and grounded **Ask** sit outside the digest: `rollup search QUERY`
+and `GET /search?q=` are FTS over the reader-body cache (schema v17). `rollup ask`
+and `POST /ask` require `--ollama` / sticky `ollama` and may only answer from
+those hits. Source **suggestions** (`rollup sources suggest`, Quality/Registry
+cards) are live and never auto-applied.
+
 `detailed` unwraps `scholar.google.com/scholar_url?url=…`, rewrites `arxiv.org/pdf/…` to `/abs/…`, and skips raw PDFs (`scholar_pdf_skipped` — email title/authors/snippet only). Fetch failures fall back to the email snippet (`scholar_fetch_failed`) and do not fail the digest. Papers stay in the Thunderbird folder section, standalone, with `message_key` `scholar:paper:<sha256(url)>` and the parent Scholar `source_key`. They are **not** added to the Articles queue.
 
 ## Run profiles vs effort

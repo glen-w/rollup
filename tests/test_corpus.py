@@ -97,6 +97,26 @@ def test_search_ranks_matching_body(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_body_upsert_refreshes_fts(tmp_path: Path) -> None:
+    from rollup.reader_bodies import ReaderBodyWrite, compute_stored_body_hash
+    from rollup.reader_body_store import upsert_reader_bodies_v2
+
+    conn = init_db(tmp_path / "rollup.db")
+    body = "A dispatch about krypton practice"
+    write = ReaderBodyWrite(
+        message_key="mid:krypton@x",
+        content_hash="c" * 64,
+        body_text=body,
+        truncated=False,
+        stored_body_hash=compute_stored_body_hash(truncated=False, body_text=body),
+    )
+    upsert_reader_bodies_v2(conn, [write])
+    conn.commit()
+    hits = search_corpus(conn, "krypton")
+    assert hits and hits[0].message_key == "mid:krypton@x"
+    conn.close()
+
+
 def test_rebuild_from_bodies(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
     _insert_body(conn, "mid:body@x", "Cached body mentions zephyr")

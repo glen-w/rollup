@@ -4,12 +4,16 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+## 0.10.0 — 2026-11-02
+
 ### Added
 
 - Briefing-layer contracts (`AttentionBand`, coverage clusters, synthesis types) and [docs/design/briefing-arc.md](docs/design/briefing-arc.md).
 - **Attention / skip-safely:** `[interest].profile`, `--interest-file`, `--no-attention`, `--attention-report`. Heuristic ranking (interest prose + Quality + saved/dismissed + source priority) with optional LLM reband. Start here / safely skip chrome. Never drops included mail.
 - **Cross-source coverage:** URL/title clusters with “Covered N ways” chrome. `--coverage-report` / `--no-coverage`. Does not replace same-source grouping.
 - **Briefing synthesis:** offline glance plus opt-in `--briefing-synthesis` narrative.
+- **Corpus FTS + Ask** (schema **v17** `message_corpus_fts`): `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask` over cached reader bodies, titles, and summaries.
+- **Source intelligence:** `rollup sources suggest`; Quality and Registry suggestion cards; apply is existing `set_overrides` only.
 
 ## 0.9.6 — 2026-11-02
 
