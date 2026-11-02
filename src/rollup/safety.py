@@ -178,13 +178,21 @@ def validate_read_root(
     output_dir: Path,
     state_dir: Path,
     log_dir: Path,
+    *,
+    allow_missing_root: bool = False,
 ) -> list[str]:
-    """Validate read root; return warning messages."""
+    """Validate read root; return warning messages.
+
+    ``allow_missing_root`` tolerates a non-existent root (Gmail-only setups
+    with no local mbox tree); an existing non-directory root is still fatal.
+    """
     warnings: list[str] = []
     root = root.resolve()
     if not root.exists():
-        raise SafetyError(f"Newsletter root does not exist: {root}")
-    if not root.is_dir():
+        if not allow_missing_root:
+            raise SafetyError(f"Newsletter root does not exist: {root}")
+        warnings.append(f"Newsletter root does not exist (Gmail-only run): {root}")
+    elif not root.is_dir():
         raise SafetyError(f"Newsletter root is not a directory: {root}")
 
     validate_mail_root_relationship(root, mail_root)

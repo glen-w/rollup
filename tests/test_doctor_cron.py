@@ -68,6 +68,32 @@ def test_doctor_fast_ok(tmp_path: Path) -> None:
     sug = next(c for c in report.checks if c.id == "source_suggestions")
     assert sug.status == "info"
     assert sug.message.startswith("suggestions:")
+    lock = next(c for c in report.checks if c.id == "run_lock")
+    assert lock.status == "pass"
+
+
+def test_doctor_warns_on_live_lock(tmp_path: Path) -> None:
+    import json
+    import os
+
+    cfg = _config(tmp_path)
+    cfg.state_dir.mkdir(parents=True)
+    lock_path = cfg.state_dir / "rollup.lock"
+    lock_path.write_text(
+        json.dumps(
+            {
+                "pid": os.getpid(),
+                "run_id": "abc",
+                "operation": "digest",
+                "started_at": "2099-01-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = run_doctor(cfg, RunOptions(dry_run=True), full=False, network=False)
+    check = next(c for c in report.checks if c.id == "run_lock")
+    assert check.status == "warn"
+    assert "Digest lock held" in check.message
 
 
 def test_doctor_scholar_detailed_warns_without_ollama(tmp_path: Path) -> None:

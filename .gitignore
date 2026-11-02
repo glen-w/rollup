@@ -1,4 +1,6 @@
 /fixtures/
+# Local Thunderbird/Gmail mbox copies used for manual testing (real mail).
+/maildir-bridge/
 output/
 /state/
 logs/

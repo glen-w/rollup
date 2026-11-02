@@ -21,11 +21,19 @@ from rollup.state import (
 def test_fresh_db_schema_version(tmp_path: Path):
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 17
+    assert get_schema_version(conn) == SCHEMA_VERSION == 18
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()
     assert row is not None
+    gmail = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('gmail_messages', 'gmail_label_sync')"
+        )
+    }
+    assert gmail == {"gmail_messages", "gmail_label_sync"}
     conn.close()
 
 
@@ -71,6 +79,10 @@ def test_v8_to_v9_migration(tmp_path: Path):
 
     ensure_message_corpus_fts_v17(conn)
     assert get_schema_version(conn) == 17
+    from rollup.state import ensure_gmail_cache_v18
+
+    ensure_gmail_cache_v18(conn)
+    assert get_schema_version(conn) == 18
     cols = {
         row[1]
         for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
@@ -97,7 +109,7 @@ def test_repair_schema_version_without_reader_bodies_table(tmp_path: Path):
     conn.commit()
     conn.close()
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 17
+    assert get_schema_version(conn) == SCHEMA_VERSION == 18
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()

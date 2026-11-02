@@ -11,6 +11,7 @@ _LLM_RE = re.compile(r"(?:LLM|Ollama) \[(\d+)/(\d+)\] summarising: (.+)")
 _WRITER_RE = re.compile(r"Running output writer (\S+)")
 _STATS_RE = re.compile(r"Folders scanned: (\d+)")
 _REDDIT_FETCH_RE = re.compile(r"Fetching Reddit: (\d+) subs?")
+_GMAIL_FETCH_RE = re.compile(r"Gmail fetch (\d+)/(\d+) (.+)$")
 _REDDIT_SUB_RE = re.compile(
     r"Reddit \[(\d+)/(\d+)\] r/(\S+)(?: \((.+) remaining\))?"
 )
@@ -51,6 +52,8 @@ def parse_run_progress(
     reddit_current: int | None = None
     reddit_total: int | None = None
     saw_reddit_fetch = False
+    gmail_current: int | None = None
+    gmail_total: int | None = None
 
     for line in log_lines:
         match = _DIGEST_RE.search(line)
@@ -77,6 +80,11 @@ def parse_run_progress(
             saw_stats = True
         if "Archived" in line and "prior digest" in line:
             last_detail = "Archiving prior outputs"
+        match = _GMAIL_FETCH_RE.search(line)
+        if match:
+            gmail_current = int(match.group(1))
+            gmail_total = int(match.group(2))
+            last_detail = f"Gmail {match.group(3).strip()} ({gmail_current}/{gmail_total})"
         match = _REDDIT_FETCH_RE.search(line)
         if match:
             saw_reddit_fetch = True
@@ -110,6 +118,11 @@ def parse_run_progress(
         phase = "summarizing"
         label = "Summarising with LLM"
         percent = 40 + int(42 * llm_current / llm_total)
+    elif gmail_total:
+        # Gmail sync runs after Reddit/LinkedIn in the ingest order.
+        phase = "gmail"
+        label = "Syncing Gmail labels"
+        percent = 30 + int(10 * min(gmail_current or 0, gmail_total) / gmail_total)
     elif saw_reddit_fetch:
         phase = "reddit"
         label = "Fetching Reddit"

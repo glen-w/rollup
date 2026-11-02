@@ -57,7 +57,7 @@ These do not change without an explicit contract revision:
 
 ## Non-goals (through 1.0)
 
-- IMAP / Gmail API / Maildir backends (Gmail API is [post-1.0](ROADMAP.md))
+- IMAP / Maildir backends. (Gmail API ingest exists as an optional **read-only** backend — `gmail.readonly` scope, GET-only, never mutates labels or read state — feeding the same parser as mbox. It does not make Rollup a mail client.)
 - Thunderbird add-on (XPI)
 - Multi-user or non-loopback web UI
 - In-app digest scheduler (use [CRON.md](CRON.md) / launchd)
@@ -99,7 +99,7 @@ Publication is **staged + rename**, not a filesystem-wide atomic multi-file tran
 
 ### Writers
 
-Enabled writers are classified `required` or `optional` on `EffectiveRun`. Core Markdown/HTML are always required. Enabled add-on writers default to **required**. Optional writer failure yields partial (exit 2) after required publication succeeds.
+Enabled writers are classified `required` or `optional` (`OutputWriter.required`; default required). Core Markdown/HTML are always required. Destination writers (`opds`, `calibre`) are optional. Optional writer failure yields partial (exit 2) after required publication succeeds.
 
 ### Empty window vs no-input
 
@@ -107,7 +107,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **17** (FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **18** (Gmail label/message cache, FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
 
 ### Primary summary variant
 

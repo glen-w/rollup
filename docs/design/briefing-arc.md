@@ -1,8 +1,8 @@
 # Design note: briefing layers toward 1.0
 
-**Status:** contracts, attention, coverage, synthesis, corpus FTS/Ask, and
-source intelligence have landed. Remaining 1.0 work is destinations (OPDS /
-Kindle), not more briefing layers. Not a commitment calendar.
+**Status:** contracts, attention, coverage, synthesis, corpus FTS/Ask, source
+intelligence, and reading destinations (OPDS / Calibre drop) have landed.
+Send-to-Kindle remains a later writer plugin. Not a commitment calendar.
 
 Rollup reduces a collection window into a **bounded reading object**. These
 layers deepen that briefing. They do not add another stream to triage.
@@ -64,7 +64,7 @@ blocks. Reader bodies never appear in manifests.
 
 ## Non-goals (this arc)
 
-- OPDS / send-to-Kindle (roadmap 7)
+- Send-to-Kindle (optional network writer on the same seam)
 - RSS ingest, richer LinkedIn, Gmail API
 - Embeddings / vector DB
 - Auto-unsubscribe or mutating Thunderbird

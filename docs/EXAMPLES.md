@@ -518,6 +518,23 @@ python -m rollup digest --output epub --lookback-days 7
 
 Same run stem as the core digest with `.json` / `.txt` / `.epub` extensions. See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
 
+### OPDS and Calibre destinations
+
+OPDS writes `{stem}.atom.xml` for this briefing. While `rollup web` is running, e-readers can poll the loopback catalog:
+
+```bash
+python -m rollup digest --output opds --lookback-days 7
+curl -fsS http://127.0.0.1:8765/opds
+```
+
+Calibre copies finished artifacts into a watch / auto-add folder (no network). Skipped in default-all until `[calibre].drop_dir` or `--calibre-drop-dir` is set:
+
+```bash
+python -m rollup digest --output calibre --calibre-drop-dir ~/Calibre\ Library/auto-add --lookback-days 7
+```
+
+Both writers are **optional**: failure is `partial` (exit 2), not a hard stop. See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md) and [WEB.md](WEB.md).
+
 ### Custom profile sets
 
 Export built-in profiles, edit model names to match your local Ollama library, then run:

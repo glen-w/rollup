@@ -71,11 +71,14 @@ def archive_previous_outputs(
     output_dir: Path,
     *,
     db_path: Path | None = None,
+    keep_names: set[str] | None = None,
 ) -> list[Path]:
     """Move prior dated digests from ``output_dir`` into ``archive/``.
 
     Leaves ``latest.*``, branding assets, and anything already under ``archive/``
-    in place. When ``db_path`` is set, rewrites matching ``rollup_runs``
+    in place. ``keep_names`` (this run's dated artifacts) stay in the root so
+    callers can write the new batch first, then archive the previous one.
+    When ``db_path`` is set, rewrites matching ``rollup_runs``
     markdown/html relpaths to ``archive/<name>`` so the web index stays valid.
     """
     output_dir = Path(output_dir)
@@ -83,6 +86,7 @@ def archive_previous_outputs(
         return []
 
     dest_root = archive_dir(output_dir)
+    keep = keep_names or set()
     moved: list[Path] = []
     try:
         entries = list(output_dir.iterdir())
@@ -92,6 +96,8 @@ def archive_previous_outputs(
 
     for path in entries:
         if path.name == ARCHIVE_DIRNAME:
+            continue
+        if path.name in keep:
             continue
         if not is_archivable_output(path):
             continue

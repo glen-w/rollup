@@ -139,6 +139,42 @@ def _unlock_fd(fd: int) -> None:
         pass
 
 
+@dataclass(frozen=True)
+class LockInspection:
+    """Read-only view of ``rollup.lock`` for doctor / diagnostics."""
+
+    path: Path
+    pid: int | None
+    run_id: str | None
+    operation: str | None
+    started_at: str | None
+    pid_alive: bool
+    stale: bool
+
+
+def inspect_state_lock(
+    state_dir: Path,
+    *,
+    ttl_seconds: int = DEFAULT_LOCK_TTL_SECONDS,
+) -> LockInspection | None:
+    """Return lock metadata when ``rollup.lock`` exists, else None."""
+    lock_path = Path(state_dir) / LOCK_FILENAME
+    if not lock_path.exists():
+        return None
+    payload = _read_lock_payload(lock_path) or {}
+    pid = int(payload.get("pid") or 0)
+    alive = _pid_alive(pid)
+    return LockInspection(
+        path=lock_path,
+        pid=pid or None,
+        run_id=str(payload["run_id"]) if payload.get("run_id") else None,
+        operation=str(payload["operation"]) if payload.get("operation") else None,
+        started_at=str(payload["started_at"]) if payload.get("started_at") else None,
+        pid_alive=alive,
+        stale=_is_stale(payload, ttl_seconds=ttl_seconds),
+    )
+
+
 def acquire_state_lock(
     state_dir: Path,
     run_id: str,

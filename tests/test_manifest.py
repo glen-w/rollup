@@ -232,3 +232,36 @@ def test_manifest_builder_group_summaries_block(tmp_path: Path) -> None:
     b = config_fingerprint(config, opts, grouping)
     assert a == b
     assert len(a) == 64
+
+
+def test_manifest_builder_emits_degradations_and_events(tmp_path: Path) -> None:
+    config = _minimal_config(tmp_path)
+    (tmp_path / "root").mkdir()
+    (tmp_path / "mail").mkdir()
+    clock = FixedClock(datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc))
+    ctx = RunContext.create(mode="cron", clock=clock)
+    ctx.add_event("optional_writer_failed", "opds boom", level="warning")
+    builder = ManifestBuilder(
+        ctx,
+        config=config,
+        run_options=RunOptions(mode="cron", write_manifest=True),
+        grouping=GroupingConfig(enabled=False),
+        manifest_config=ManifestConfig(
+            manifest_dir=tmp_path / "state" / "manifests",
+            schema_version=MANIFEST_SCHEMA_VERSION,
+        ),
+        window_start=datetime(2026, 7, 3, tzinfo=timezone.utc),
+        window_end=datetime(2026, 7, 10, tzinfo=timezone.utc),
+    )
+    agg = AggregatedResults(
+        optional_writer_failed=True,
+        reddit_degraded=True,
+        usable_digest=True,
+    )
+    builder.finalize(status="partial", aggregated=agg)
+    path = builder.write_if_state_writable(update_latest=False)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["degradations"]["optional_writer_failed"] is True
+    assert payload["degradations"]["reddit_degraded"] is True
+    assert payload["lifecycle_events"][0]["code"] == "optional_writer_failed"
+    assert "body_text" not in payload

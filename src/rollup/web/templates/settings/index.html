@@ -179,6 +179,30 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
   </section>
 
   <section class="card-section">
+    <h2>Gmail</h2>
+    <p class="hint-badge ollama">network opt-in</p>
+    <p class="note">Read-only Gmail API ingest for people without a Thunderbird mbox tree. Labels become digest folders (<code>Newsletters/tech</code> → <code>tech</code> when the prefix is stripped). Authorise once with <code>rollup gmail auth</code>; the OAuth client id/secret live in <code>~/.config/rollup/env</code> and the token in <code>state_dir/gmail_token.json</code> — never in TOML. Rollup only requests <code>gmail.readonly</code> and never modifies labels or read state.</p>
+    {% if gmail_status %}
+    <p class="note">
+      Credentials: <strong>{{ 'set' if gmail_status.credentials_env else 'missing' }}</strong> ·
+      Token: <strong>{% if gmail_status.token_present %}{{ 'present' if gmail_status.token_scope_readonly is not sameas false else 'wrong scope' }}{% else %}missing{% endif %}</strong> ·
+      Cached: {{ gmail_status.cached_labels | length }} label(s), {{ gmail_status.cached_messages }} message(s)
+    </p>
+    {% endif %}
+    <label>
+      <input type="hidden" name="gmail_enabled" value="0">
+      <input type="checkbox" name="gmail_enabled" value="1" {% if gmail.enabled %}checked{% endif %}>
+      Enable Gmail ingest on digest runs
+    </label>
+    <label>Label prefix (take every label underneath, e.g. <code>Newsletters</code>)
+      <input type="text" name="gmail_label_prefix" value="{{ gmail.label_prefix or '' }}" placeholder="Newsletters">
+    </label>
+    <label>Explicit labels (comma-separated, e.g. <code>Newsletters/tech, Digests</code>)
+      <input type="text" name="gmail_labels" value="{{ gmail.labels | join(', ') }}" placeholder="Newsletters/tech, Newsletters/enviro">
+    </label>
+  </section>
+
+  <section class="card-section">
     <h2>Google Scholar</h2>
     <p class="hint-badge ollama">mail enrichment</p>
     <p class="note">Scholar alerts already in Thunderbird. <strong>Default</strong> treats them like other item-list mail (no extra network). <strong>Detailed</strong> fetches each paper’s landing page and summarises it (HTTPS at digest time; LLM summaries still need Enable LLM summaries). PDFs are skipped; arXiv PDF links are rewritten to abstract pages. Caps apply per email and per run.</p>

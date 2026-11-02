@@ -54,7 +54,7 @@ asserted in tests. The sticky key `profile` is resolved via `--profile` /
 | `output` | `--output` |
 | `profile` | `--profile` (not sticky→argv body) |
 
-`[linkedin]`, `[reddit]`, `[scholar]`, `[interest]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
+`[linkedin]`, `[reddit]`, `[scholar]`, `[calibre]`, `[interest]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
 separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled`
 still inject `--linkedin` / `--reddit` when neither enable nor disable flag is on
 the CLI. `[scholar].mode = "detailed"` (or `--scholar-mode detailed`) is mail
@@ -84,14 +84,20 @@ Markdown/HTML plus any writer artifacts). Prior batches are moved into
 
 ## Output writers
 
-By default every discovered writer runs (xteink, txt, json, epub, …). Restrict or
+By default every discovered writer runs (xteink, txt, json, epub, opds, …). Restrict or
 disable via CLI or sticky config:
 
 ```toml
 output = ["json", "txt"]   # subset
 # output = "none"          # Markdown/HTML only
 # output = "all"           # explicit default-all
+
+[calibre]
+drop_dir = "~/Calibre Library/auto-add"  # optional; skipped when unset
 ```
+
+`opds` is optional (partial on failure) and also served at loopback `GET /opds`.
+See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
 
 ## Folder themes
 
@@ -359,6 +365,50 @@ ROLLUP_REDDIT_PASSWORD=…
 - Message identity `reddit:t3:<id>`; source key `reddit:sub:<name>` (mute with `rollup sources disable reddit:sub:…`).
 - Fetch failure **partial** (exit 2) when mail still publishes; Reddit-only runs **hard-fail** (exit 1).
 - `--dry-run` and web **GET** never contact Reddit.
+
+## Gmail
+
+Optional **read-only Gmail API** ingest for people whose newsletters live in Gmail labels rather than a Thunderbird mbox tree. Gmail is a *mail backend*, not a side-source: each message is real RFC 822 mail fed through the same parser as mbox, so identity (`mid:` + Message-ID), `content_hash`, and `source_key` are identical whichever path a newsletter arrives by. If you run Thunderbird **and** Gmail ingest, duplicates collapse automatically.
+
+Labels become digest folders. With `label_prefix = "Newsletters"`, label `Newsletters/tech` becomes folder `tech` (the Gmail equivalent of a `Newsletters.sbd` tree). Folder themes, include/exclude, Quality, and the source registry work unchanged.
+
+```toml
+[gmail]
+enabled = true
+label_prefix = "Newsletters"        # take every label underneath; strip it from folder names
+# labels = ["Digests", "Work/Weekly"]  # and/or explicit labels
+# strip_prefix = "Newsletters"       # defaults to label_prefix
+fetch_ttl_hours = 6                  # reuse the label sync within this window; 0 = always sync
+max_messages_per_label = 200         # per run (max 1000)
+# extra_query = "-label:muted"       # appended to the Gmail search used for the window
+```
+
+### One-time authorisation
+
+Credentials never live in TOML. Create an OAuth client in Google Cloud (**APIs & Services → Credentials → OAuth client ID → Desktop app**, with the Gmail API enabled), then:
+
+```bash
+# ~/.config/rollup/env  (chmod 600; or ROLLUP_ENV_FILE)
+ROLLUP_GMAIL_CLIENT_ID=…apps.googleusercontent.com
+ROLLUP_GMAIL_CLIENT_SECRET=…
+
+rollup gmail auth              # opens a browser; loopback redirect on 127.0.0.1
+rollup gmail auth --manual     # SSH / containers: paste the redirect URL instead
+rollup gmail labels            # list labels; * marks the ones your config selects
+rollup gmail status            # offline: credentials, token, label cache
+```
+
+The only scope requested is `gmail.readonly`; the refresh token is written to `{state_dir}/gmail_token.json` (mode 600). `rollup doctor` reports a `gmail_auth` check when Gmail is enabled.
+
+### Behaviour
+
+- Enable: `[gmail].enabled = true` and/or `rollup digest --gmail`. `--no-gmail` turns it off for a run.
+- Sync per label: `messages.list` for the lookback window (`after:` padded by a day) then `messages.get?format=raw` **only for ids not already cached**. Raw mail is stored zlib-compressed in `rollup.db` (schema **v18**, `gmail_messages` / `gmail_label_sync`); payloads over 2 MB are skipped; raw rows older than 120 days are swept.
+- `fetch_ttl_hours` (default `6`) serves a label from cache without any API call; `--gmail-refresh` forces a sync. On failure a stale snapshot is reused (`gmail_cache_stale`), otherwise `gmail_fetch_failed` marks the run **partial** (exit 2). Gmail-only runs with nothing fetched hard-fail (exit 1).
+- A Gmail-only setup may have no local mbox root at all; `--root` is tolerated missing when Gmail is enabled and configured.
+- Rollup never modifies Gmail: no label changes, no read state, GET-only client.
+- `--dry-run` and web **GET** never contact Gmail; dry-run reports which labels would sync or be served from cache.
+- Settings page: enable, label prefix, explicit labels, plus an offline credentials/token/cache summary.
 
 ## Webpage articles (optional)
 

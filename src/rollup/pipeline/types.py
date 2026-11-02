@@ -20,6 +20,7 @@ from rollup.models import (
 from rollup.run_context import RunContext, RunStatus
 
 if TYPE_CHECKING:
+    from rollup.gmail.config import GmailTarget
     from rollup.linkedin.config import LinkedInSearch
     from rollup.reddit.config import RedditSub
     from rollup.webpage.models import WebpageQueueItem
@@ -69,6 +70,7 @@ class DiscoveryResult:
     linkedin_searches: tuple[LinkedInSearch, ...] = ()
     reddit_subs: tuple[RedditSub, ...] = ()
     webpage_items: tuple[WebpageQueueItem, ...] = ()
+    gmail_targets: tuple[GmailTarget, ...] = ()
     warnings: tuple[StageWarning, ...] = ()
 
 
@@ -185,6 +187,7 @@ class AggregatedResults:
     linkedin_degraded: bool = False
     reddit_degraded: bool = False
     webpage_degraded: bool = False
+    gmail_degraded: bool = False
     webpage_queue_ingest: list[tuple[int, str]] = field(default_factory=list)
     no_input_reason: str | None = None
     messages_included: int = 0

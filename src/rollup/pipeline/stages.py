@@ -17,12 +17,14 @@ from rollup.filter import (
 )
 from rollup.models import DigestEntry, DigestReport, DigestStats, DigestSummaryMetadata
 from rollup.pipeline.ingest import (
+    merge_gmail_parse,
     merge_linkedin_parse,
     merge_reddit_parse,
     merge_webpage_parse,
     stage_discover,
     stage_enrich_scholar,
     stage_parse,
+    stage_parse_gmail,
     stage_parse_linkedin,
     stage_parse_reddit,
     stage_parse_webpage,
@@ -308,12 +310,13 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     discovery = stage_discover(config, generated_at=generated_at)
     aggregated.discovery = discovery
     logger.info(
-        "Digest: root=%s folders=%d linkedin=%d reddit=%d webpage=%d lookback=%dd dry_run=%s no_ollama=%s",
+        "Digest: root=%s folders=%d linkedin=%d reddit=%d webpage=%d gmail=%d lookback=%dd dry_run=%s no_ollama=%s",
         config.root,
         len(discovery.folders),
         len(discovery.linkedin_searches),
         len(discovery.reddit_subs),
         len(discovery.webpage_items),
+        len(discovery.gmail_targets),
         config.lookback_days,
         run_options.dry_run,
         config.no_ollama,
@@ -386,6 +389,17 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     parse_result = merge_webpage_parse(parse_result, wp_messages, wp_warnings)
     aggregated.webpage_degraded = webpage_degraded
     aggregated.webpage_queue_ingest = wp_ingest
+    gmail_targets = discovery.gmail_targets if (
+        effective_run.allow_gmail_network or run_options.dry_run
+    ) else ()
+    gm_messages, gm_warnings, gmail_degraded = stage_parse_gmail(
+        config,
+        gmail_targets,
+        dry_run=run_options.dry_run,
+        generated_at=generated_at,
+    )
+    parse_result = merge_gmail_parse(parse_result, gm_messages, gm_warnings)
+    aggregated.gmail_degraded = gmail_degraded
     parse_result = stage_enrich_scholar(
         config,
         parse_result,

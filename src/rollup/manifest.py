@@ -82,6 +82,8 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "attention",
         "coverage",
         "briefing_synthesis",
+        "degradations",
+        "lifecycle_events",
     }
 )
 
@@ -103,6 +105,43 @@ COUNTS_ALLOWLIST = frozenset(
         "messages_always_surface_included",
     }
 )
+
+
+_DEGRADATION_ATTRS: tuple[str, ...] = (
+    "publication_failed",
+    "seen_state_failed",
+    "manifest_write_failed",
+    "web_index_failed",
+    "required_writer_failed",
+    "optional_writer_failed",
+    "mbox_mutation_detected",
+    "linkedin_degraded",
+    "reddit_degraded",
+    "webpage_degraded",
+    "gmail_degraded",
+    "final_review_failed",
+    "group_summaries_degraded",
+)
+
+_MAX_LIFECYCLE_EVENTS = 40
+_MAX_EVENT_MESSAGE = 240
+
+
+def _degradation_flags(agg: "AggregatedResults") -> dict[str, bool]:
+    return {name: True for name in _DEGRADATION_ATTRS if getattr(agg, name, False)}
+
+
+def _lifecycle_events(ctx: RunContext) -> list[dict[str, str]]:
+    events: list[dict[str, str]] = []
+    for event in ctx.events[:_MAX_LIFECYCLE_EVENTS]:
+        events.append(
+            {
+                "code": event.code,
+                "level": event.level,
+                "message": event.message[:_MAX_EVENT_MESSAGE],
+            }
+        )
+    return events
 
 
 class ManifestValidationError(ValueError):
@@ -517,6 +556,14 @@ class ManifestBuilder:
                 "cache_write_errors": agg.group_summary_cache_write_errors,
                 "error_counts": dict(agg.group_summary_error_counts),
             }
+
+        if agg is not None:
+            degradations = _degradation_flags(agg)
+            if degradations:
+                payload["degradations"] = degradations
+            events = _lifecycle_events(self.ctx)
+            if events:
+                payload["lifecycle_events"] = events
 
         return filter_allowlisted(payload)
 

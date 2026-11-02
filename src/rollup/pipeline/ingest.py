@@ -18,6 +18,8 @@ from rollup.pipeline.types import (
 )
 
 if TYPE_CHECKING:
+    from rollup.gmail.config import GmailTarget
+    from rollup.gmail.session import GmailClient
     from rollup.linkedin.config import LinkedInSearch
     from rollup.linkedin.fetch import LinkedInClient
     from rollup.webpage.models import WebpageQueueItem
@@ -33,7 +35,8 @@ def stage_discover(
     from rollup.webpage.config import MAX_WEBPAGE_FETCHES, WEBPAGE_FOLDER_NAME
     from rollup.webpage.queue import load_for_digest
 
-    folders = list(iter_mbox_files(config.root))
+    # A Gmail-only setup may have no local mbox root at all.
+    folders = list(iter_mbox_files(config.root)) if config.root.is_dir() else []
     folders = filter_folders(folders, config.folders_include, config.folders_exclude)
     linkedin_searches: tuple[LinkedInSearch, ...] = ()
     if config.linkedin_enabled and config.linkedin.searches:
@@ -78,11 +81,32 @@ def stage_discover(
                     )
                 finally:
                     conn.close()
+    gmail_targets: tuple[GmailTarget, ...] = ()
+    if config.gmail_enabled and config.gmail.configured:
+        from rollup.gmail.config import targets_from_config
+
+        known: dict[str, str] = {}
+        if config.db_path.is_file():
+            from rollup.gmail.cache import known_labels
+            from rollup.state import init_db
+
+            conn = init_db(config.db_path)
+            try:
+                known = known_labels(conn)
+            finally:
+                conn.close()
+        gmail_targets = targets_from_config(
+            config.gmail,
+            folders_include=config.folders_include,
+            folders_exclude=config.folders_exclude,
+            known_labels=known,
+        )
     return DiscoveryResult(
         folders=tuple(folders),
         linkedin_searches=linkedin_searches,
         reddit_subs=reddit_subs,
         webpage_items=webpage_items,
+        gmail_targets=gmail_targets,
     )
 
 
@@ -739,6 +763,191 @@ def merge_webpage_parse(
 ) -> ParseResult:
     """Combine prior parse results with webpage messages."""
     return merge_parse(parse_result, webpage_messages, webpage_warnings)
+
+
+def stage_parse_gmail(
+    config: Config,
+    targets: tuple["GmailTarget", ...],
+    *,
+    dry_run: bool,
+    generated_at: datetime | None = None,
+    client: "GmailClient | None" = None,
+) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
+    """Sync configured Gmail labels and map raw mail to ParsedMessage.
+
+    Returns ``(msgs, warnings, degraded)``. Labels served from a fresh cache
+    make no network calls; failures fall back to the stale cache when one
+    exists. Gmail is never written to (readonly scope, GET-only client).
+    """
+    if not targets:
+        return [], [], False
+
+    from rollup.error_sanitize import sanitize_provider_message
+    from rollup.gmail.cache import (
+        fetch_and_cache_gmail_targets,
+        get_label_snapshot,
+        load_raw_messages,
+        partition_gmail_targets,
+        sweep_old_messages,
+    )
+    from rollup.gmail.parse import raw_to_parsed_message
+    from rollup.gmail.session import (
+        CLIENT_ID_ENV,
+        CLIENT_SECRET_ENV,
+        build_gmail_client,
+        credentials_configured,
+        token_configured,
+    )
+    from rollup.state import init_db
+
+    warnings: list[StageWarning] = []
+    messages: list[ParsedMessage] = []
+    degraded = False
+    when = generated_at or datetime.now().astimezone()
+    window_start, _window_end = compute_date_window(when, config.lookback_days)
+    ttl_hours = config.gmail.fetch_ttl_hours
+    refresh = config.gmail_refresh
+    strip = config.gmail.effective_strip_prefix
+
+    def _emit(label_name: str, folder_name: str, raws: list) -> None:
+        for raw in raws:
+            try:
+                messages.append(
+                    raw_to_parsed_message(
+                        raw,
+                        folder_name=folder_name,
+                        label_name=label_name,
+                        max_body_chars=config.max_body_chars,
+                        max_display_links=config.max_display_links,
+                    )
+                )
+            except Exception as exc:  # one bad message must not sink the label
+                warnings.append(
+                    StageWarning(
+                        code="gmail_parse_error",
+                        message=f"{raw.gmail_id}: {exc}",
+                        folder=folder_name,
+                    )
+                )
+
+    conn = init_db(config.db_path)
+    try:
+        cached, to_fetch, cache_logs = partition_gmail_targets(
+            conn, targets, ttl_hours=ttl_hours, refresh=refresh, now=when
+        )
+        for line in cache_logs:
+            logger.info(line)
+        folder_for = {t.label_name: t.folder_name for t in targets}
+
+        if dry_run:
+            if client is None:
+                if not credentials_configured():
+                    warnings.append(
+                        StageWarning(
+                            code="gmail_no_credentials",
+                            message=(
+                                f"Gmail enabled but {CLIENT_ID_ENV}/{CLIENT_SECRET_ENV} "
+                                "are not set (dry-run; no fetch)"
+                            ),
+                        )
+                    )
+                    degraded = True
+                if not token_configured(config.state_dir):
+                    warnings.append(
+                        StageWarning(
+                            code="gmail_no_token",
+                            message="Gmail token missing; run `rollup gmail auth` (dry-run; no fetch)",
+                        )
+                    )
+                    degraded = True
+            for target in to_fetch:
+                what = f"labels under {target.label_name}/" if target.is_prefix else f"label {target.label_name}"
+                warnings.append(
+                    StageWarning(
+                        code="gmail_dry_run",
+                        message=f"Would sync Gmail {what}",
+                        folder=target.folder_name,
+                    )
+                )
+            for label_name, raws in cached.items():
+                warnings.append(
+                    StageWarning(
+                        code="gmail_dry_run",
+                        message=f"Would reuse cached Gmail label {label_name} ({len(raws)} msgs)",
+                        folder=folder_for.get(label_name),
+                    )
+                )
+            return messages, warnings, degraded
+
+        for label_name, raws in cached.items():
+            _emit(label_name, folder_for[label_name], raws)
+
+        if to_fetch:
+            gmail_client = client or build_gmail_client(config.state_dir)
+            fetched, folder_by_label, failures, _resolved = fetch_and_cache_gmail_targets(
+                conn,
+                tuple(to_fetch),
+                config=config.gmail,
+                client=gmail_client,
+                window_start=window_start,
+                fetched_at=when,
+                folders_include=config.folders_include,
+                folders_exclude=config.folders_exclude,
+            )
+            for label_name, raws in fetched.items():
+                _emit(label_name, folder_by_label.get(label_name, label_name), raws)
+            for label_name, error in failures:
+                degraded = True
+                folder_name = folder_by_label.get(label_name) or folder_for.get(label_name)
+                snapshot = get_label_snapshot(conn, label_name)
+                if snapshot is not None and snapshot.message_ids:
+                    stale = load_raw_messages(conn, snapshot.message_ids)
+                    from rollup.gmail.config import folder_name_for_label
+
+                    _emit(
+                        label_name,
+                        folder_name or folder_name_for_label(label_name, strip_prefix=strip),
+                        stale,
+                    )
+                    warnings.append(
+                        StageWarning(
+                            code="gmail_cache_stale",
+                            message=(
+                                f"Using stale Gmail cache for {label_name}: "
+                                f"{sanitize_provider_message(error)}"
+                            ),
+                            folder=folder_name,
+                        )
+                    )
+                else:
+                    warnings.append(
+                        StageWarning(
+                            code="gmail_fetch_failed",
+                            message=f"{label_name}: {sanitize_provider_message(error)}",
+                            folder=folder_name,
+                        )
+                    )
+                    logger.warning(
+                        "Gmail fetch failed for %s: %s",
+                        label_name,
+                        sanitize_provider_message(error),
+                    )
+            swept = sweep_old_messages(conn, now=when)
+            if swept:
+                logger.info("Gmail cache: swept %d old raw message(s)", swept)
+    finally:
+        conn.close()
+
+    return messages, warnings, degraded
+
+
+def merge_gmail_parse(
+    parse_result: ParseResult,
+    gmail_messages: list[ParsedMessage],
+    gmail_warnings: list[StageWarning],
+) -> ParseResult:
+    """Combine prior parse results with Gmail messages."""
+    return merge_parse(parse_result, gmail_messages, gmail_warnings)
 
 
 stage_parse = stage_parse_mbox

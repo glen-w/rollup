@@ -62,6 +62,35 @@ def test_archive_moves_prior_batch_keeps_latest_and_branding(tmp_path: Path) -> 
     assert (tmp_path / "notes.txt").is_file()
 
 
+def test_archive_does_not_keep_same_second_other_run(tmp_path: Path) -> None:
+    """Two runs in the same UTC second must not keep each other's dated files."""
+    older = tmp_path / "2026-08-04T120000Z-aaaaaaaa-newsletter-digest.md"
+    current = tmp_path / "2026-08-04T120000Z-bbbbbbbb-newsletter-digest.md"
+    sidecar = tmp_path / "2026-08-04T120000Z-bbbbbbbb-newsletter-digest.final-review.json"
+    older.write_text("# old", encoding="utf-8")
+    current.write_text("# new", encoding="utf-8")
+    sidecar.write_text("{}", encoding="utf-8")
+    moved = archive_previous_outputs(
+        tmp_path, keep_names={current.name, sidecar.name}
+    )
+    assert older.name in {p.name for p in moved}
+    assert current.is_file()
+    assert sidecar.is_file()
+    assert not older.exists()
+
+
+def test_archive_keeps_named_current_batch(tmp_path: Path) -> None:
+    old = tmp_path / "2026-08-01T100000Z-aaaaaaaa-newsletter-digest.md"
+    current = tmp_path / "2026-08-04T120000Z-bbbbbbbb-newsletter-digest.md"
+    old.write_text("# old", encoding="utf-8")
+    current.write_text("# new", encoding="utf-8")
+    moved = archive_previous_outputs(tmp_path, keep_names={current.name})
+    assert len(moved) == 1
+    assert (tmp_path / ARCHIVE_DIRNAME / old.name).is_file()
+    assert current.is_file()
+    assert current.read_text(encoding="utf-8") == "# new"
+
+
 def test_archive_empty_when_nothing_to_move(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     (tmp_path / LATEST_MD).write_text("x", encoding="utf-8")

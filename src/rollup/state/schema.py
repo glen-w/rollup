@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -523,6 +523,27 @@ CREATE VIRTUAL TABLE IF NOT EXISTS message_corpus_fts USING fts5(
 )
 """
 
+GMAIL_CACHE_V18 = """
+CREATE TABLE IF NOT EXISTS gmail_messages (
+    gmail_id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL DEFAULT '',
+    label_ids_json TEXT NOT NULL DEFAULT '[]',
+    internal_date TEXT,
+    raw_zlib BLOB NOT NULL,
+    raw_bytes INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gmail_messages_fetched
+    ON gmail_messages(fetched_at);
+CREATE TABLE IF NOT EXISTS gmail_label_sync (
+    label_name TEXT PRIMARY KEY,
+    label_id TEXT NOT NULL,
+    history_id TEXT,
+    fetched_at TEXT NOT NULL,
+    message_ids_json TEXT NOT NULL DEFAULT '[]'
+);
+"""
+
 _V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fetched_title", "TEXT"),
     ("body_text", "TEXT"),
@@ -570,6 +591,8 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "linkedin_article_bodies",
         "scholar_paper_bodies",
         "message_corpus_fts",
+        "gmail_messages",
+        "gmail_label_sync",
     }
 )
 

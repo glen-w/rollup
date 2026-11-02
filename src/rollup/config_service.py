@@ -19,6 +19,8 @@ from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
 from rollup.reddit.config import RedditConfig, RedditSub
 from rollup.attention.config import InterestConfig
+from rollup.addons.calibre.config import CalibreConfig
+from rollup.gmail.config import GmailConfig
 from rollup.scholar.config import ScholarConfig
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
@@ -83,7 +85,9 @@ class EffectiveConfigView:
     effort_overrides: dict[str, EffortModelOverride] = field(default_factory=dict)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    gmail: GmailConfig = field(default_factory=GmailConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    calibre: CalibreConfig = field(default_factory=CalibreConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
 
 
@@ -100,7 +104,9 @@ class ConfigPatch:
     effort_overrides: dict[str, EffortModelOverride] | None = None
     linkedin: LinkedInConfig | None = None
     reddit: RedditConfig | None = None
+    gmail: GmailConfig | None = None
     scholar: ScholarConfig | None = None
+    calibre: CalibreConfig | None = None
     interest: InterestConfig | None = None
 
 
@@ -188,7 +194,9 @@ def resolve_effective(
         effort_overrides=dict(loaded.efforts),
         linkedin=loaded.linkedin,
         reddit=loaded.reddit,
+        gmail=loaded.gmail,
         scholar=loaded.scholar,
+        calibre=loaded.calibre,
         interest=loaded.interest,
     )
 
@@ -259,8 +267,14 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 "reddit": _reddit_to_raw(
                     patch.reddit if patch.reddit is not None else base.reddit
                 ),
+                "gmail": _gmail_to_raw(
+                    patch.gmail if patch.gmail is not None else base.gmail
+                ),
                 "scholar": _scholar_to_raw(
                     patch.scholar if patch.scholar is not None else base.scholar
+                ),
+                "calibre": _calibre_to_raw(
+                    patch.calibre if patch.calibre is not None else base.calibre
                 ),
                 "interest": _interest_to_raw(
                     patch.interest if patch.interest is not None else base.interest
@@ -356,6 +370,39 @@ def _reddit_to_raw(reddit: RedditConfig) -> dict[str, Any]:
     return body
 
 
+def _calibre_to_raw(calibre: CalibreConfig) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if calibre.drop_dir is not None:
+        payload["drop_dir"] = str(calibre.drop_dir)
+    return payload
+
+
+def _gmail_summary(gmail: GmailConfig) -> str:
+    bits = ["on" if gmail.enabled else "off"]
+    if gmail.label_prefix:
+        bits.append(f"prefix={gmail.label_prefix}")
+    if gmail.labels:
+        bits.append("labels=" + ",".join(gmail.labels))
+    return " ".join(bits)
+
+
+def _gmail_to_raw(gmail: GmailConfig) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "enabled": gmail.enabled,
+        "fetch_ttl_hours": gmail.fetch_ttl_hours,
+        "max_messages_per_label": gmail.max_messages_per_label,
+    }
+    if gmail.labels:
+        body["labels"] = list(gmail.labels)
+    if gmail.label_prefix:
+        body["label_prefix"] = gmail.label_prefix
+    if gmail.strip_prefix is not None:
+        body["strip_prefix"] = gmail.strip_prefix
+    if gmail.extra_query:
+        body["extra_query"] = gmail.extra_query
+    return body
+
+
 def _scholar_to_raw(scholar: ScholarConfig) -> dict[str, Any]:
     return {
         "mode": scholar.mode,
@@ -407,6 +454,14 @@ def effective_diff(
             new = _fmt(after.sticky.get(key))
         if old != new:
             rows.append((key, old, new))
+    if before.gmail != after.gmail:
+        rows.append(
+            (
+                "gmail",
+                _gmail_summary(before.gmail),
+                _gmail_summary(after.gmail),
+            )
+        )
     if before.scholar.mode != after.scholar.mode:
         rows.append(("scholar.mode", before.scholar.mode, after.scholar.mode))
     if before.scholar.max_papers_per_email != after.scholar.max_papers_per_email:
@@ -668,12 +723,25 @@ def _apply_patch_to_doc(
                 subs_table[name] = row
             reddit_table["subs"] = subs_table
         doc["reddit"] = reddit_table
+    if patch.gmail is not None:
+        gmail_table = tomlkit.table()
+        for key, value in _gmail_to_raw(patch.gmail).items():
+            gmail_table[key] = value
+        doc["gmail"] = gmail_table
     if patch.scholar is not None:
         scholar_table = tomlkit.table()
         scholar_table["mode"] = patch.scholar.mode
         scholar_table["max_papers_per_email"] = patch.scholar.max_papers_per_email
         scholar_table["max_fetches_per_run"] = patch.scholar.max_fetches_per_run
         doc["scholar"] = scholar_table
+    if patch.calibre is not None:
+        calibre_table = tomlkit.table()
+        if patch.calibre.drop_dir is not None:
+            calibre_table["drop_dir"] = str(patch.calibre.drop_dir)
+        if calibre_table:
+            doc["calibre"] = calibre_table
+        elif "calibre" in doc:
+            del doc["calibre"]
     if patch.interest is not None:
         interest_table = tomlkit.table()
         interest_table["profile"] = patch.interest.profile
@@ -751,7 +819,9 @@ def patch_from_form_values(
     effort_overrides: dict[str, EffortModelOverride] | None = None,
     linkedin: LinkedInConfig | None = None,
     reddit: RedditConfig | None = None,
+    gmail: GmailConfig | None = None,
     scholar: ScholarConfig | None = None,
+    calibre: CalibreConfig | None = None,
     interest: InterestConfig | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
@@ -810,7 +880,9 @@ def patch_from_form_values(
         effort_overrides=effort_overrides,
         linkedin=linkedin,
         reddit=reddit,
+        gmail=gmail,
         scholar=scholar,
+        calibre=calibre,
         interest=interest,
     )
 
@@ -840,6 +912,8 @@ def build_digest_argv(
         argv.append("--reddit")
     else:
         argv.append("--no-reddit")
+    if effective.gmail.enabled:
+        argv.append("--gmail")
     if effective.scholar.mode == "detailed":
         argv.extend(["--scholar-mode", "detailed"])
     if dry_run:

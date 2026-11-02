@@ -31,7 +31,9 @@ from rollup.effort import (
     resolve_profile_set,
 )
 from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
+from rollup.gmail.config import GmailConfig
 from rollup.reddit.config import RedditConfig
+from rollup.addons.calibre.config import CalibreConfig
 from rollup.scholar.config import SCHOLAR_MODES, ScholarConfig
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
@@ -121,6 +123,18 @@ def _resolve_reddit_config(args: argparse.Namespace):
     return getattr(loaded, "reddit", None) or RedditConfig()
 
 
+def _resolve_no_gmail(args: argparse.Namespace) -> bool:
+    """Default is no Gmail unless --gmail is passed (or [gmail].enabled)."""
+    if getattr(args, "gmail", False):
+        return False
+    return True
+
+
+def _resolve_gmail_config(args: argparse.Namespace) -> GmailConfig:
+    loaded = getattr(args, "_loaded_user_config", None)
+    return getattr(loaded, "gmail", None) or GmailConfig()
+
+
 def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
     loaded = getattr(args, "_loaded_user_config", None)
     linkedin = getattr(loaded, "linkedin", None) or LinkedInConfig()
@@ -155,6 +169,17 @@ def _resolve_scholar_config(args: argparse.Namespace) -> ScholarConfig:
 
         return replace(scholar, mode=mode)
     return scholar
+
+
+def _resolve_calibre_config(args: argparse.Namespace) -> CalibreConfig:
+    loaded = getattr(args, "_loaded_user_config", None)
+    calibre = getattr(loaded, "calibre", None) or CalibreConfig()
+    raw = getattr(args, "calibre_drop_dir", None)
+    if isinstance(raw, str) and raw.strip():
+        from dataclasses import replace
+
+        return replace(calibre, drop_dir=Path(raw.strip()).expanduser())
+    return calibre
 
 
 def _ignored_ollama_flag_warnings(config: Config) -> list[str]:
@@ -327,7 +352,10 @@ def _build_config(
         no_webpage=_resolve_no_webpage(args),
         no_reddit=_resolve_no_reddit(args),
         reddit=_resolve_reddit_config(args),
+        no_gmail=_resolve_no_gmail(args),
+        gmail=_resolve_gmail_config(args),
         scholar=_resolve_scholar_config(args),
+        calibre=_resolve_calibre_config(args),
         interest=_resolve_interest_config(args),
         no_attention=getattr(args, "no_attention", False),
         attention_report=getattr(args, "attention_report", False),
@@ -336,6 +364,7 @@ def _build_config(
         briefing_synthesis=getattr(args, "briefing_synthesis", False),
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
+        gmail_refresh=getattr(args, "gmail_refresh", False),
     )
 
 
@@ -380,6 +409,10 @@ def _apply_loaded_config(
         if loaded.reddit.enabled:
             args.reddit = True
             args.no_reddit = False
+    if not flag_present(argv, "--gmail") and not flag_present(argv, "--no-gmail"):
+        if loaded.gmail.enabled:
+            args.gmail = True
+            args.no_gmail = False
     return profile.name
 
 
@@ -547,6 +580,7 @@ def _validate_config(
         config.output_dir,
         config.state_dir,
         config.log_dir,
+        allow_missing_root=config.gmail_enabled and config.gmail.configured,
     )
     writable = [
         config.output_dir,
@@ -908,6 +942,12 @@ def cmd_digest(args: argparse.Namespace) -> int:
             f"ERROR: {_store_failure_line(result.error_message)}",
             file=sys.stderr,
         )
+    if result.exit_code == 2:
+        from rollup.pipeline.status import format_partial_reasons
+
+        reasons = format_partial_reasons(result.aggregated)
+        if reasons:
+            print(f"partial: {reasons}", file=sys.stderr)
     if (
         result.exit_code == 0
         and not run_options.dry_run
@@ -1030,7 +1070,7 @@ def main(argv: list[str] | None = None) -> None:
     args._loaded_user_config = loaded  # noqa: SLF001
 
     try:
-        if args.command in {"digest", "inventory", "doctor", "config", "search", "ask"}:
+        if args.command in {"digest", "inventory", "doctor", "config", "search", "ask", "gmail"}:
             _apply_loaded_config(args, loaded, raw)
             _apply_path_discovery(args, loaded, raw)
         elif args.command == "cron":
@@ -1070,6 +1110,10 @@ def main(argv: list[str] | None = None) -> None:
         from rollup.bodies_cmd import cmd_bodies
 
         sys.exit(cmd_bodies(args))
+    elif args.command == "gmail":
+        from rollup.gmail.cli import cmd_gmail
+
+        sys.exit(cmd_gmail(args))
     elif args.command == "search":
         from rollup.corpus_cmd import cmd_search
 

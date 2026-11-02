@@ -7,6 +7,8 @@ from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rollup.addons.calibre.config import CalibreConfig
+from rollup.gmail.config import GmailConfig
 from rollup.linkedin.config import LinkedInConfig
 from rollup.reddit.config import RedditConfig
 from rollup.attention.config import InterestConfig
@@ -99,7 +101,10 @@ class Config:
     no_webpage: bool = False
     no_reddit: bool = True
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    no_gmail: bool = True
+    gmail: GmailConfig = field(default_factory=GmailConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    calibre: CalibreConfig = field(default_factory=CalibreConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
     no_attention: bool = False
     attention_report: bool = False
@@ -108,6 +113,7 @@ class Config:
     briefing_synthesis: bool = False
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
+    gmail_refresh: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -132,6 +138,11 @@ class Config:
     def reddit_enabled(self) -> bool:
         """True when Reddit fetch is enabled (--reddit / [reddit].enabled)."""
         return not self.no_reddit
+
+    @property
+    def gmail_enabled(self) -> bool:
+        """True when Gmail API ingest is enabled (--gmail / [gmail].enabled)."""
+        return not self.no_gmail
 
 
 def compute_date_window(

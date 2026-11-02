@@ -205,9 +205,11 @@ def create_app(
     from rollup.web.routes.reddit import bp as reddit_bp
     from rollup.web.routes.linkedin import bp as linkedin_bp
     from rollup.web.routes.search import bp as search_bp
+    from rollup.web.routes.opds import bp as opds_bp
 
     app.register_blueprint(rollups_bp)
     app.register_blueprint(search_bp)
+    app.register_blueprint(opds_bp)
     app.register_blueprint(sources_bp)
     app.register_blueprint(messages_bp)
     app.register_blueprint(artifacts_bp)

@@ -4,6 +4,20 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **OPDS destination:** `opds` writer writes `{stem}.atom.xml` for the finished briefing; loopback `GET /opds` lists recent published rollups for e-readers. Not a read-later library.
+- **Calibre drop folder:** `[calibre].drop_dir` / `--calibre-drop-dir` copies EPUB/HTML/Markdown/Atom into a watch directory (no network). Optional writer.
+- Optional vs required output writers: destination writers degrade to exit 2; core addons still block publication.
+- Manifest `degradations` and `lifecycle_events`; CLI prints `partial: …` on exit 2.
+- `rollup doctor` checks `rollup.lock` and an optional Calibre drop directory.
+- **Gmail read-only ingest** (schema **v18**: `gmail_messages`, `gmail_label_sync`): `[gmail]` with `labels` / `label_prefix` / `strip_prefix` / `fetch_ttl_hours` / `max_messages_per_label`; `--gmail` / `--no-gmail` / `--gmail-refresh`; `rollup gmail auth` (loopback OAuth, PKCE, `gmail.readonly` only, token in `state_dir/gmail_token.json`), `rollup gmail labels`, `rollup gmail status`. Labels map to folders and raw RFC 822 mail runs through the existing parser, so identity matches mbox. Cached per label with TTL and stale fallback (`gmail_cache_stale` / `gmail_fetch_failed` → partial). Doctor `gmail_auth` check; Settings Gmail card; Run Studio `gmail` phase. A Gmail-only setup may run without a local mbox root.
+
+### Changed
+
+- Dated digest files are written **before** prior batches move to `archive/`, so a crash mid-publish cannot empty the output root.
+- Pipeline exit constants are imported from `rollup.run_contracts`.
+
 ## 0.10.0 — 2026-11-02
 
 ### Added

@@ -6,6 +6,7 @@ import sqlite3
 
 from rollup.state.schema import *  # noqa: F403
 from rollup.state.schema import (  # noqa: F401
+    GMAIL_CACHE_V18,
     MESSAGE_CORPUS_FTS_V17,
     _SUMMARIES_COMPOSITE_PK,
     _SUMMARY_GENERATIONS_INPUT_HASH_PK,
@@ -777,6 +778,32 @@ def ensure_message_corpus_fts_v17(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_gmail_cache_v18(conn: sqlite3.Connection) -> None:
+    """Schema v18: cached raw Gmail messages and per-label sync snapshots."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    required = {"gmail_messages", "gmail_label_sync"}
+    if ver >= 18 and required.issubset(_existing_tables(conn)):
+        return
+    if ver < 17:
+        ensure_message_corpus_fts_v17(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, GMAIL_CACHE_V18)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after gmail cache v18: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 18)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -792,6 +819,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_source_fetch_cache_v15(conn)
     ensure_scholar_paper_bodies_v16(conn)
     ensure_message_corpus_fts_v17(conn)
+    ensure_gmail_cache_v18(conn)
     validate_canonical_schema(conn)
 
 

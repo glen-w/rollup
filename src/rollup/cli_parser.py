@@ -217,6 +217,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force fresh LinkedIn fetch (bypass listing cache for this run)",
     )
+    gmail_group = dig.add_mutually_exclusive_group()
+    gmail_group.add_argument(
+        "--gmail",
+        action="store_true",
+        help="Enable Gmail API ingest of configured labels (read-only OAuth; see `rollup gmail auth`)",
+    )
+    gmail_group.add_argument(
+        "--no-gmail",
+        action="store_true",
+        help="Disable Gmail ingest (default when neither flag is passed)",
+    )
+    dig.add_argument(
+        "--gmail-refresh",
+        action="store_true",
+        help="Force fresh Gmail label sync (bypass label cache for this run)",
+    )
     dig.add_argument(
         "--scholar-mode",
         choices=("default", "detailed"),
@@ -538,6 +554,35 @@ def build_parser() -> argparse.ArgumentParser:
     from rollup.web.cli_web import register_web_parser
 
     register_web_parser(sub)
+
+    gm = sub.add_parser(
+        "gmail",
+        help="Gmail API ingest: authorise (read-only), list labels, show cache status",
+    )
+    gm_sub = gm.add_subparsers(dest="gmail_command", required=True)
+    gm_auth = gm_sub.add_parser(
+        "auth",
+        help="Authorise Rollup for gmail.readonly via loopback OAuth; token → state_dir",
+    )
+    _add_common_args(gm_auth)
+    gm_auth.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Print the authorisation URL instead of opening a browser",
+    )
+    gm_auth.add_argument(
+        "--manual",
+        action="store_true",
+        help="Paste the redirect URL instead of using a loopback listener (SSH/containers)",
+    )
+    gm_labels = gm_sub.add_parser("labels", help="List Gmail labels (network)")
+    _add_common_args(gm_labels)
+    gm_labels.add_argument("--json", action="store_true", help="Emit JSON")
+    gm_status = gm_sub.add_parser(
+        "status", help="Show Gmail credentials, token, and label cache state (no network)"
+    )
+    _add_common_args(gm_status)
+    gm_status.add_argument("--json", action="store_true", help="Emit JSON")
 
     cfg = sub.add_parser(
         "config",

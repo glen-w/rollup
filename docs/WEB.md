@@ -16,6 +16,7 @@ Local, single-user browser UI for browsing digests, rating emails, reviewing new
 | `/sources` | Quality ranking |
 | `/sources/registry` | Source policy / aliases |
 | `/admin` | Read-only health + body maintenance |
+| `/opds` | OPDS 1.2 catalog of published briefings (e-readers; loopback) |
 
 ## Install / start
 

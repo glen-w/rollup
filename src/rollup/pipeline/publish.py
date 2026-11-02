@@ -48,10 +48,8 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
             aggregated=aggregated,
         )
 
-    # Keep only the new batch in output_dir root; prior digests → archive/.
-    from rollup.output_archive import archive_previous_outputs
-
-    archive_previous_outputs(config.output_dir, db_path=config.db_path)
+    # Write the new batch first; archive the previous one after artifacts land
+    # so a crash mid-write cannot leave the output root empty.
 
     # Write outputs (variants or default).
     rendered_variants = summarize_result.rendered_variants
@@ -109,6 +107,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                 allow_network=session.effective_run.allow_final_review_network,
                 dry_run=run_options.dry_run,
                 quiet=run_options.quiet,
+                run_id_short=ctx.run_id_short,
             )
             stem = digest_output_stem(
                 generated_at, variant_name, run_id_short=ctx.run_id_short
@@ -158,6 +157,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
             allow_network=session.effective_run.allow_final_review_network,
             dry_run=run_options.dry_run,
             quiet=run_options.quiet,
+            run_id_short=ctx.run_id_short,
         )
         md = render_markdown(
             report,
@@ -209,7 +209,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
         )
 
         try:
-            written = run_enabled_writers(
+            batch = run_enabled_writers(
                 session.output_writers,
                 session.report,
                 WriteContext(
@@ -220,11 +220,22 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                     run_id_short=ctx.run_id_short,
                     logger=logger,
                     folder_themes=config.folder_themes or None,
+                    config=config,
                 ),
                 args=session.writer_cli_args,
                 config=config,
             )
-            aggregated.writer_artifacts.extend(written)
+            aggregated.writer_artifacts.extend(batch.written)
+            if batch.optional_failures:
+                aggregated.optional_writer_failed = True
+                for writer_name, writer_err in batch.optional_failures:
+                    logger.warning("Optional output writer failed: %s", writer_err)
+                    ctx.add_event(
+                        "optional_writer_failed",
+                        writer_err,
+                        level="warning",
+                        writer=writer_name,
+                    )
         except OutputWriterError as writer_exc:
             aggregated.required_writer_failed = True
             aggregated.hard_failure = True
@@ -233,6 +244,7 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
             logger.error("Required output writer failed: %s", writer_exc)
             ctx.add_event("required_writer_failed", str(writer_exc), level="error")
             session.status = "failure"
+            _archive_keeping_current(session)
             if session.manifest_builder is not None:
                 try:
                     session.manifest_builder.record_failure(writer_exc)
@@ -242,6 +254,8 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                 except Exception:
                     pass
             return _failure_result(session)
+
+    _archive_keeping_current(session)
 
     # Publish latest outputs transactionally when requested.
     # Dated digests are the durable source of truth; latest failure still
@@ -420,6 +434,44 @@ def _index_web_run(session: _DigestSession) -> None:
             )
 
 
+def _archive_keeping_current(session: _DigestSession) -> None:
+    """Move prior dated artifacts out of the output root; keep this run's files."""
+    from rollup.output_archive import archive_previous_outputs
+    from rollup.render import digest_output_stem
+
+    keep: set[str] = set()
+    stems: set[str] = {
+        digest_output_stem(
+            session.generated_at, run_id_short=session.ctx.run_id_short
+        ),
+    }
+    for render in session.aggregated.renders:
+        if render.output_stem:
+            stems.add(render.output_stem)
+        if render.md_path is not None:
+            keep.add(render.md_path.name)
+        if render.html_path is not None:
+            keep.add(render.html_path.name)
+    if session.md_path is not None:
+        keep.add(session.md_path.name)
+    if session.html_path is not None:
+        keep.add(session.html_path.name)
+    for path in session.aggregated.writer_artifacts:
+        keep.add(path.name)
+
+    output_dir = session.config.output_dir
+    if output_dir.is_dir():
+        for candidate in output_dir.iterdir():
+            if any(candidate.name.startswith(stem) for stem in stems):
+                keep.add(candidate.name)
+
+    archive_previous_outputs(
+        output_dir,
+        db_path=session.config.db_path,
+        keep_names=keep,
+    )
+
+
 def _write_digest_outputs(
     output_dir: Path,
     generated_at: datetime,
@@ -455,6 +507,7 @@ def _maybe_final_review(
     allow_network: bool | None = None,
     dry_run: bool = False,
     quiet: bool = True,
+    run_id_short: str | None = None,
 ) -> DigestReport:
     allowed = (
         allow_network
@@ -469,7 +522,9 @@ def _maybe_final_review(
         write_final_review_report,
     )
 
-    stem = digest_output_stem(generated_at, variant_name)
+    stem = digest_output_stem(
+        generated_at, variant_name, run_id_short=run_id_short
+    )
 
     if use_explicit_path and config.final_review_report_path:
         report_path = config.final_review_report_path

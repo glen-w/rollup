@@ -38,17 +38,21 @@ material at digest time; Rollup takes a window and produces the rollup.
    dismissed, overlapping coverage, consider lowering priority, mostly
    duplicate. `rollup sources suggest`; Quality and Registry cards. Apply is
    existing `set_overrides` only. Never auto-unsubscribe or mutate Thunderbird.
-7. **Reading destinations.** The writer seam is already the right extension
-   point. OPDS for e-readers; then optional send-to-Kindle / Calibre-style
-   delivery as plugins. Reinforces “produce something worth reading away from
-   the computer” rather than another infinite-scroll app.
+7. **Reading destinations.** **Shipped.** OPDS acquisition feed (`--output opds`,
+   `GET /opds`) and Calibre drop-folder (`[calibre].drop_dir` /
+   `--calibre-drop-dir`). Optional writers: failure is partial. Send-to-Kindle
+   remains a later plugin on the same seam.
 
 **Then 1.0.**
 
-**After 1.0 — Gmail ingestion.** Optional Gmail API (OAuth) as a read-only
-alternative to local mbox, aligned with the [product contract](CONTRACT.md).
-Thunderbird mbox remains primary through 1.0. Gmail expands the addressable
-audience; doing it earlier risks becoming another generic inbox reader.
+**Gmail ingestion — shipped early as an opt-in backend.** Optional Gmail API
+(OAuth, `gmail.readonly`) as a read-only alternative to local mbox, aligned with
+the [product contract](CONTRACT.md): labels map to folders, raw mail goes
+through the same parser, nothing is written to Gmail. Thunderbird mbox remains
+primary through 1.0; the Gmail path is off by default and only ingests the
+configured labels, so it does not turn Rollup into a generic inbox reader.
+Remaining Gmail work: `history.list` incremental sync and batched
+`messages.get` (efficiency only).
 
 ## Shipped (recent)
 
@@ -67,6 +71,9 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - **Briefing synthesis**: deterministic glance always; `--briefing-synthesis` opt-in LLM narrative
 - **Corpus FTS + Ask** (`rollup.db` schema v17): `rollup search` / `GET /search`; grounded `rollup ask` / `POST /ask` over reader-body / title / summary cache
 - **Source intelligence**: `rollup sources suggest`; Quality/Registry suggestion cards; doctor `suggestions: N`
+- **Reading destinations**: OPDS writer + loopback `GET /opds`; Calibre drop-folder writer; optional vs required writer classification
+- **Publication telemetry**: manifest `degradations` / `lifecycle_events`; CLI `partial:` line; doctor lock check; archive-after-write
+- **Gmail read-only ingest** (`rollup.db` schema v18): `[gmail]` labels/prefix → folders; `rollup gmail auth|labels|status`; `--gmail` / `--gmail-refresh`; raw-mail cache with TTL and stale fallback
 
 ## Standing rule (network sources)
 
@@ -98,7 +105,7 @@ From [CONTRACT.md](CONTRACT.md). Do not prioritise these; existing non-goals
 are helping the project. Output artifacts are a cheaper path to cross-device
 reading than a mobile app.
 
-- IMAP / Maildir backends (Gmail API → post-1.0 above)
+- IMAP / Maildir backends (Gmail API shipped as an opt-in read-only backend; see above)
 - Thunderbird add-on (XPI)
 - Multi-user or non-loopback web UI
 - In-app digest scheduler (Run Studio stays a synchronous guided runner; use [CRON.md](CRON.md) / launchd)

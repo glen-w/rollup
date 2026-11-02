@@ -38,7 +38,7 @@ open http://localhost:8765
 
 Configure paths and run digests from the UI (Settings / Run Studio). Details: [docs/DOCKER.md](docs/DOCKER.md).
 
-The stranger proof does not use `docker-compose.override.yml` and does not need Ollama. **Preview** is the default digest mode (`rollup digest` with no `--ollama`); it is not a dry-run. Thunderbird mbox is the v1 input. A Gmail API backend is post-1.0.
+The stranger proof does not use `docker-compose.override.yml` and does not need Ollama. **Preview** is the default digest mode (`rollup digest` with no `--ollama`); it is not a dry-run. Thunderbird mbox is the primary input; an optional read-only Gmail API backend (`[gmail]`, `rollup gmail auth`) feeds the same parser.
 
 ```bash
 docker compose -f docker-compose.ci.yml build
@@ -63,7 +63,7 @@ Host Python / venv install is an advanced alternative — see [Install](#install
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Product sequence toward 1.0 and non-goals |
 | [docs/CRON.md](docs/CRON.md) | launchd / crontab scheduling |
 | [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
-| [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink) |
+| [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink, opds, calibre) |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Doctor, LinkedIn session, exit codes |
 | [docs/design/firefox-capture.md](docs/design/firefox-capture.md) | Firefox capture: packages, SLOC, reload, known issues, review checklist |
 | [docs/design/briefing-arc.md](docs/design/briefing-arc.md) | Briefing-layer invariants (attention, coverage, synthesis, FTS) |
@@ -132,6 +132,7 @@ calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
 |--------|--------|-------------|
 | LinkedIn `fromMember` | `--linkedin` or `[linkedin].enabled` | `ROLLUP_LINKEDIN_*` in `~/.config/rollup/env` (never TOML) |
 | Reddit listings | `--reddit` or `[reddit].enabled` | None by default. Optional OAuth: `ROLLUP_REDDIT_*` in the same env file |
+| Gmail labels (read-only API) | `--gmail` or `[gmail].enabled` | `ROLLUP_GMAIL_CLIENT_ID/SECRET` in the env file + one-time `rollup gmail auth` (`gmail.readonly` scope; token in `state_dir`) |
 | Webpage articles | default on; `--no-webpage` to skip | None (HTTPS fetch at digest time) |
 | Google Scholar alerts | `--scholar-mode detailed` or `[scholar].mode = "detailed"` | None (HTTPS fetch of paper pages; mail already in Thunderbird) |
 

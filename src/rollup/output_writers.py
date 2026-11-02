@@ -45,6 +45,7 @@ class WriteContext:
     # False when writers were enabled by the default-all policy (not explicit flags).
     explicit_outputs: bool = True
     folder_themes: Mapping[str, "FolderThemeOverride"] | None = None
+    config: Config | None = None
 
 
 @runtime_checkable
@@ -61,6 +62,46 @@ class OutputWriter(Protocol):
 
     def write(self, report: DigestReport, ctx: WriteContext) -> list[Path]:
         """Write artifacts; return paths written. Skip I/O when ``ctx.dry_run``."""
+
+
+def writer_is_required(writer: OutputWriter) -> bool:
+    """Required writers block publication; optional writers degrade to partial.
+
+    Third-party writers without ``required`` stay required (historical default).
+    """
+    return bool(getattr(writer, "required", True))
+
+
+@dataclass
+class WriterBatchResult:
+    """Outcome of one ``run_enabled_writers`` pass.
+
+    List-like over ``written`` so existing callers/tests keep working.
+    """
+
+    written: list[Path]
+    optional_failures: tuple[tuple[str, str], ...] = ()
+    required_failure: tuple[str, str] | None = None
+
+    def __iter__(self):
+        return iter(self.written)
+
+    def __len__(self) -> int:
+        return len(self.written)
+
+    def __getitem__(self, index: int) -> Path:
+        return self.written[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, list):
+            return self.written == other
+        if isinstance(other, WriterBatchResult):
+            return (
+                self.written == other.written
+                and self.optional_failures == other.optional_failures
+                and self.required_failure == other.required_failure
+            )
+        return NotImplemented
 
 
 def _raw_output_tokens(args: argparse.Namespace) -> list[str]:
@@ -119,8 +160,10 @@ def validate_output_none_mix(args: argparse.Namespace) -> str | None:
 
 def builtin_writers() -> dict[str, OutputWriter]:
     """In-tree output writers loaded without entry points."""
+    from rollup.addons.calibre.writer import CalibreOutputWriter
     from rollup.addons.epub import EpubOutputWriter
     from rollup.addons.json import JsonOutputWriter
+    from rollup.addons.opds import OpdsOutputWriter
     from rollup.addons.txt import TxtOutputWriter
     from rollup.addons.xteink import XteinkOutputWriter
 
@@ -129,6 +172,8 @@ def builtin_writers() -> dict[str, OutputWriter]:
         "epub": EpubOutputWriter(),
         "json": JsonOutputWriter(),
         "txt": TxtOutputWriter(),
+        "opds": OpdsOutputWriter(),
+        "calibre": CalibreOutputWriter(),
     }
 
 
@@ -221,8 +266,12 @@ def run_enabled_writers(
     *,
     args: argparse.Namespace,
     config: Config,
-) -> list[Path]:
-    """Run every enabled writer sequentially; raise on the first failure."""
+) -> WriterBatchResult:
+    """Run every enabled writer sequentially.
+
+    Required-writer failure raises ``OutputWriterError`` after earlier writers
+    have already run. Optional-writer failure is recorded and the batch continues.
+    """
     log = ctx.logger or logger
     requested = requested_writer_names(args)
     explicit = requested is not None
@@ -236,8 +285,10 @@ def run_enabled_writers(
         logger=ctx.logger,
         explicit_outputs=explicit,
         folder_themes=ctx.folder_themes,
+        config=config if ctx.config is None else ctx.config,
     )
     written: list[Path] = []
+    optional_failures: list[tuple[str, str]] = []
     for name, writer in writers.items():
         if not writer.enabled(args, config):
             continue
@@ -248,10 +299,20 @@ def run_enabled_writers(
         try:
             paths = list(writer.write(report, ctx))
         except Exception as exc:
-            raise OutputWriterError(
+            wrapped = OutputWriterError(
                 f"Output writer {name!r} failed: {exc}"
-            ) from exc
+            )
+            wrapped.__cause__ = exc
+            if writer_is_required(writer):
+                raise wrapped from exc
+            message = str(wrapped)
+            log.warning("%s — continuing (optional writer)", message)
+            optional_failures.append((name, message))
+            continue
         written.extend(paths)
         for path in paths:
             log.info("Wrote %s", path)
-    return written
+    return WriterBatchResult(
+        written=written,
+        optional_failures=tuple(optional_failures),
+    )

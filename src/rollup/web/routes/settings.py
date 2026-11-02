@@ -39,6 +39,7 @@ from rollup.effort import (
 )
 from rollup.folder_theme import FolderThemeOverride, folder_display_name, folder_slug, theme_for
 from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
+from rollup.gmail.config import GmailConfig, normalize_label_name
 from rollup.reddit.config import RedditConfig
 from rollup.attention.config import InterestConfig
 from rollup.scholar.config import (
@@ -139,6 +140,25 @@ def _interest_from_form(base: InterestConfig) -> InterestConfig:
     if profile is None:
         return base
     return InterestConfig(profile=profile.strip())
+
+
+def _gmail_from_form(base: GmailConfig) -> GmailConfig:
+    from dataclasses import replace
+
+    enabled = "1" in request.form.getlist("gmail_enabled")
+    prefix_raw = request.form.get("gmail_label_prefix")
+    labels_raw = request.form.get("gmail_labels")
+    kwargs: dict = {"enabled": enabled}
+    if prefix_raw is not None:
+        kwargs["label_prefix"] = normalize_label_name(prefix_raw) or None
+    if labels_raw is not None:
+        labels: list[str] = []
+        for item in labels_raw.replace("\n", ",").split(","):
+            name = normalize_label_name(item)
+            if name and name not in labels:
+                labels.append(name)
+        kwargs["labels"] = tuple(labels)
+    return replace(base, **kwargs)
 
 
 def _scholar_from_form(base: ScholarConfig) -> ScholarConfig:
@@ -273,15 +293,18 @@ def _patch_from_request() -> ConfigPatch:
         loaded = _load_doc().loaded
         base_linkedin = loaded.linkedin
         base_reddit = loaded.reddit
+        base_gmail = loaded.gmail
         base_scholar = loaded.scholar
         base_interest = loaded.interest
     except Exception:
         base_linkedin = LinkedInConfig()
         base_reddit = RedditConfig()
+        base_gmail = GmailConfig()
         base_scholar = ScholarConfig()
         base_interest = InterestConfig()
     linkedin = _linkedin_enabled_from_form(base_linkedin)
     reddit = _reddit_enabled_from_form(base_reddit)
+    gmail = _gmail_from_form(base_gmail)
     scholar = _scholar_from_form(base_scholar)
     interest = _interest_from_form(base_interest)
     return patch_from_form_values(
@@ -310,9 +333,28 @@ def _patch_from_request() -> ConfigPatch:
         effort_overrides=_effort_overrides_from_form(),
         linkedin=linkedin,
         reddit=reddit,
+        gmail=gmail,
         scholar=scholar,
         interest=interest,
     )
+
+
+def _gmail_status_for_view(doc) -> dict | None:
+    """Offline token/cache summary for the Settings Gmail card."""
+    if doc is None:
+        return None
+    try:
+        from pathlib import Path
+
+        from rollup.config import DEFAULT_STATE_DIR
+        from rollup.gmail.cli import gmail_status
+
+        state_dir = Path(
+            str(current_app.config.get("STATE_DIR") or doc.loaded.get("state_dir") or DEFAULT_STATE_DIR)
+        ).expanduser()
+        return gmail_status(state_dir, doc.loaded.gmail)
+    except Exception:
+        return None
 
 
 def _refresh_app_paths(sticky: dict) -> list[str]:
@@ -443,6 +485,8 @@ def _settings_page_context(doc, effective, *, db=None) -> dict:
         "effort_ladders": effort_editor_rows(doc.loaded.efforts if doc else {}),
         "linkedin": doc.loaded.linkedin if doc else LinkedInConfig(),
         "reddit": doc.loaded.reddit if doc else RedditConfig(),
+        "gmail": doc.loaded.gmail if doc else GmailConfig(),
+        "gmail_status": _gmail_status_for_view(doc),
         "scholar": doc.loaded.scholar if doc else ScholarConfig(),
         "scholar_modes": sorted(SCHOLAR_MODES),
         "interest": doc.loaded.interest if doc else InterestConfig(),
@@ -512,7 +556,9 @@ def settings_preview():
                 patch.linkedin if patch.linkedin is not None else doc.loaded.linkedin
             ),
             reddit=patch.reddit if patch.reddit is not None else doc.loaded.reddit,
+            gmail=patch.gmail if patch.gmail is not None else doc.loaded.gmail,
             scholar=patch.scholar if patch.scholar is not None else doc.loaded.scholar,
+            calibre=patch.calibre if patch.calibre is not None else doc.loaded.calibre,
             interest=patch.interest if patch.interest is not None else doc.loaded.interest,
             sources=doc.loaded.sources,
         )
@@ -528,7 +574,9 @@ def settings_preview():
                 efforts=after_loaded.efforts,
                 linkedin=after_loaded.linkedin,
                 reddit=after_loaded.reddit,
+                gmail=after_loaded.gmail,
                 scholar=after_loaded.scholar,
+                calibre=after_loaded.calibre,
                 interest=after_loaded.interest,
                 sources=after_loaded.sources,
             )

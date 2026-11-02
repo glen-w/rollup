@@ -188,6 +188,72 @@ def _check_sqlite(config: Config) -> DoctorCheck:
     )
 
 
+def _check_run_lock(config: Config) -> DoctorCheck:
+    from rollup.run_lock import inspect_state_lock
+
+    inspection = inspect_state_lock(config.state_dir)
+    if inspection is None:
+        return DoctorCheck(
+            id="run_lock",
+            status="pass",
+            message="No digest lock in state_dir",
+        )
+    op = inspection.operation or "digest"
+    rid = inspection.run_id or "unknown"
+    if inspection.stale:
+        return DoctorCheck(
+            id="run_lock",
+            status="warn",
+            message=(
+                f"Stale rollup.lock (pid={inspection.pid}, operation={op}, "
+                f"run_id={rid})"
+            ),
+            fix="Remove state_dir/rollup.lock if no digest is running",
+        )
+    return DoctorCheck(
+        id="run_lock",
+        status="warn",
+        message=(
+            f"Digest lock held (pid={inspection.pid} alive={inspection.pid_alive}, "
+            f"operation={op}, run_id={rid})"
+        ),
+        fix="Wait for the in-flight digest, or stop the other process",
+    )
+
+
+def _check_calibre_drop_dir(config: Config) -> DoctorCheck | None:
+    drop = config.calibre.drop_dir
+    if drop is None:
+        return None
+    drop = Path(drop).expanduser()
+    if is_inside(drop, config.mail_root):
+        return DoctorCheck(
+            id="calibre_drop_dir",
+            status="fail",
+            message=f"Calibre drop_dir is inside the mail root: {drop}",
+            fix="Point [calibre].drop_dir outside the Thunderbird store",
+        )
+    if not drop.exists():
+        return DoctorCheck(
+            id="calibre_drop_dir",
+            status="warn",
+            message=f"Calibre drop_dir does not exist yet: {drop}",
+            fix="Create the directory or fix [calibre].drop_dir",
+        )
+    if not drop.is_dir():
+        return DoctorCheck(
+            id="calibre_drop_dir",
+            status="fail",
+            message=f"Calibre drop_dir is not a directory: {drop}",
+            fix="Point [calibre].drop_dir at a folder",
+        )
+    return DoctorCheck(
+        id="calibre_drop_dir",
+        status="pass",
+        message=f"Calibre drop_dir is writable: {drop}",
+    )
+
+
 def _check_corpus_fts(config: Config) -> list[DoctorCheck]:
     """FTS table present; unmatched FTS vs bodies is a warning, not a blocker."""
     try:
@@ -707,6 +773,44 @@ def _check_linkedin_session(config: Config) -> DoctorCheck | None:
     )
 
 
+def _check_gmail_auth(config: Config) -> DoctorCheck | None:
+    """Report Gmail readiness: env credentials, readonly token, label config."""
+    if not config.gmail_enabled or not config.gmail.enabled:
+        return None
+    from rollup.gmail.cli import gmail_status
+
+    status = gmail_status(config.state_dir, config.gmail)
+    problems: list[str] = []
+    if not status["configured"]:
+        problems.append("no [gmail].labels or [gmail].label_prefix configured")
+    if not status["credentials_env"]:
+        problems.append(
+            f"{' / '.join(status['credentials_env_names'])} not set in ~/.config/rollup/env"
+        )
+    if not status["token_present"]:
+        problems.append("token missing (run `rollup gmail auth`)")
+    elif status.get("token_error"):
+        problems.append(str(status["token_error"]))
+    elif status["token_scope_readonly"] is False:
+        problems.append("token scope is not gmail.readonly (re-run `rollup gmail auth`)")
+    if problems:
+        return DoctorCheck(
+            id="gmail_auth",
+            status="warn",
+            message="Gmail enabled but not ready: " + "; ".join(problems),
+            fix="See docs/CONFIG.md#gmail for the OAuth client + `rollup gmail auth` steps.",
+        )
+    cached = len(status["cached_labels"])
+    return DoctorCheck(
+        id="gmail_auth",
+        status="pass",
+        message=(
+            "Gmail read-only credentials configured "
+            f"({cached} cached label(s), {status['cached_messages']} cached messages)"
+        ),
+    )
+
+
 def _check_scholar_mode(config: Config) -> DoctorCheck | None:
     """Warn when Scholar detailed mode will fetch without LLM summaries."""
     if not config.scholar.detailed:
@@ -801,6 +905,10 @@ def run_doctor(
         checks.append(_check_msf_ignored(config))
 
     checks.append(_check_sqlite(config))
+    checks.append(_check_run_lock(config))
+    calibre_check = _check_calibre_drop_dir(config)
+    if calibre_check:
+        checks.append(calibre_check)
     checks.extend(_check_corpus_fts(config))
     checks.extend(_check_source_registry(config))
     checks.extend(_check_source_suggestions(config))
@@ -818,6 +926,10 @@ def run_doctor(
     linkedin_check = _check_linkedin_session(config)
     if linkedin_check:
         checks.append(linkedin_check)
+
+    gmail_check = _check_gmail_auth(config)
+    if gmail_check:
+        checks.append(gmail_check)
 
     scholar_check = _check_scholar_mode(config)
     if scholar_check:

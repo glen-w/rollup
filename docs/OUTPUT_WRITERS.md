@@ -31,8 +31,12 @@ An explicit `--output epub` still fails hard if the dependency is absent.
 | `txt` | `…-newsletter-digest.txt` | Plain text; same offline model as XTEINK (no links / URLs stripped). |
 | `json` | `…-newsletter-digest.json` | Structured full rollup (`schema_version` 1). Includes classified links and metadata; **omits** `body_html` / `body_text`. |
 | `epub` | `…-newsletter-digest.epub` | Rich ebook (cover, nav, per-folder chapters, summaries); **no external URLs** (same offline model as XTEINK/TXT). Needs `ebooklib` via `pip install 'rollup[epub]'`. |
+| `opds` | `…-newsletter-digest.atom.xml` | OPDS 1.2 acquisition feed for **this** briefing (links to sibling EPUB/HTML/Markdown). Optional writer: failure is partial, not a hard stop. Loopback catalog: `GET /opds` while `rollup web` is running. |
+| `calibre` | copies into `[calibre].drop_dir` | Copies EPUB (and HTML/Markdown/Atom) into a Calibre auto-add / watch folder. **No network.** Optional. Skipped in default-all when `drop_dir` is unset. CLI: `--calibre-drop-dir`. |
 
-Single-file formats (`txt`, `json`, `epub`) share the core digest stem and only change the extension. XTEINK uses a `.xteink` variant so it does not collide with the core digest `.md`.
+Single-file formats (`txt`, `json`, `epub`) share the core digest stem and only change the extension. XTEINK uses a `.xteink` variant so it does not collide with the core digest `.md`. OPDS uses `.atom.xml`.
+
+Enabled add-on writers are **required** by default (failure blocks `latest.*`). Destination writers (`opds`, `calibre`) are **optional**: the Markdown/HTML briefing still publishes and the run exits 2 (`partial:` on stderr).
 
 ## Third-party writers
 

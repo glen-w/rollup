@@ -8,6 +8,7 @@ from rollup.clock import Clock, DEFAULT_CLOCK
 from rollup.config import Config, compute_date_window
 from rollup.effective_run import resolve_effective_run
 from rollup.pipeline.ingest import (
+    merge_gmail_parse,
     merge_linkedin_parse,
     merge_parse,
     merge_reddit_parse,
@@ -15,6 +16,7 @@ from rollup.pipeline.ingest import (
     stage_discover,
     stage_enrich_scholar,
     stage_parse,
+    stage_parse_gmail,
     stage_parse_linkedin,
     stage_parse_mbox,
     stage_parse_reddit,
@@ -44,6 +46,7 @@ from rollup.pipeline.status import (
     EXIT_SUCCESS,
     derive_run_status,
     evaluate_no_input,
+    format_partial_reasons,
     status_to_exit_code,
 )
 from rollup.pipeline.types import (
@@ -91,6 +94,8 @@ __all__ = (
     "build_digest_report",
     "derive_run_status",
     "evaluate_no_input",
+    "format_partial_reasons",
+    "merge_gmail_parse",
     "merge_linkedin_parse",
     "merge_parse",
     "merge_reddit_parse",
@@ -102,6 +107,7 @@ __all__ = (
     "stage_group",
     "stage_parse",
     "stage_parse_mbox",
+    "stage_parse_gmail",
     "stage_parse_linkedin",
     "stage_parse_reddit",
     "stage_parse_webpage",
@@ -185,8 +191,13 @@ def run_digest(
                     aggregated=session.aggregated,
                     stats=session.stats,
                 )
-            except Exception:
-                pass
+            except Exception as manifest_exc:
+                session.aggregated.manifest_write_failed = True
+                session.secondary_manifest_error = str(manifest_exc)
+                logger.error(
+                    "Manifest finalize after failure also failed: %s",
+                    manifest_exc,
+                )
     finally:
         _release_resources(session)
 

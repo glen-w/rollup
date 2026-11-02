@@ -44,6 +44,8 @@ Edit `docker-compose.override.yml` if your paths differ.
 
 LinkedIn session cookies (and optional Reddit OAuth) live in `~/.config/rollup/env` (mode `600`), loaded at startup via `ROLLUP_ENV_FILE`. The container sets `ROLLUP_ENV_FILE=/data/config/env` and mounts your host file read-only.
 
+Gmail ingest needs `ROLLUP_GMAIL_CLIENT_ID` / `ROLLUP_GMAIL_CLIENT_SECRET` in the same env file plus a token in the mounted state dir (`/data/state/gmail_token.json`). The loopback OAuth redirect cannot reach into a container, so authorise **on the host** first (`rollup gmail auth` with the same `--state-dir`), or run `docker compose run --rm rollup gmail auth --manual` and paste the redirect URL.
+
 Do **not** put secrets in TOML, `.env`, or git. See [CONFIG.md](CONFIG.md) and [CRON.md](CRON.md).
 
 ## CLI flags vs TOML paths

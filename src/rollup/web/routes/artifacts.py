@@ -19,7 +19,14 @@ def serve_artifact(run_id: str, kind: str):
         run_id = validate_run_id(run_id)
     except IdError:
         return "Invalid run id", 404
-    if kind not in {"md", "html", "manifest"}:
+    _SIBLING_KINDS = {
+        "epub": (".epub", "application/epub+zip"),
+        "atom": (".atom.xml", "application/atom+xml; charset=utf-8"),
+        "json": (".json", "application/json"),
+        "txt": (".txt", "text/plain; charset=utf-8"),
+        "xteink": (".xteink.md", "text/markdown; charset=utf-8"),
+    }
+    if kind not in {"md", "html", "manifest"} and kind not in _SIBLING_KINDS:
         return "Unknown artifact kind", 404
 
     row = g.db.execute(
@@ -42,6 +49,21 @@ def serve_artifact(run_id: str, kind: str):
         mimetype = "text/html; charset=utf-8"
         as_attachment = True
         download_name = Path(rel).name if rel else "digest.html"
+        use_archive_fallback = True
+    elif kind in _SIBLING_KINDS:
+        suffix, mimetype = _SIBLING_KINDS[kind]
+        if not md_rel:
+            return "Artifact not indexed", 404
+        md_path = Path(md_rel)
+        name = md_path.name
+        if name.endswith(".md") and not name.endswith(".xteink.md"):
+            stem = name[: -len(".md")]
+        else:
+            stem = md_path.stem
+        rel = str(md_path.with_name(f"{stem}{suffix}"))
+        root = Path(current_app.config["OUTPUT_DIR"])
+        as_attachment = True
+        download_name = Path(rel).name
         use_archive_fallback = True
     else:
         rel, root = manifest_rel, Path(current_app.config["STATE_DIR"])

@@ -86,6 +86,7 @@ class EffectiveRun:
     allow_group_summary_network: bool
     allow_linkedin_network: bool
     allow_reddit_network: bool
+    allow_gmail_network: bool
     allow_webpage_network: bool
     allow_scholar_network: bool
     allow_attention_llm: bool
@@ -121,6 +122,7 @@ def resolve_effective_run(
     )
     allow_linkedin_network = not run_options.dry_run and config.linkedin_enabled
     allow_reddit_network = not run_options.dry_run and config.reddit_enabled
+    allow_gmail_network = not run_options.dry_run and config.gmail_enabled
     allow_webpage_network = not run_options.dry_run and config.webpage_enabled
     allow_scholar_network = not run_options.dry_run and config.scholar.detailed
     allow_attention_llm = (
@@ -202,6 +204,7 @@ def resolve_effective_run(
         allow_group_summary_network=allow_group_summary_network,
         allow_linkedin_network=allow_linkedin_network,
         allow_reddit_network=allow_reddit_network,
+        allow_gmail_network=allow_gmail_network,
         allow_webpage_network=allow_webpage_network,
         allow_scholar_network=allow_scholar_network,
         allow_attention_llm=allow_attention_llm,

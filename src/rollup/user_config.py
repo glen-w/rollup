@@ -16,8 +16,10 @@ from rollup.effort import (
 )
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
+from rollup.gmail.config import GmailConfig, parse_gmail_config
 from rollup.reddit.config import RedditConfig, parse_reddit_config
 from rollup.attention.config import InterestConfig, parse_interest_config
+from rollup.addons.calibre.config import CalibreConfig, parse_calibre_config
 from rollup.scholar.config import ScholarConfig, parse_scholar_config
 
 if sys.version_info >= (3, 11):
@@ -59,7 +61,18 @@ UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
 TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
-    {"folders", "profiles", "ui", "efforts", "linkedin", "reddit", "scholar", "interest"}
+    {
+        "folders",
+        "profiles",
+        "ui",
+        "efforts",
+        "linkedin",
+        "reddit",
+        "gmail",
+        "scholar",
+        "calibre",
+        "interest",
+    }
 )
 
 FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
@@ -85,7 +98,9 @@ class LoadedUserConfig:
     ui: UiPreferences = field(default_factory=UiPreferences)
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
+    gmail: GmailConfig = field(default_factory=GmailConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    calibre: CalibreConfig = field(default_factory=CalibreConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
     sources: tuple[Path, ...] = ()
 
@@ -420,7 +435,15 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
     try:
+        gmail = parse_gmail_config(data.get("gmail"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
+    try:
         scholar = parse_scholar_config(data.get("scholar"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
+    try:
+        calibre = parse_calibre_config(data.get("calibre"), path=path)
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
     try:
@@ -435,7 +458,9 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         ui=ui,
         linkedin=linkedin,
         reddit=reddit,
+        gmail=gmail,
         scholar=scholar,
+        calibre=calibre,
         interest=interest,
         sources=(path,),
     )
@@ -469,7 +494,9 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
     ui = overlay.ui if overlay.sources else base.ui
     linkedin = overlay.linkedin if overlay.sources else base.linkedin
     reddit = overlay.reddit if overlay.sources else base.reddit
+    gmail = overlay.gmail if overlay.sources else base.gmail
     scholar = overlay.scholar if overlay.sources else base.scholar
+    calibre = overlay.calibre if overlay.sources else base.calibre
     interest = overlay.interest if overlay.sources else base.interest
     return LoadedUserConfig(
         values=values,
@@ -479,7 +506,9 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         ui=ui,
         linkedin=linkedin,
         reddit=reddit,
+        gmail=gmail,
         scholar=scholar,
+        calibre=calibre,
         interest=interest,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )

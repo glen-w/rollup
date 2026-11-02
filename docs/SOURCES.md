@@ -15,6 +15,8 @@ Each message gets an optional `source_key`:
 
 Folder is **not** part of identity. Subject / Reply-To / Return-Path / Sender are not used as keys.
 
+Gmail-ingested mail (`[gmail]`) is parsed by the same code as mbox, so it uses the mail rules above (`list:` / `from:` source keys, `mid:` message keys). The same newsletter seen via Thunderbird and via Gmail dedupes to one entry.
+
 ## Controls
 
 Per-source overrides (CLI):

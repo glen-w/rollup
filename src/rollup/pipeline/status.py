@@ -10,10 +10,30 @@ from rollup.pipeline.types import (
     ParseResult,
 )
 from rollup.run_context import RunStatus
+from rollup.run_contracts import EXIT_FAILURE, EXIT_PARTIAL, EXIT_SUCCESS
 
-EXIT_SUCCESS = 0
-EXIT_FAILURE = 1
-EXIT_PARTIAL = 2
+_PARTIAL_REASONS: tuple[tuple[str, str], ...] = (
+    ("mbox_mutation_detected", "mbox mutation"),
+    ("optional_writer_failed", "optional writer"),
+    ("publication_failed", "latest publication"),
+    ("seen_state_failed", "seen-state"),
+    ("manifest_write_failed", "manifest"),
+    ("final_review_failed", "final review"),
+    ("group_summaries_degraded", "group summaries"),
+    ("linkedin_degraded", "linkedin"),
+    ("reddit_degraded", "reddit"),
+    ("webpage_degraded", "webpage"),
+    ("gmail_degraded", "gmail"),
+    ("web_index_failed", "web index"),
+)
+
+
+def format_partial_reasons(aggregated: AggregatedResults) -> str:
+    """Compact cron-friendly list of why a run is partial (or degraded)."""
+    labels = [
+        label for attr, label in _PARTIAL_REASONS if getattr(aggregated, attr, False)
+    ]
+    return ", ".join(labels)
 
 
 def derive_run_status(
@@ -88,6 +108,9 @@ def derive_run_status(
     if aggregated.webpage_degraded:
         return "partial"
 
+    if aggregated.gmail_degraded:
+        return "partial"
+
     if aggregated.required_writer_failed:
         return "failure"
 
@@ -114,16 +137,18 @@ def evaluate_no_input(
     has_linkedin = bool(discovery.linkedin_searches)
     has_reddit = bool(discovery.reddit_subs)
     has_webpage = bool(discovery.webpage_items)
+    has_gmail = bool(discovery.gmail_targets)
+    has_any = has_mbox or has_linkedin or has_reddit or has_webpage or has_gmail
 
-    if folders_include and not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
+    if folders_include and not has_any:
         return (
             "No folders matched explicit include "
             f"({', '.join(folders_include)}); refusing to publish"
         )
-    if not has_mbox and not has_linkedin and not has_reddit and not has_webpage:
+    if not has_any:
         return (
-            "No readable mbox folders, LinkedIn searches, Reddit subs, or webpage "
-            "queue items; refusing to publish"
+            "No readable mbox folders, LinkedIn searches, Reddit subs, Gmail labels, "
+            "or webpage queue items; refusing to publish"
         )
 
     if has_mbox:
@@ -169,6 +194,21 @@ def evaluate_no_input(
         if reddit_failed:
             return (
                 "Reddit fetch failed and no other input sources; "
+                "refusing to publish"
+            )
+
+    if (
+        has_gmail
+        and not (has_mbox or has_linkedin or has_webpage or has_reddit)
+        and parse.counts.messages_parsed == 0
+    ):
+        gmail_failed = any(
+            w.code.startswith("gmail_") and w.code != "gmail_dry_run"
+            for w in parse.warnings
+        )
+        if gmail_failed:
+            return (
+                "Gmail fetch failed and no other input sources; "
                 "refusing to publish"
             )
 
