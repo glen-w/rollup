@@ -19,9 +19,9 @@ from rollup.models import (
     AttentionMetadata,
     BriefingSynthesis,
     CoverageCluster,
+    DigestEntry,
     DigestGroup,
     DigestReport,
-    DigestEntry,
     DigestStats,
     ParsedMessage,
 )

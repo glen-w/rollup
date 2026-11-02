@@ -8,7 +8,6 @@ from typing import Any
 
 from flask import Flask, session
 
-
 CSRF_SESSION_KEY = "_csrf_token"
 
 

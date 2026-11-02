@@ -10,10 +10,10 @@ import pytest
 from rollup.article_html import extract_article_text_from_html
 from rollup.linkedin.article import (
     ARTICLE_SEPARATOR,
+    MAX_ARTICLE_FETCHES,
     enrich_post_with_article,
     enrich_posts_with_articles,
     fetch_article_text,
-    MAX_ARTICLE_FETCHES,
 )
 from rollup.linkedin.models import LinkedInPost
 

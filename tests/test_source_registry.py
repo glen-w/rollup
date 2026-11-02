@@ -9,8 +9,8 @@ from rollup.models import ParsedMessage
 from rollup.source_registry import (
     alias_sources,
     get_source_record,
-    load_SourceRegistrySnapshot,
     load_source_registry_snapshot,
+    load_SourceRegistrySnapshot,
     observe_sources,
     parse_override_updates,
     set_overrides,

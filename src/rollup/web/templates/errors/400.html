@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Error{% endblock %}
+{% block title %}Bad request · Rollup{% endblock %}
 {% block content %}
-<h1>Bad request</h1>
-<p>{{ message }}</p>
-<p><a href="{{ url_for('rollups.list_rollups') }}">Back to archive</a></p>
+<div class="page-header"><div><h1>Bad request</h1><p class="page-lede">The request could not be processed.</p></div></div>
+<div class="banner banner-danger" role="alert">{{ message }}</div>
+<p><a class="btn" href="{{ url_for('index') }}">Back to Home</a></p>
 {% endblock %}

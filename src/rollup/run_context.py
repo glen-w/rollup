@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from rollup.clock import Clock, DEFAULT_CLOCK
+from rollup.clock import DEFAULT_CLOCK, Clock
 
 RunMode = Literal["manual", "cron"]
 RunStatus = Literal["success", "partial", "failure", "dry_run"]

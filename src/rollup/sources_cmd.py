@@ -29,7 +29,6 @@ from rollup.source_registry import (
 )
 from rollup.state import init_db
 
-
 SOURCES_JSON_SCHEMA_VERSION = 1
 
 
@@ -64,7 +63,7 @@ def cmd_sources(args: argparse.Namespace) -> int:
         "doctor": _cmd_doctor,
         "suggest": _cmd_suggest,
     }
-    handler = handlers.get(command)
+    handler = handlers.get(command or "")
     if handler is None:
         print(f"Unknown sources command: {command}", file=sys.stderr)
         return 1
@@ -235,7 +234,7 @@ def _cmd_set(args: argparse.Namespace) -> int:
 def _cmd_clear(args: argparse.Namespace) -> int:
     def run(conn, *, dry_run: bool) -> int:
         key = resolve_source_ref(conn, args.source)
-        fields = None
+        fields: list[str] | None = None
         if getattr(args, "all", False):
             fields = None
         else:

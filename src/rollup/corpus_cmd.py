@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from rollup.ask import ASK_TOP_K, REFUSE_MESSAGE, answer_question, make_complete
+from rollup.ask import ASK_TOP_K, answer_question, make_complete
 from rollup.corpus import (
     SEARCH_LIMIT_DEFAULT,
     SEARCH_LIMIT_MAX,

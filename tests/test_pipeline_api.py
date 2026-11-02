@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from rollup import pipeline
 from rollup.pipeline import (
+    DEFAULT_DEGRADATION_POLICY,
     EXIT_FAILURE,
     EXIT_PARTIAL,
     EXIT_SUCCESS,
     AggregatedResults,
-    DEFAULT_DEGRADATION_POLICY,
     DigestRunResult,
     ParseCounts,
     ParseResult,

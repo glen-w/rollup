@@ -9,7 +9,7 @@ from rollup.addons.offline_text import clip_heading
 from rollup.linkedin.config import linkedin_folder_for_post
 from rollup.linkedin.models import LinkedInPost
 from rollup.models import LinkItem, ParsedMessage
-from rollup.parse import compute_content_hash, compute_message_key
+from rollup.parse import compute_content_hash
 
 _SUBJECT_MAX = 280
 _PREVIEW_FULL_MAX = 2000

@@ -7,11 +7,11 @@ import logging
 import re
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
-from collections.abc import Callable
 from typing import Literal, Protocol
 
 from rollup.reddit.config import (

@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Literal
 
-from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
 from rollup.linkedin.config import LINKEDIN_FOLDER_PREFIX
+from rollup.models import DigestEntry, DigestGroup, DigestItem, GroupType
 from rollup.reddit.config import REDDIT_FOLDER_PREFIX, RedditConfig, sub_from_folder_name
 from rollup.run_options import GroupingConfig
 from rollup.scholar.detect import is_scholar_paper_key
@@ -268,7 +268,7 @@ def _group_entry_list(
     config: GroupingConfig,
     snapshot=None,
 ) -> tuple[list[DigestItem], list[DigestGroup], list[GroupingDecision]]:
-    from rollup.source_policy import group_priority, priority_sort_prefix, resolve_display_name
+    from rollup.source_policy import group_priority, priority_sort_prefix
 
     decisions: list[GroupingDecision] = []
     standalone: list[DigestEntry] = []

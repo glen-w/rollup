@@ -18,6 +18,8 @@ from rollup.source_registry import (
 )
 from rollup.source_registry_listing import (
     list_source_registry_page as listing_page,
+)
+from rollup.source_registry_listing import (
     parse_override_updates as listing_parse,
 )
 from rollup.state import init_db

@@ -10,9 +10,10 @@ Keys in ``STICKY_KEYS`` that are not CLI-mapped must appear in
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from rollup.user_config import STICKY_KEYS, flag_present
 

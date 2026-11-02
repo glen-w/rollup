@@ -7,9 +7,10 @@ import json
 import logging
 import sqlite3
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from rollup.models import NewsletterType, ParsedMessage
 from rollup.source_cadence import estimate_cadence
@@ -389,13 +390,13 @@ def _row_to_overrides(row: tuple[Any, ...]) -> SourceOverrides:
     ) = row
     nt: NewsletterType | None = None
     if newsletter_type in NEWSLETTER_TYPES:
-        nt = newsletter_type  # type: ignore[assignment]
+        nt = newsletter_type
     gp: GroupingPolicy | None = None
     if grouping_policy in GROUPING_POLICIES:
-        gp = grouping_policy  # type: ignore[assignment]
+        gp = grouping_policy
     cad: CadenceLabel | None = None
     if expected_cadence in CADENCE_LABELS:
-        cad = expected_cadence  # type: ignore[assignment]
+        cad = expected_cadence
     return SourceOverrides(
         enabled=None if enabled is None else bool(enabled),
         always_surface=None if always_surface is None else bool(always_surface),
@@ -667,8 +668,8 @@ def _validate_override_values(
         if p < 0 or p > 100:
             raise SourceRegistryError("priority must be 0..100")
     if data.get("display_name") is not None:
-        from rollup.source_identity import validate_display_name_override
         from rollup.payload_limits import MAX_DISPLAY_NAME_LEN
+        from rollup.source_identity import validate_display_name_override
 
         name = str(data["display_name"]).strip()
         if len(name) > MAX_DISPLAY_NAME_LEN:
@@ -1165,8 +1166,9 @@ def get_source_record(conn: sqlite3.Connection, source_key: str) -> SourceRecord
         superseded_by=row[1],
     )
 
-# Re-export for dry-run defaults
-from rollup.source_registry_listing import (
+# Re-export for dry-run defaults. Deliberately at module end: the listing
+# module imports this one, so a top-of-file import would be a cycle.
+from rollup.source_registry_listing import (  # noqa: E402
     SourceRegistryPage,
     SourceRegistryPageRow,
     list_source_registry_page,

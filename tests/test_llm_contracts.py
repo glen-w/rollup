@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.config import DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO, Config
 from rollup.effective_run import resolve_effective_run
 from rollup.llm_validate import LlmJobValidationError, validate_executable_llm_jobs
 from rollup.provider_options import ProviderOptionsError, reject_litellm_ollama_model
@@ -60,7 +59,7 @@ def _config(**kwargs) -> Config:
 
 def test_schema_v11_fresh_has_summaries_litellm(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     cols = {
         row[1] for row in conn.execute("PRAGMA table_info(rollup_runs)").fetchall()
     }
@@ -170,8 +169,8 @@ def test_no_ollama_does_not_import_litellm(monkeypatch) -> None:
 
 
 def test_profile_provider_not_rewritten_by_global_llm_provider() -> None:
-    from rollup.summary_plan import SummaryJob
     from rollup.llm_validate import validate_summary_job
+    from rollup.summary_plan import SummaryJob
 
     cfg = _config(
         no_ollama=False,

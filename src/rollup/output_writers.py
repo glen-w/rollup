@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from rollup.config import Config
 from rollup.models import DigestReport
@@ -44,7 +45,7 @@ class WriteContext:
     logger: logging.Logger | None = None
     # False when writers were enabled by the default-all policy (not explicit flags).
     explicit_outputs: bool = True
-    folder_themes: Mapping[str, "FolderThemeOverride"] | None = None
+    folder_themes: Mapping[str, FolderThemeOverride] | None = None
     config: Config | None = None
 
 
@@ -163,6 +164,7 @@ def builtin_writers() -> dict[str, OutputWriter]:
     from rollup.addons.calibre.writer import CalibreOutputWriter
     from rollup.addons.epub import EpubOutputWriter
     from rollup.addons.json import JsonOutputWriter
+    from rollup.addons.kindle.writer import KindleOutputWriter
     from rollup.addons.opds import OpdsOutputWriter
     from rollup.addons.txt import TxtOutputWriter
     from rollup.addons.xteink import XteinkOutputWriter
@@ -174,6 +176,7 @@ def builtin_writers() -> dict[str, OutputWriter]:
         "txt": TxtOutputWriter(),
         "opds": OpdsOutputWriter(),
         "calibre": CalibreOutputWriter(),
+        "kindle": KindleOutputWriter(),
     }
 
 
@@ -187,7 +190,7 @@ def _load_entry_point_writers() -> dict[str, OutputWriter]:
     if hasattr(eps, "select"):
         selected = list(eps.select(group=ENTRY_POINT_GROUP))
     else:  # pragma: no cover - Python <3.12 dict API
-        selected = list(eps.get(ENTRY_POINT_GROUP, []))  # type: ignore[arg-type]
+        selected = list(eps.get(ENTRY_POINT_GROUP, []))
 
     loaded: dict[str, OutputWriter] = {}
     for ep in selected:

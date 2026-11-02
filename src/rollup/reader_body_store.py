@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 from rollup.payload_limits import SQL_IN_CHUNK_SIZE
 from rollup.reader_bodies import (
     BodyUpsertStats,
-    READER_TEXT_VERSION,
     ReaderBodyWrite,
     compute_reader_content_hash,
     compute_stored_body_hash,

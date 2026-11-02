@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Mapping
 
 from rollup.addons.offline_text import (
     COMPACT_PREVIEW_MAX,

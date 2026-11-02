@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping
 
 from rollup.classify import classify_message
 from rollup.config import compute_date_window
 from rollup.models import (
     ClassifiedMessage,
     DigestEntry,
+    DigestItem,
     DigestStats,
     ParsedMessage,
     SummarySource,
@@ -147,8 +147,8 @@ def make_digest_entry(
 
 def group_dated_by_folder(
     entries: list[DigestEntry],
-) -> dict[str, tuple[DigestEntry, ...]]:
-    folders: dict[str, list[DigestEntry]] = {}
+) -> dict[str, tuple[DigestItem, ...]]:
+    folders: dict[str, list[DigestItem]] = {}
     for entry in entries:
         folder = entry.classified.parsed.folder_name
         folders.setdefault(folder, []).append(entry)

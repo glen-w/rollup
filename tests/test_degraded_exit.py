@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from rollup import run_contracts
 from rollup.pipeline import (
     AggregatedResults,
     derive_run_status,
@@ -11,7 +12,6 @@ from rollup.pipeline import (
     status_to_exit_code,
 )
 from rollup.pipeline import status as status_mod
-from rollup import run_contracts
 
 
 def test_group_summaries_degraded_is_partial() -> None:

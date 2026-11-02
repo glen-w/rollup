@@ -7,7 +7,7 @@ import logging
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 from rollup import __version__
@@ -331,7 +331,7 @@ def _check_source_registry(config: Config) -> list[DoctorCheck]:
         out.append(
             DoctorCheck(
                 id=str(check.get("id", "source_registry")),
-                status=status,  # type: ignore[arg-type]
+                status=status,
                 message=str(check.get("message", "")),
             )
         )
@@ -773,6 +773,52 @@ def _check_linkedin_session(config: Config) -> DoctorCheck | None:
     )
 
 
+def _check_rss(config: Config) -> DoctorCheck | None:
+    if not config.rss_enabled:
+        return None
+    from rollup.rss.config import filter_rss_feeds
+
+    feeds = filter_rss_feeds(
+        config.rss,
+        folders_include=config.folders_include,
+        folders_exclude=config.folders_exclude,
+    )
+    if not feeds:
+        return DoctorCheck(
+            id="rss_feeds",
+            status="warn",
+            message="RSS is enabled but no feeds are included",
+            fix="Add an HTTPS feed on /rss or under [rss.feeds].",
+        )
+    return DoctorCheck(
+        id="rss_feeds",
+        status="pass",
+        message=(
+            f"RSS ingest configured ({len(feeds)} feed(s)); "
+            "a digest will call the network for feeds outside the TTL. No inbox."
+        ),
+    )
+
+
+def _check_kindle(config: Config) -> DoctorCheck | None:
+    if not config.kindle.to:
+        return None
+    from rollup.addons.kindle.config import smtp_credentials_present
+
+    if not config.kindle.sender or not smtp_credentials_present():
+        return DoctorCheck(
+            id="kindle_smtp",
+            status="warn",
+            message="Kindle destination is set but SMTP from-address or environment credentials are missing",
+            fix="Set [kindle].from and ROLLUP_KINDLE_SMTP_HOST / ROLLUP_KINDLE_SMTP_PASSWORD.",
+        )
+    return DoctorCheck(
+        id="kindle_smtp",
+        status="pass",
+        message="Kindle SMTP credentials are present",
+    )
+
+
 def _check_gmail_auth(config: Config) -> DoctorCheck | None:
     """Report Gmail readiness: env credentials, readonly token, label config."""
     if not config.gmail_enabled or not config.gmail.enabled:
@@ -930,6 +976,13 @@ def run_doctor(
     gmail_check = _check_gmail_auth(config)
     if gmail_check:
         checks.append(gmail_check)
+
+    rss_check = _check_rss(config)
+    if rss_check:
+        checks.append(rss_check)
+    kindle_check = _check_kindle(config)
+    if kindle_check:
+        checks.append(kindle_check)
 
     scholar_check = _check_scholar_mode(config)
     if scholar_check:

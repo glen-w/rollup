@@ -75,6 +75,17 @@ Enable LLM in Settings and point Ollama at `http://host.docker.internal:11434/ap
 
 Native `rollup web` and Docker web share `./state/rollup.db` and the digest lock. Run one at a time.
 
+## First-run setup inside the container
+
+```bash
+docker compose run --rm rollup rollup init --yes \
+  --root /data/mail/Newsletters.sbd --mail-root /data/mail \
+  --state-dir /data/state --output-dir /data/output --log-dir /data/logs
+```
+
+Writes the mounted config non-interactively and runs doctor. Drop `--yes` for the
+interactive walkthrough (`docker compose run --rm -it …`).
+
 ## Doctor check
 
 ```bash

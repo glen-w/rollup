@@ -6,28 +6,31 @@ import hashlib
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import tomlkit
 from tomlkit.items import Table
 
+from rollup.addons.calibre.config import CalibreConfig
+from rollup.addons.kindle.config import KindleConfig
+from rollup.attention.config import InterestConfig
 from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
-from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
-from rollup.reddit.config import RedditConfig, RedditSub
-from rollup.attention.config import InterestConfig
-from rollup.addons.calibre.config import CalibreConfig
 from rollup.gmail.config import GmailConfig
-from rollup.scholar.config import ScholarConfig
+from rollup.linkedin.config import LinkedInConfig
+from rollup.reddit.config import RedditConfig
+from rollup.rss.config import RssConfig
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
     UnknownRunProfileError,
     resolve_run_profile,
 )
 from rollup.safety import SafetyError, validate_writable_run_paths
+from rollup.scholar.config import ScholarConfig
 from rollup.user_config import (
     FOLDER_THEME_KEYS,
     STICKY_KEYS,
@@ -38,9 +41,9 @@ from rollup.user_config import (
     UiPreferences,
     UserConfigError,
     default_config_search_paths,
+    efforts_to_raw,
     load_user_config,
     parse_toml_dict,
-    efforts_to_raw,
 )
 
 
@@ -86,8 +89,10 @@ class EffectiveConfigView:
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
     gmail: GmailConfig = field(default_factory=GmailConfig)
+    rss: RssConfig = field(default_factory=RssConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
     calibre: CalibreConfig = field(default_factory=CalibreConfig)
+    kindle: KindleConfig = field(default_factory=KindleConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
 
 
@@ -105,8 +110,10 @@ class ConfigPatch:
     linkedin: LinkedInConfig | None = None
     reddit: RedditConfig | None = None
     gmail: GmailConfig | None = None
+    rss: RssConfig | None = None
     scholar: ScholarConfig | None = None
     calibre: CalibreConfig | None = None
+    kindle: KindleConfig | None = None
     interest: InterestConfig | None = None
 
 
@@ -195,8 +202,10 @@ def resolve_effective(
         linkedin=loaded.linkedin,
         reddit=loaded.reddit,
         gmail=loaded.gmail,
+        rss=loaded.rss,
         scholar=loaded.scholar,
         calibre=loaded.calibre,
+        kindle=loaded.kindle,
         interest=loaded.interest,
     )
 
@@ -269,6 +278,10 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 ),
                 "gmail": _gmail_to_raw(
                     patch.gmail if patch.gmail is not None else base.gmail
+                ),
+                "rss": _rss_to_raw(patch.rss if patch.rss is not None else base.rss),
+                "kindle": _kindle_to_raw(
+                    patch.kindle if patch.kindle is not None else base.kindle
                 ),
                 "scholar": _scholar_to_raw(
                     patch.scholar if patch.scholar is not None else base.scholar
@@ -375,6 +388,32 @@ def _calibre_to_raw(calibre: CalibreConfig) -> dict[str, Any]:
     if calibre.drop_dir is not None:
         payload["drop_dir"] = str(calibre.drop_dir)
     return payload
+
+
+def _rss_to_raw(rss: RssConfig) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "enabled": rss.enabled,
+        "layout": rss.layout,
+        "fetch_ttl_hours": rss.fetch_ttl_hours,
+    }
+    if rss.feeds:
+        feeds: dict[str, Any] = {}
+        for slug, feed in sorted(rss.feeds.items()):
+            row: dict[str, Any] = {"url": feed.url, "enabled": feed.enabled}
+            if feed.display_name:
+                row["display_name"] = feed.display_name
+            feeds[slug] = row
+        body["feeds"] = feeds
+    return body
+
+
+def _kindle_to_raw(kindle: KindleConfig) -> dict[str, Any]:
+    body: dict[str, Any] = {}
+    if kindle.to:
+        body["to"] = kindle.to
+    if kindle.sender:
+        body["from"] = kindle.sender
+    return body
 
 
 def _gmail_summary(gmail: GmailConfig) -> str:
@@ -585,7 +624,7 @@ def _loads_plain_toml(text: str) -> dict[str, Any]:
     if sys.version_info >= (3, 11):
         import tomllib
     else:
-        import tomli as tomllib  # type: ignore[no-redef]
+        import tomli as tomllib
     data = tomllib.loads(text)
     if not isinstance(data, dict):
         raise UserConfigError("TOML root must be a table")
@@ -625,9 +664,9 @@ def _apply_patch_to_doc(
             del doc["folders"]
 
     if patch.profiles is not None or patch.remove_profiles:
-        profiles_table: Table
-        if "profiles" in doc and isinstance(doc["profiles"], Table):
-            profiles_table = doc["profiles"]
+        existing_profiles = doc["profiles"] if "profiles" in doc else None
+        if isinstance(existing_profiles, Table):
+            profiles_table: Table = existing_profiles
         else:
             profiles_table = tomlkit.table()
             doc["profiles"] = profiles_table
@@ -635,9 +674,9 @@ def _apply_patch_to_doc(
             if name in profiles_table:
                 del profiles_table[name]
         if patch.profiles is not None:
-            for name, body in patch.profiles.items():
-                inner = tomlkit.table()
-                for k, v in body.items():
+            for name, profile_body in patch.profiles.items():
+                inner: Table = tomlkit.table()
+                for k, v in profile_body.items():
                     if k in STICKY_KEYS and k != "profile":
                         inner[k] = _to_toml_value(v)
                 profiles_table[name] = inner
@@ -728,6 +767,27 @@ def _apply_patch_to_doc(
         for key, value in _gmail_to_raw(patch.gmail).items():
             gmail_table[key] = value
         doc["gmail"] = gmail_table
+    if patch.rss is not None:
+        rss_table = tomlkit.table()
+        raw_rss = _rss_to_raw(patch.rss)
+        rss_table["enabled"] = raw_rss["enabled"]
+        rss_table["layout"] = raw_rss["layout"]
+        rss_table["fetch_ttl_hours"] = raw_rss["fetch_ttl_hours"]
+        feeds_raw = raw_rss.get("feeds") or {}
+        if feeds_raw:
+            feeds_table = tomlkit.table()
+            for slug, row in feeds_raw.items():
+                feed_row = tomlkit.table()
+                for key, value in row.items():
+                    feed_row[key] = value
+                feeds_table[slug] = feed_row
+            rss_table["feeds"] = feeds_table
+        doc["rss"] = rss_table
+    if patch.kindle is not None:
+        kindle_table = tomlkit.table()
+        for key, value in _kindle_to_raw(patch.kindle).items():
+            kindle_table[key] = value
+        doc["kindle"] = kindle_table
     if patch.scholar is not None:
         scholar_table = tomlkit.table()
         scholar_table["mode"] = patch.scholar.mode
@@ -820,7 +880,9 @@ def patch_from_form_values(
     linkedin: LinkedInConfig | None = None,
     reddit: RedditConfig | None = None,
     gmail: GmailConfig | None = None,
+    rss: RssConfig | None = None,
     scholar: ScholarConfig | None = None,
+    kindle: KindleConfig | None = None,
     calibre: CalibreConfig | None = None,
     interest: InterestConfig | None = None,
 ) -> ConfigPatch:
@@ -881,7 +943,9 @@ def patch_from_form_values(
         linkedin=linkedin,
         reddit=reddit,
         gmail=gmail,
+        rss=rss,
         scholar=scholar,
+        kindle=kindle,
         calibre=calibre,
         interest=interest,
     )
@@ -914,6 +978,10 @@ def build_digest_argv(
         argv.append("--no-reddit")
     if effective.gmail.enabled:
         argv.append("--gmail")
+    if effective.rss.enabled:
+        argv.append("--rss")
+    else:
+        argv.append("--no-rss")
     if effective.scholar.mode == "detailed":
         argv.extend(["--scholar-mode", "detailed"])
     if dry_run:

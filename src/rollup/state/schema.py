@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 BUSY_TIMEOUT_MS = 5000
 
@@ -544,6 +544,49 @@ CREATE TABLE IF NOT EXISTS gmail_label_sync (
 );
 """
 
+WAVE_V19 = """
+CREATE TABLE IF NOT EXISTS rss_feeds (
+    feed_url TEXT PRIMARY KEY,
+    etag TEXT,
+    last_modified TEXT,
+    fetched_at TEXT NOT NULL,
+    item_keys_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS rss_items (
+    item_key TEXT PRIMARY KEY,
+    feed_url TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    link TEXT,
+    author TEXT,
+    published_at TEXT,
+    body_text TEXT NOT NULL DEFAULT '',
+    raw_bytes INTEGER NOT NULL DEFAULT 0,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rss_items_feed ON rss_items(feed_url);
+CREATE INDEX IF NOT EXISTS idx_rss_items_fetched ON rss_items(fetched_at);
+CREATE TABLE IF NOT EXISTS briefing_continuity (
+    run_id TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    message_key TEXT NOT NULL,
+    canonical_url TEXT,
+    title_norm TEXT NOT NULL DEFAULT '',
+    attention_band TEXT,
+    theme_label TEXT,
+    folder_name TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (run_id, message_key)
+);
+CREATE INDEX IF NOT EXISTS idx_briefing_continuity_window
+    ON briefing_continuity(window_end);
+CREATE TABLE IF NOT EXISTS digest_attempts (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('started', 'success', 'partial', 'failure')),
+    error_summary TEXT
+);
+"""
+
 _V13_WEBPAGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("fetched_title", "TEXT"),
     ("body_text", "TEXT"),
@@ -593,6 +636,10 @@ CANONICAL_TABLES: frozenset[str] = frozenset(
         "message_corpus_fts",
         "gmail_messages",
         "gmail_label_sync",
+        "rss_feeds",
+        "rss_items",
+        "briefing_continuity",
+        "digest_attempts",
     }
 )
 

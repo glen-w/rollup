@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +34,7 @@ AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 
 REQUEST_TIMEOUT = 30
+GET_CONCURRENCY = 4
 RATE_LIMIT_MAX_RETRIES = 4
 RATE_LIMIT_BASE_WAIT = 2.0
 # Refresh the access token when fewer than this many seconds remain.
@@ -58,6 +61,10 @@ class GmailNotFoundError(GmailSessionError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, retriable=False)
+
+
+class GmailHistoryExpired(GmailNotFoundError):
+    """Stored historyId is too old for history.list; caller must full-sync."""
 
 
 @dataclass(frozen=True)
@@ -206,6 +213,7 @@ class GmailClient:
         self._access_token: str | None = None
         self._expires_at: float = 0.0
         self.requests_made = 0
+        self._io_lock = threading.Lock()
 
     def _http(self) -> requests.Session:
         if self._session is None:
@@ -270,11 +278,27 @@ class GmailClient:
 
     # -- transport --------------------------------------------------------
 
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str],
+        label: str,
+    ) -> requests.Response:
+        """Perform one HTTP call. Only GET is permitted."""
+        if method != "GET":
+            raise GmailSessionError(
+                f"Gmail client is read-only and refuses {method} ({label})"
+            )
+        with self._io_lock:
+            self.requests_made += 1
+            return self._http().get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+
     def _get(self, path: str, *, params: dict[str, Any] | None = None, label: str) -> Any:
         url = f"{GMAIL_API_BASE}/{path.lstrip('/')}"
         if params:
             url = f"{url}?{urlencode({k: v for k, v in params.items() if v is not None}, doseq=True)}"
-        session = self._http()
         attempt = 0
         while True:
             token = self._ensure_access_token()
@@ -283,9 +307,8 @@ class GmailClient:
                 "User-Agent": gmail_user_agent(),
                 "Accept": "application/json",
             }
-            self.requests_made += 1
             try:
-                resp = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+                resp = self._request("GET", url, headers=headers, label=label)
             except requests.RequestException as exc:
                 raise GmailSessionError(f"{label} failed: {exc}") from exc
             if resp.status_code == 401:
@@ -388,6 +411,78 @@ class GmailClient:
     def get_profile(self) -> dict[str, Any]:
         payload = self._get("profile", label="Gmail profile")
         return payload if isinstance(payload, dict) else {}
+
+    def list_history(
+        self,
+        *,
+        start_history_id: str,
+        label_id: str,
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        """GET users.history.list. 404 means the stored historyId expired."""
+        records: list[dict[str, Any]] = []
+        page_token: str | None = None
+        latest: str | None = None
+        while True:
+            params: dict[str, Any] = {
+                "startHistoryId": start_history_id,
+                "labelId": label_id,
+                "historyTypes": [
+                    "messageAdded",
+                    "messageDeleted",
+                    "labelAdded",
+                    "labelRemoved",
+                ],
+                "pageToken": page_token,
+            }
+            try:
+                payload = self._get(
+                    "history",
+                    params=params,
+                    label=f"Gmail history.list {label_id}",
+                )
+            except GmailNotFoundError as exc:
+                raise GmailHistoryExpired(str(exc)) from exc
+            if not isinstance(payload, dict):
+                raise GmailSessionError("Gmail history.list: unexpected payload shape")
+            history_id = payload.get("historyId")
+            if isinstance(history_id, str) and history_id:
+                latest = history_id
+            for record in payload.get("history") or []:
+                if isinstance(record, dict):
+                    records.append(record)
+            page_token = payload.get("nextPageToken")
+            if not isinstance(page_token, str) or not page_token:
+                break
+        return latest, records
+
+    def get_messages_raw(
+        self, gmail_ids: list[str]
+    ) -> tuple[list[GmailRawMessage], list[str]]:
+        """GET format=raw for many ids. At most GET_CONCURRENCY in flight.
+
+        One id's failure is skipped. This never uses POST.
+        """
+        if not gmail_ids:
+            return [], []
+        found: list[GmailRawMessage] = []
+        skipped: list[str] = []
+        sem = threading.Semaphore(GET_CONCURRENCY)
+        lock = threading.Lock()
+
+        def _one(gmail_id: str) -> None:
+            with sem:
+                try:
+                    msg = self.get_message_raw(gmail_id)
+                except GmailSessionError:
+                    with lock:
+                        skipped.append(gmail_id)
+                    return
+                with lock:
+                    found.append(msg)
+
+        with ThreadPoolExecutor(max_workers=GET_CONCURRENCY) as pool:
+            list(pool.map(_one, gmail_ids))
+        return found, skipped
 
 
 def build_gmail_client(state_dir: Path) -> GmailClient:

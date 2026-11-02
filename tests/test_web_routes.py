@@ -10,7 +10,6 @@ import pytest
 
 pytest.importorskip("flask")
 
-from rollup.ratings import set_rating_with_reasons
 from rollup.run_index import IndexEntry, RunIndexPayload, index_rollup_run
 from rollup.state import init_db
 from rollup.utc import format_utc
@@ -254,7 +253,7 @@ def test_rating_post(app_env):
     )
     assert r.status_code == 200
     with app.app_context():
-        from flask import g
+        pass
         # open via client context
     conn = init_db(Path(app.config["DB_PATH"]))
     from rollup.ratings import get_rating

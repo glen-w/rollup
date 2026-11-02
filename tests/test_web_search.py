@@ -14,7 +14,6 @@ from rollup.state import init_db
 from rollup.utc import format_utc
 from rollup.web.app import create_app
 
-
 pytestmark = pytest.mark.skipif(
     not fts5_available(),
     reason="SQLite FTS5 is not available in this build",

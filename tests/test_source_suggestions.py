@@ -14,7 +14,6 @@ from rollup.source_suggestions import collect_suggestions
 from rollup.sources_cmd import cmd_sources
 from rollup.state import init_db
 
-
 NOW = datetime(2026, 11, 2, tzinfo=timezone.utc)
 
 

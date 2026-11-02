@@ -365,6 +365,26 @@ def _emit_digest_artifacts(session: _DigestSession) -> DigestRunResult | None:
                         level="error",
                     )
 
+        if (
+            aggregated.dated_outputs_written
+            and session.report is not None
+            and not run_options.dry_run
+        ):
+            from rollup.continuity import record_continuity
+
+            try:
+                record_continuity(
+                    session.conn, session.report, run_id=session.ctx.run_id
+                )
+            except Exception as ledger_exc:
+                aggregated.continuity_ledger_failed = True
+                logger.error("Continuity ledger write failed: %s", ledger_exc)
+                ctx.add_event(
+                    "continuity_ledger_failed",
+                    str(ledger_exc),
+                    level="error",
+                )
+
     session.status = derive_run_status(aggregated, dry_run=False)
     if session.manifest_builder is not None:
         session.manifest_builder.set_outputs(
@@ -435,7 +455,21 @@ def _index_web_run(session: _DigestSession) -> None:
 
 
 def _archive_keeping_current(session: _DigestSession) -> None:
-    """Move prior dated artifacts out of the output root; keep this run's files."""
+    """Move prior dated artifacts out of the output root; keep this run's files.
+
+    Archiving is housekeeping after the new batch has landed. A failure here
+    must not turn a usable digest into a hard failure: it is recorded as the
+    typed ``archive_failed`` degradation (partial) and publication continues.
+    """
+    try:
+        _archive_keeping_current_inner(session)
+    except Exception as exc:
+        session.aggregated.archive_failed = True
+        logger.error("Archiving previous outputs failed: %s", exc)
+        session.ctx.add_event("archive_failed", str(exc), level="error")
+
+
+def _archive_keeping_current_inner(session: _DigestSession) -> None:
     from rollup.output_archive import archive_previous_outputs
     from rollup.render import digest_output_stem
 

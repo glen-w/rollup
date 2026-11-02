@@ -63,13 +63,17 @@ Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `
 | Manifest write fails after a usable digest | 2 | Original failure diagnosis preserved; minimal fallback diagnostic on stderr / run events |
 | Seen-state update fails after required pubs | 2 | Dated digest may exist; undated items may repeat on future runs |
 | Web-index failure | 0 if otherwise success | Typed secondary degradation; manifest event + diagnostic; does **not** alone force partial |
+| Archiving the previous batch fails after the new digest landed | 2 | Housekeeping only: dated digest, `latest.*`, and seen-state proceed; `archive_failed` in `degradations` |
 | Group summaries degrade | 2 | Member summaries still render; cache/read/write or stream errors are recorded |
 | LinkedIn fetch fails; mail still publishes | 2 | Dated mail digest usable; LinkedIn section omitted; `linkedin_fetch_failed` (or similar) in warnings |
 | LinkedIn-only run (`--folder linkedin:…`, no mbox) and fetch fails | 1 | Nothing published |
 | Reddit fetch fails; mail still publishes | 2 | Dated mail digest usable; Reddit section omitted; `reddit_fetch_failed` (or similar) in warnings |
 | Reddit-only run (`--folder reddit:…`, no mbox) and fetch fails | 1 | Nothing published |
 | Gmail label fetch fails; other sources still publish | 2 | Dated digest usable; stale label snapshot reused when available (`gmail_cache_stale`), otherwise label omitted (`gmail_fetch_failed`) |
-| Gmail-only run (no mbox / LinkedIn / Reddit / webpage input) and fetch fails | 1 | Nothing published |
+| Gmail-only run (no mbox / LinkedIn / Reddit / webpage / RSS input) and fetch fails | 1 | Nothing published |
+| RSS fetch fails; other sources still publish | 2 | Dated digest usable; stale feed snapshot reused when available (`rss_cache_stale`), otherwise feed omitted (`rss_fetch_failed`); CLI `partial: rss` |
+| RSS-only run and fetch fails | 1 | Nothing published |
+| Continuity ledger write fails after required pubs | 2 | Dated digest, `latest.*`, and seen-state stay; `partial: continuity ledger` |
 | High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
 
 **Irreversible boundary:** `latest.*`, seen-state, web index, and `success` status wait until every required dated artifact and required output writer has final paths. Manifest / web-index failures must not mark unpublished messages seen.
@@ -198,6 +202,9 @@ source of truth:
 
 Dated files are written **before** the previous batch is moved into
 `output_dir/archive/`, so a crash mid-publish cannot leave the output root empty.
+Staged Markdown/HTML are fsynced before the rename into their final names; a
+failed archive step is recorded as the `archive_failed` degradation (exit 2) and
+never blocks `latest.*` or seen-state.
 
 Readers still accept the legacy manifest key `outputs_published` as an alias for
 `dated_outputs_written`, but new manifests write `dated_outputs_written`.

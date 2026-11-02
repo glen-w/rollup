@@ -1,4 +1,4 @@
-{# Reusable labels, values, status badges, and provenance chips for system info panels. #}
+{# Reusable labels, values, status badges, provenance chips, form fields. #}
 
 {% macro display_value(val, empty="—") %}
   {% if val is none or val == "" %}
@@ -51,4 +51,20 @@
 {% macro info_row(label, value) %}
   <dt>{{ label }}</dt>
   <dd>{% if value is none or value == "" %}<span class="is-empty">—</span>{% else %}{{ value }}{% endif %}</dd>
+{% endmacro %}
+
+{# Inline validation message for a named field (errors is a dict name → message). #}
+{% macro field_error(errors, name) %}
+  {% if errors and errors.get(name) %}
+  <span class="field-error" id="err-{{ name }}">{{ errors.get(name) }}</span>
+  {% endif %}
+{% endmacro %}
+
+{# Pager with optional total. #}
+{% macro pager(page, has_prev, has_next, extra_query="", total_pages=none) %}
+<nav class="pager" aria-label="Pagination">
+  {% if has_prev %}<a class="btn btn-sm" href="?page={{ page - 1 }}{{ extra_query }}" rel="prev">Previous</a>{% else %}<span class="btn btn-sm" aria-disabled="true">Previous</span>{% endif %}
+  <span>Page {{ page }}{% if total_pages %} of {{ total_pages }}{% endif %}</span>
+  {% if has_next %}<a class="btn btn-sm" href="?page={{ page + 1 }}{{ extra_query }}" rel="next">Next</a>{% else %}<span class="btn btn-sm" aria-disabled="true">Next</span>{% endif %}
+</nav>
 {% endmacro %}

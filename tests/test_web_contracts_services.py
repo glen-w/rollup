@@ -25,7 +25,6 @@ from rollup.source_registry import alias_sources, ensure_source_anchor
 from rollup.state import init_db
 from rollup.utc import format_utc
 
-
 NOW = datetime(2024, 7, 1, tzinfo=timezone.utc)
 
 

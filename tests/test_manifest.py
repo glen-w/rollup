@@ -16,7 +16,6 @@ from rollup.manifest import (
     ManifestValidationError,
     config_fingerprint,
     filter_allowlisted,
-    read_latest_manifest,
     validate_manifest,
 )
 from rollup.pipeline import AggregatedResults

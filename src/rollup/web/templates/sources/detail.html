@@ -1,45 +1,57 @@
 {% extends "base.html" %}
 {% from "partials/info_macros.html" import enabled_badge, info_row, policy_row %}
-{% block title %}{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}{% endblock %}
+{% set source_title = record.policy.display_name_override or record.policy.display_name_observed or record.source_key %}
+{% block title %}{{ source_title }} · Sources · Rollup{% endblock %}
 {% block content %}
 <article class="source-detail">
-  <h1>{{ record.policy.display_name_override or record.policy.display_name_observed or record.source_key }}</h1>
-  <p class="meta">
-    <code>{{ record.source_key }}</code>
-    · lifecycle <span class="lifecycle-{{ record.lifecycle }}">{{ record.lifecycle }}</span>
-    · {{ enabled_badge(record.policy.enabled) }}
-  </p>
-  <p class="note">Registry management — inferred facts vs user overrides. Content browsing lives under Quality.</p>
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <ol>
+      {% if from_view == 'quality' %}
+      <li><a href="{{ url_for('sources.list_sources') }}">Sources · Quality</a></li>
+      {% else %}
+      <li><a href="{{ url_for('sources.list_registry') }}">Sources · Registry</a></li>
+      {% endif %}
+      <li aria-current="page">{{ source_title }}</li>
+    </ol>
+  </nav>
+  <div class="page-header">
+    <div>
+      <h1>{{ source_title }}</h1>
+      <p class="page-lede">
+        <code>{{ record.source_key }}</code>
+        · lifecycle <span class="lifecycle-{{ record.lifecycle }}">{{ record.lifecycle }}</span>
+        · {{ enabled_badge(record.policy.enabled) }}
+      </p>
+    </div>
+  </div>
 
   {% if scholar_alert %}
-  <p class="banner">This looks like <strong>Google Scholar</strong> alerts. Mode is currently <code>{{ scholar_mode }}</code> — change it under Settings (Google Scholar). Default keeps the email as an item list; detailed fetches and summarises each paper.</p>
+  <div class="banner banner-info">This looks like <strong>Google Scholar</strong> alerts. Mode is currently <code>{{ scholar_mode }}</code> — change it under <a href="{{ url_for('settings.settings_index') }}#tab-network">Settings → Network sources</a>. Default keeps the email as an item list; detailed fetches and summarises each paper.</div>
   {% endif %}
 
-  <details class="panel" open>
-    <summary>Inferred / observed facts</summary>
-    <div class="card-body">
-      <div class="stats-panel">
+  <div class="grid-2">
+    <section class="card" aria-labelledby="facts-title">
+      <div class="card-header"><h2 id="facts-title">Observed facts</h2></div>
+      <div class="card-body">
         <dl class="info-grid">
           {{ info_row("Messages", record.observation.message_count_total) }}
-          {{ info_row("First seen", record.observation.first_seen_at) }}
-          {{ info_row("Last seen", record.observation.last_seen_at) }}
+          <dt>First seen</dt><dd>{% if record.observation.first_seen_at %}{{ record.observation.first_seen_at | human_datetime }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
+          <dt>Last seen</dt><dd>{% if record.observation.last_seen_at %}{{ record.observation.last_seen_at | human_datetime }}{% else %}<span class="is-empty">—</span>{% endif %}</dd>
           <dt>Cadence</dt>
           <dd>{{ record.observation.cadence.label }}
-            <span class="muted">(n={{ record.observation.cadence.sample_count }}, conf={{ "%.2f"|format(record.observation.cadence.confidence) }})</span>
+            <span class="muted small">(n={{ record.observation.cadence.sample_count }}, conf={{ "%.2f"|format(record.observation.cadence.confidence) }})</span>
           </dd>
           {{ info_row("Detected type", record.observation.last_detected_newsletter_type) }}
           {{ info_row("Last folder", record.observation.last_folder_name) }}
-          {{ info_row("Observed display name", record.observation.display_name_observed) }}
+          {{ info_row("Observed name", record.observation.display_name_observed) }}
           {{ info_row("List-ID", record.observation.observed_list_id) }}
         </dl>
       </div>
-    </div>
-  </details>
+    </section>
 
-  <details class="panel" open>
-    <summary>Effective policy (with provenance)</summary>
-    <div class="card-body">
-      <div class="stats-panel">
+    <section class="card" aria-labelledby="policy-title">
+      <div class="card-header"><h2 id="policy-title">Effective policy</h2><span class="muted small">with provenance</span></div>
+      <div class="card-body">
         <dl class="policy-grid">
           {{ policy_row("enabled", record.policy.enabled, record.policy.provenance.enabled) }}
           {{ policy_row("always_surface", record.policy.always_surface, record.policy.provenance.always_surface) }}
@@ -49,11 +61,105 @@
           {{ policy_row("summary profile", record.policy.summary_profile_override, record.policy.provenance.summary_profile) }}
         </dl>
       </div>
-    </div>
-  </details>
+    </section>
+  </div>
 
-  <details class="panel">
-    <summary>Aliases{% if aliases %} ({{ aliases | length }}){% endif %} — creation/merge only</summary>
+  <section class="card" aria-labelledby="overrides-title">
+    <div class="card-header"><h2 id="overrides-title">User overrides</h2></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" class="policy-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="source_revision" value="{{ revision }}">
+        {% for f in ['enabled', 'always_surface', 'priority', 'newsletter_type', 'grouping_policy', 'summary_profile', 'expected_cadence', 'display_name', 'notes'] %}
+        <input type="hidden" name="fields" value="{{ f }}">
+        {% endfor %}
+        <div class="grid-2">
+          <div>
+            <label class="field">
+              <span class="field-label">Enabled</span>
+              <select name="enabled">
+                <option value="inherit" {% if record.overrides.enabled is none %}selected{% endif %}>(inherit)</option>
+                <option value="true" {% if record.overrides.enabled is sameas true %}selected{% endif %}>enabled</option>
+                <option value="false" {% if record.overrides.enabled is sameas false %}selected{% endif %}>disabled</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Always surface</span>
+              <select name="always_surface">
+                <option value="inherit" {% if record.overrides.always_surface is none %}selected{% endif %}>(inherit)</option>
+                <option value="true" {% if record.overrides.always_surface is sameas true %}selected{% endif %}>on</option>
+                <option value="false" {% if record.overrides.always_surface is sameas false %}selected{% endif %}>off</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Priority</span>
+              <input type="text" name="priority" value="{{ record.overrides.priority if record.overrides.priority is not none else '' }}" inputmode="numeric" placeholder="blank = inherit">
+            </label>
+            <label class="field">
+              <span class="field-label">Display name</span>
+              <input type="text" name="display_name" value="{{ record.overrides.display_name or '' }}" maxlength="500">
+            </label>
+          </div>
+          <div>
+            <label class="field">
+              <span class="field-label">Forced content type</span>
+              <select name="newsletter_type">
+                <option value="">(inherit)</option>
+                {% for t in newsletter_types %}
+                <option value="{{ t }}" {% if record.overrides.newsletter_type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Preferred grouping</span>
+              <select name="grouping_policy">
+                <option value="">(inherit)</option>
+                {% for p in grouping_policies %}
+                <option value="{{ p }}" {% if record.overrides.grouping_policy == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Expected cadence</span>
+              <select name="expected_cadence">
+                <option value="">(inherit)</option>
+                {% for c in cadence_labels %}
+                <option value="{{ c }}" {% if record.overrides.expected_cadence == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Summary profile</span>
+              <select name="summary_profile">
+                <option value="">(inherit)</option>
+                {% for p in summary_profiles %}
+                <option value="{{ p }}" {% if record.overrides.summary_profile == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+        </div>
+        <label class="field field-wide">
+          <span class="field-label">Notes</span>
+          <textarea name="notes" maxlength="2000" rows="3">{{ record.overrides.notes or '' }}</textarea>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Save overrides</button>
+        </div>
+      </form>
+    </div>
+    <div class="card-footer">
+      <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" data-confirm="Clear all overrides for this source? Observed facts are kept.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="source_revision" value="{{ revision }}">
+        <input type="hidden" name="clear_all" value="1">
+        <button type="submit" class="btn btn-danger btn-sm">Clear all overrides</button>
+      </form>
+    </div>
+  </section>
+
+  <details class="card">
+    <summary>Aliases{% if aliases %} ({{ aliases | length }}){% endif %} <span class="muted small">— creation/merge only</span></summary>
     <div class="card-body">
       {% if aliases %}
       <ul>
@@ -66,109 +172,31 @@
       {% endif %}
       <form method="post" action="{{ url_for('sources.source_alias_preview', id_enc=id_enc) }}" class="policy-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>Alias key (source key or existing source to merge)
+        <label class="field">
+          <span class="field-label">Alias key</span>
           <input type="text" name="alias_key" required>
+          <span class="field-hint">A source key, or an existing source to merge into this one.</span>
         </label>
-        <label>Note
+        <label class="field">
+          <span class="field-label">Note</span>
           <input type="text" name="note" maxlength="500">
         </label>
-        <button type="submit">Preview alias</button>
+        <button type="submit" class="btn">Preview alias</button>
       </form>
       {% if alias_preview %}
-      <p class="banner">
+      <div class="banner banner-info">
         {% if alias_preview.merge %}Merge{% else %}Create alias{% endif %}
         <code>{{ alias_preview.alias_key }}</code>
         → <code>{{ alias_preview.canonical_key }}</code>
-      </p>
+      </div>
       <form method="post" action="{{ url_for('sources.source_alias_confirm', id_enc=id_enc) }}" class="policy-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="alias_key" value="{{ alias_preview.alias_key }}">
         <input type="hidden" name="note" value="{{ alias_preview.note or '' }}">
         <input type="hidden" name="confirm_token" value="{{ alias_preview.token }}">
-        <button type="submit">Confirm alias</button>
+        <button type="submit" class="btn btn-primary">Confirm alias</button>
       </form>
       {% endif %}
-    </div>
-  </details>
-
-  <details class="panel" open>
-    <summary>User overrides</summary>
-    <div class="card-body">
-      <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" class="policy-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="source_revision" value="{{ revision }}">
-        <input type="hidden" name="fields" value="enabled">
-        <input type="hidden" name="fields" value="always_surface">
-        <input type="hidden" name="fields" value="priority">
-        <input type="hidden" name="fields" value="newsletter_type">
-        <input type="hidden" name="fields" value="grouping_policy">
-        <input type="hidden" name="fields" value="summary_profile">
-        <input type="hidden" name="fields" value="expected_cadence">
-        <input type="hidden" name="fields" value="display_name">
-        <input type="hidden" name="fields" value="notes">
-        <label>Enabled
-          <select name="enabled">
-            <option value="inherit" {% if record.overrides.enabled is none %}selected{% endif %}>(inherit)</option>
-            <option value="true" {% if record.overrides.enabled is sameas true %}selected{% endif %}>enabled</option>
-            <option value="false" {% if record.overrides.enabled is sameas false %}selected{% endif %}>disabled</option>
-          </select>
-        </label>
-        <label>Always surface
-          <select name="always_surface">
-            <option value="inherit" {% if record.overrides.always_surface is none %}selected{% endif %}>(inherit)</option>
-            <option value="true" {% if record.overrides.always_surface is sameas true %}selected{% endif %}>on</option>
-            <option value="false" {% if record.overrides.always_surface is sameas false %}selected{% endif %}>off</option>
-          </select>
-        </label>
-        <label>Priority (blank = inherit)
-          <input type="text" name="priority" value="{{ record.overrides.priority if record.overrides.priority is not none else '' }}" inputmode="numeric">
-        </label>
-        <label>Display name
-          <input type="text" name="display_name" value="{{ record.overrides.display_name or '' }}" maxlength="500">
-        </label>
-        <label>Forced content type
-          <select name="newsletter_type">
-            <option value="">(inherit)</option>
-            {% for t in newsletter_types %}
-            <option value="{{ t }}" {% if record.overrides.newsletter_type == t %}selected{% endif %}>{{ t }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Preferred grouping
-          <select name="grouping_policy">
-            <option value="">(inherit)</option>
-            {% for p in grouping_policies %}
-            <option value="{{ p }}" {% if record.overrides.grouping_policy == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Expected cadence
-          <select name="expected_cadence">
-            <option value="">(inherit)</option>
-            {% for c in cadence_labels %}
-            <option value="{{ c }}" {% if record.overrides.expected_cadence == c %}selected{% endif %}>{{ c }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Summary profile
-          <select name="summary_profile">
-            <option value="">(inherit)</option>
-            {% for p in summary_profiles %}
-            <option value="{{ p }}" {% if record.overrides.summary_profile == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>Notes
-          <textarea name="notes" maxlength="2000">{{ record.overrides.notes or '' }}</textarea>
-        </label>
-        <button type="submit">Save overrides</button>
-      </form>
-      <form method="post" action="{{ url_for('sources.source_policy', id_enc=id_enc) }}" class="policy-form" onsubmit="return confirm('Clear all overrides for this source?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="source_revision" value="{{ revision }}">
-        <input type="hidden" name="clear_all" value="1">
-        <button type="submit">Clear all overrides</button>
-      </form>
     </div>
   </details>
 </article>

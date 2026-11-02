@@ -19,7 +19,7 @@ from rollup.web.secrets import (
     load_or_create_extension_token,
     rotate_extension_token,
 )
-from rollup.webpage.queue import count_pending, enqueue_url, get_by_id, mark_failed
+from rollup.webpage.queue import count_pending, get_by_id, mark_failed
 
 
 @pytest.fixture()

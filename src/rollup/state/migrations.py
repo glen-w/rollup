@@ -4,17 +4,32 @@ from __future__ import annotations
 
 import sqlite3
 
-from rollup.state.schema import *  # noqa: F403
-from rollup.state.schema import (  # noqa: F401
-    GMAIL_CACHE_V18,
-    MESSAGE_CORPUS_FTS_V17,
+from rollup.state.schema import (
     _SUMMARIES_COMPOSITE_PK,
     _SUMMARY_GENERATIONS_INPUT_HASH_PK,
     _V7_REQUIRED_TABLES,
     _V9_REQUIRED_COLUMNS,
     _V10_REQUIRED_COLUMNS,
-    _V13_WEBPAGE_COLUMNS,
     _V13_WEBPAGE_COLUMN_NAMES,
+    _V13_WEBPAGE_COLUMNS,
+    CANONICAL_TABLES,
+    FINAL_REVIEW_SCHEMA_V5,
+    GMAIL_CACHE_V18,
+    GROUP_SUMMARY_BY_KEY_SCHEMA,
+    GROUP_SUMMARY_SCHEMA_V6,
+    MESSAGE_CORPUS_FTS_V17,
+    MESSAGE_READER_BODIES_V9,
+    RATING_REASON_SEED,
+    REDDIT_CATALOG_V14,
+    SCHEMA_VERSION,
+    SCHOLAR_PAPER_BODIES_V16,
+    SOURCE_FETCH_CACHE_V15,
+    SOURCE_REGISTRY_SCHEMA_V7,
+    SUMMARIES_SCHEMA_V2,
+    SUMMARIES_SCHEMA_V4,
+    WAVE_V19,
+    WEB_SCHEMA_V8,
+    WEBPAGE_QUEUE_V12,
 )
 
 
@@ -804,6 +819,32 @@ def ensure_gmail_cache_v18(conn: sqlite3.Connection) -> None:
         raise
 
 
+def ensure_wave_v19(conn: sqlite3.Connection) -> None:
+    """Schema v19: RSS cache, briefing continuity ledger, digest attempts."""
+    apply_connection_pragmas(conn)
+    refuse_unsupported_schema_version(conn)
+    ver = get_schema_version(conn)
+    required = {"rss_feeds", "rss_items", "briefing_continuity", "digest_attempts"}
+    if ver >= 19 and required.issubset(_existing_tables(conn)):
+        return
+    if ver < 18:
+        ensure_gmail_cache_v18(conn)
+    _assert_not_in_transaction(conn)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _exec_ddl_statements(conn, WAVE_V19)
+        fk_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk_errors:
+            raise sqlite3.DatabaseError(
+                f"foreign_key_check failed after wave v19: {fk_errors}"
+            )
+        _bump_schema_version_in_txn(conn, 19)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def run_schema_migrations(conn: sqlite3.Connection) -> None:
     """Authoritative ordered migration steps after MVP bootstrap."""
     refuse_unsupported_schema_version(conn)
@@ -820,6 +861,7 @@ def run_schema_migrations(conn: sqlite3.Connection) -> None:
     ensure_scholar_paper_bodies_v16(conn)
     ensure_message_corpus_fts_v17(conn)
     ensure_gmail_cache_v18(conn)
+    ensure_wave_v19(conn)
     validate_canonical_schema(conn)
 
 

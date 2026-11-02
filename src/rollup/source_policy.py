@@ -131,7 +131,6 @@ def apply_effective_type(
         effective = policy.newsletter_type_override
     elif _should_force_scholar_item_list(classified):
         effective = "item_list"
-    disagreed = effective != detected
     if effective == detected:
         return classified, detected, effective, False
     return (

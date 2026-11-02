@@ -160,6 +160,7 @@ class DigestEntry:
     attention_score: float | None = None
     attention_reasons: tuple[str, ...] = ()
     coverage_cluster_id: str | None = None
+    continuity_label: str | None = None
 
 
 @dataclass(frozen=True)

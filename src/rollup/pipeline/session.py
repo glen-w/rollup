@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rollup.config import Config
 from rollup.models import DigestReport, DigestStats
@@ -14,6 +16,9 @@ from rollup.pipeline.status import EXIT_FAILURE, derive_run_status
 from rollup.pipeline.types import AggregatedResults, DigestRunResult, SummarizeResult
 from rollup.run_context import RunContext, RunStatus
 from rollup.run_options import GroupingConfig, ManifestConfig, RunOptions
+
+if TYPE_CHECKING:
+    from rollup.output_writers import OutputWriter
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +32,8 @@ class _DigestSession:
     grouping: GroupingConfig
     manifest_config: ManifestConfig
     acquire_lock: bool
-    output_writers: list | None
-    writer_cli_args: object | None
+    output_writers: Mapping[str, OutputWriter] | None
+    writer_cli_args: argparse.Namespace | None
     ctx: RunContext
     generated_at: datetime
     aggregated: AggregatedResults
@@ -46,6 +51,7 @@ class _DigestSession:
     secondary_manifest_error: str | None = None
     error_message: str | None = None
     status: RunStatus = "failure"
+    attempt_started: bool = False
     manifest_builder: Any = None
     summarize_result: SummarizeResult | None = None
 
@@ -114,6 +120,22 @@ def _prepare_lock_and_manifest(session: _DigestSession) -> DigestRunResult | Non
                     "Recovered stale run lock",
                     level="warning",
                 )
+            try:
+                from rollup.attempts import start_attempt
+                from rollup.state import init_db
+
+                attempt_conn = init_db(config.db_path)
+                try:
+                    start_attempt(
+                        attempt_conn,
+                        run_id=session.ctx.run_id,
+                        started_at=session.generated_at,
+                    )
+                    session.attempt_started = True
+                finally:
+                    attempt_conn.close()
+            except Exception as exc:
+                logger.warning("Could not record digest attempt: %s", exc)
         except RunLockError as exc:
             session.aggregated.hard_failure = True
             session.aggregated.hard_failure_reason = str(exc)
@@ -129,6 +151,27 @@ def _prepare_lock_and_manifest(session: _DigestSession) -> DigestRunResult | Non
 
 
 def _release_resources(session: _DigestSession) -> None:
+    if session.attempt_started:
+        try:
+            from datetime import datetime
+
+            from rollup.attempts import finish_attempt
+            from rollup.state import init_db
+
+            attempt_conn = init_db(session.config.db_path)
+            try:
+                stored = session.status if session.status in {"success", "partial", "failure"} else "failure"
+                finish_attempt(
+                    attempt_conn,
+                    run_id=session.ctx.run_id,
+                    status=stored,
+                    finished_at=datetime.now().astimezone(),
+                    error_summary=session.error_message,
+                )
+            finally:
+                attempt_conn.close()
+        except Exception as exc:
+            logger.warning("Could not finish digest attempt: %s", exc)
     if session.conn is not None:
         try:
             session.conn.close()

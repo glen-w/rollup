@@ -15,6 +15,7 @@ from rollup.run_contracts import EXIT_FAILURE, EXIT_PARTIAL, EXIT_SUCCESS
 _PARTIAL_REASONS: tuple[tuple[str, str], ...] = (
     ("mbox_mutation_detected", "mbox mutation"),
     ("optional_writer_failed", "optional writer"),
+    ("archive_failed", "output archive"),
     ("publication_failed", "latest publication"),
     ("seen_state_failed", "seen-state"),
     ("manifest_write_failed", "manifest"),
@@ -24,6 +25,8 @@ _PARTIAL_REASONS: tuple[tuple[str, str], ...] = (
     ("reddit_degraded", "reddit"),
     ("webpage_degraded", "webpage"),
     ("gmail_degraded", "gmail"),
+    ("rss_degraded", "rss"),
+    ("continuity_ledger_failed", "continuity ledger"),
     ("web_index_failed", "web index"),
 )
 
@@ -96,6 +99,9 @@ def derive_run_status(
     if aggregated.optional_writer_failed:
         return "partial"
 
+    if aggregated.archive_failed:
+        return "partial"
+
     if aggregated.mbox_mutation_detected:
         return "partial"
 
@@ -109,6 +115,12 @@ def derive_run_status(
         return "partial"
 
     if aggregated.gmail_degraded:
+        return "partial"
+
+    if aggregated.rss_degraded:
+        return "partial"
+
+    if aggregated.continuity_ledger_failed:
         return "partial"
 
     if aggregated.required_writer_failed:
@@ -138,7 +150,8 @@ def evaluate_no_input(
     has_reddit = bool(discovery.reddit_subs)
     has_webpage = bool(discovery.webpage_items)
     has_gmail = bool(discovery.gmail_targets)
-    has_any = has_mbox or has_linkedin or has_reddit or has_webpage or has_gmail
+    has_rss = bool(discovery.rss_feeds)
+    has_any = has_mbox or has_linkedin or has_reddit or has_webpage or has_gmail or has_rss
 
     if folders_include and not has_any:
         return (
@@ -148,7 +161,7 @@ def evaluate_no_input(
     if not has_any:
         return (
             "No readable mbox folders, LinkedIn searches, Reddit subs, Gmail labels, "
-            "or webpage queue items; refusing to publish"
+            "RSS feeds, or webpage queue items; refusing to publish"
         )
 
     if has_mbox:
@@ -199,7 +212,7 @@ def evaluate_no_input(
 
     if (
         has_gmail
-        and not (has_mbox or has_linkedin or has_webpage or has_reddit)
+        and not (has_mbox or has_linkedin or has_webpage or has_reddit or has_rss)
         and parse.counts.messages_parsed == 0
     ):
         gmail_failed = any(
@@ -209,6 +222,21 @@ def evaluate_no_input(
         if gmail_failed:
             return (
                 "Gmail fetch failed and no other input sources; "
+                "refusing to publish"
+            )
+
+    if (
+        has_rss
+        and not (has_mbox or has_linkedin or has_webpage or has_reddit or has_gmail)
+        and parse.counts.messages_parsed == 0
+    ):
+        rss_failed = any(
+            w.code.startswith("rss_") and w.code != "rss_dry_run"
+            for w in parse.warnings
+        )
+        if rss_failed:
+            return (
+                "RSS fetch failed and no other input sources; "
                 "refusing to publish"
             )
 

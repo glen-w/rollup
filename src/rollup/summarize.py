@@ -9,20 +9,27 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import urlparse
 
 from rollup.cache_keys import canonicalize_provider_options
 from rollup.error_sanitize import sanitize_provider_message
 from rollup.llm_client import (
     CompletionRequest,
-    OllamaError,
     ProviderAvailabilityCache,
     check_ollama_available,
     is_local_ollama,
     validate_ollama_url,
 )
-from rollup.models import ClassifiedMessage, DigestEntry, SummarySource
-from rollup.models import DigestSummaryAnomalyRow, DigestSummaryMetadata, DigestSummaryRouteStat
+from rollup.llm_client import (
+    OllamaError as OllamaError,  # re-exported: pipeline.stages and tests import it from here
+)
+from rollup.models import (
+    ClassifiedMessage,
+    DigestEntry,
+    DigestSummaryAnomalyRow,
+    DigestSummaryMetadata,
+    DigestSummaryRouteStat,
+    SummarySource,
+)
 from rollup.ollama_stream import (
     StreamStopReason,
     is_stop_reason_cacheable,
@@ -30,7 +37,6 @@ from rollup.ollama_stream import (
 from rollup.provider_errors import is_provider_call_error
 from rollup.provider_options import (
     normalize_litellm_cache_options,
-    normalize_ollama_cache_options,
 )
 from rollup.summary_plan import (
     SummaryExecutionCollector,
@@ -42,6 +48,15 @@ from rollup.summary_plan import (
 from rollup.summary_profiles import summary_job_options_for_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_int(value: object) -> int:
+    """Narrow a provider option value (TOML int/float/str) to int."""
+    if isinstance(value, bool):
+        raise TypeError("num_predict must be numeric, not bool")
+    if isinstance(value, (int, float, str)):
+        return int(value)
+    raise TypeError(f"num_predict must be numeric, got {type(value).__name__}")
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 PROMPT_VERSION = 3
@@ -199,9 +214,7 @@ def build_prompt(
     style_instructions = PROMPT_STYLE_INSTRUCTIONS.get(
         prompt_style, PROMPT_STYLE_INSTRUCTIONS["standard"]
     )
-    return "{style}\n\n{template}".format(
-        style=style_instructions, template=template
-    ).format(
+    return f"{style_instructions}\n\n{template}".format(
         subject=p.subject,
         sender=p.sender,
         newsletter_type=classified.newsletter_type,
@@ -259,7 +272,7 @@ def summarize_message(
     max_output_chars = max_output_chars_for_style(prompt_style)
     num_predict = None
     if options and "num_predict" in options:
-        num_predict = int(options["num_predict"])  # type: ignore[arg-type]
+        num_predict = _coerce_int(options["num_predict"])
     client = OllamaClient(ollama_url=ollama_url, allow_remote=allow_remote)
     stream_result = client.complete(
         CompletionRequest(
@@ -341,7 +354,7 @@ def _cache_options_for_job(
     if job.provider == "litellm":
         max_tokens = None
         if job.options and "num_predict" in job.options:
-            max_tokens = int(job.options["num_predict"])  # type: ignore[arg-type]
+            max_tokens = _coerce_int(job.options["num_predict"])
         return normalize_litellm_cache_options(
             temperature=job.temperature,
             max_tokens=max_tokens,
@@ -353,7 +366,7 @@ def _cache_options_for_job(
 
 def _max_tokens_from_job(job: SummaryJob) -> int | None:
     if job.options and "num_predict" in job.options:
-        return int(job.options["num_predict"])  # type: ignore[arg-type]
+        return _coerce_int(job.options["num_predict"])
     return None
 
 
@@ -886,8 +899,9 @@ def execute_summary_plan(
             summary = generation.text
             if conn:
                 try:
-                    from rollup.state import store_summary_generation
                     import datetime as _dt
+
+                    from rollup.state import store_summary_generation
 
                     store_summary_generation(
                         conn,

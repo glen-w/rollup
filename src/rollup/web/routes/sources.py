@@ -14,7 +14,6 @@ from rollup.payload_limits import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from rollup.run_lock import RunLockError, acquire_state_lock
 from rollup.source_models import CADENCE_LABELS, GROUPING_POLICIES
 from rollup.source_quality import score_sources
-from rollup.source_suggestions import collect_suggestions
 from rollup.source_registry import (
     NEWSLETTER_TYPES,
     SourceNotFound,
@@ -28,6 +27,7 @@ from rollup.source_registry import (
     resolve_alias,
     set_overrides,
 )
+from rollup.source_suggestions import collect_suggestions
 from rollup.web.csrf import validate_csrf_token as csrf_ok
 from rollup.web.db import mutation_connection
 from rollup.web.maintenance_tokens import (
@@ -77,9 +77,42 @@ def parse_override_form(form) -> dict | None:
     )
 
 
+_QUALITY_SORTS: dict[str, tuple[str, bool]] = {
+    # name -> (attribute, descending)
+    "score": ("adjusted_score", True),
+    "ratings": ("rating_count", True),
+    "lifetime": ("lifetime_average", True),
+    "recent": ("recent_weighted", True),
+    "read": ("read_rate", True),
+    "save": ("save_rate", True),
+    "dismiss": ("dismiss_rate", True),
+    "received": ("last_received_at", True),
+    "name": ("display_name", False),
+}
+
+
+def _sorted_quality_rows(rows: list, sort: str, direction: str) -> list:
+    attr, default_desc = _QUALITY_SORTS[sort]
+    desc = (direction == "desc") if direction in ("asc", "desc") else default_desc
+
+    def key(row):
+        val = getattr(row, attr)
+        if attr == "display_name":
+            val = (val or row.canonical_source_key or "").lower()
+            return (0, val)
+        # None sorts last regardless of direction.
+        return (1 if val is None else 0, val if val is not None else 0)
+
+    # Keep None at the end for both directions.
+    present = [r for r in rows if getattr(r, attr) is not None or attr == "display_name"]
+    missing = [r for r in rows if getattr(r, attr) is None and attr != "display_name"]
+    present.sort(key=key, reverse=desc)
+    return present + missing
+
+
 @bp.get("/sources")
 def list_sources():
-    """Quality ranking (content browsing) — separate from registry management."""
+    """Quality ranking tab of the Sources page."""
     try:
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
@@ -92,12 +125,26 @@ def list_sources():
         page_size = DEFAULT_PAGE_SIZE
     offset = (page - 1) * page_size
     now = datetime.now(timezone.utc)
-    rows = score_sources(g.db_ro, now=now, limit=page_size + 1, offset=offset)
-    has_next = len(rows) > page_size
-    rows = rows[:page_size]
+    sort = request.args.get("sort") or "score"
+    direction = request.args.get("dir") or ""
+    if sort not in _QUALITY_SORTS:
+        sort = "score"
+    if sort == "score" and direction in ("", "desc"):
+        rows = score_sources(g.db_ro, now=now, limit=page_size + 1, offset=offset)
+        has_next = len(rows) > page_size
+        rows = rows[:page_size]
+    else:
+        # Secondary sorts are applied over the ranked set (local, single-user scale).
+        all_rows = score_sources(g.db_ro, now=now, limit=5000, offset=0)
+        all_rows = _sorted_quality_rows(all_rows, sort, direction)
+        has_next = offset + page_size < len(all_rows)
+        rows = all_rows[offset : offset + page_size]
     suggestions = collect_suggestions(g.db_ro, now=now)
+    attr, default_desc = _QUALITY_SORTS[sort]
+    effective_dir = direction if direction in ("asc", "desc") else ("desc" if default_desc else "asc")
     return render_template(
-        "sources/list.html",
+        "sources/index.html",
+        page_title="Sources",
         sources=rows,
         suggestions=suggestions,
         page=page,
@@ -106,6 +153,9 @@ def list_sources():
         has_next=has_next,
         encode_opaque=encode_opaque,
         view="quality",
+        sort=sort,
+        sort_dir=effective_dir,
+        quality_sorts=list(_QUALITY_SORTS),
     )
 
 
@@ -137,8 +187,14 @@ def list_registry():
     except SourceRegistryError as exc:
         return render_template("errors/400.html", message=str(exc)), 400
     suggestions = collect_suggestions(g.db_ro)
+    from urllib.parse import urlencode
+
+    query_tail = "&" + urlencode(
+        {"sort": sort, "filter": enabled_filter, **({"q": q} if q else {})}
+    )
     return render_template(
-        "sources/registry.html",
+        "sources/index.html",
+        page_title="Sources",
         page_result=result,
         suggestions=suggestions,
         sort=sort,
@@ -146,6 +202,7 @@ def list_registry():
         q=q or "",
         encode_opaque=encode_opaque,
         view="registry",
+        registry_query_tail=query_tail,
     )
 
 
@@ -179,6 +236,7 @@ def source_detail(id_enc: str):
         alias_preview=None,
         scholar_alert=scholar_alert,
         scholar_mode=scholar_mode,
+        from_view="quality" if request.args.get("from") == "quality" else "registry",
     )
 
 
@@ -316,6 +374,7 @@ def suggest_apply(id_enc: str):
             except SourceNotFound:
                 conn.rollback()
                 return render_template("errors/404.html", message="Source not found"), 404
+            updates: dict[str, object]
             if action == "disable":
                 updates = {"enabled": False}
             else:

@@ -81,6 +81,15 @@ def stage_discover(
                     )
                 finally:
                     conn.close()
+    rss_feeds: tuple = ()
+    if config.rss_enabled and config.rss.feeds:
+        from rollup.rss.config import filter_rss_feeds
+
+        rss_feeds = filter_rss_feeds(
+            config.rss,
+            folders_include=config.folders_include,
+            folders_exclude=config.folders_exclude,
+        )
     gmail_targets: tuple[GmailTarget, ...] = ()
     if config.gmail_enabled and config.gmail.configured:
         from rollup.gmail.config import targets_from_config
@@ -107,6 +116,7 @@ def stage_discover(
         reddit_subs=reddit_subs,
         webpage_items=webpage_items,
         gmail_targets=gmail_targets,
+        rss_feeds=rss_feeds,
     )
 
 
@@ -188,10 +198,10 @@ def stage_parse_mbox(config: Config, folders: tuple[MboxFolder, ...]) -> ParseRe
 
 def stage_parse_linkedin(
     config: Config,
-    searches: tuple["LinkedInSearch", ...],
+    searches: tuple[LinkedInSearch, ...],
     *,
     dry_run: bool,
-    client: "LinkedInClient | None" = None,
+    client: LinkedInClient | None = None,
     generated_at: datetime | None = None,
 ) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
     """Fetch LinkedIn searches and map to ParsedMessage. Returns (msgs, warnings, degraded)."""
@@ -403,7 +413,6 @@ def stage_parse_reddit(
 
     from rollup.error_sanitize import sanitize_provider_message
     from rollup.reddit.cache import (
-        count_subs_needing_fetch,
         fetch_and_cache_reddit_subs,
         partition_reddit_subs,
         resolve_stale_sub_posts,
@@ -500,8 +509,8 @@ def stage_parse_reddit(
                     sub_name = failure.split(":", 1)[0][2:] if failure.startswith("r/") else ""
                     snapshot = stale_by_name.get(sub_name)
                     if snapshot is not None:
-                        sub = next((s for s in subs_to_fetch if s.name == sub_name), None)
-                        if sub is not None:
+                        stale_sub = next((s for s in subs_to_fetch if s.name == sub_name), None)
+                        if stale_sub is not None:
                             posts_by_sub[sub_name] = resolve_stale_sub_posts(
                                 conn,
                                 sub,
@@ -530,7 +539,7 @@ def stage_parse_reddit(
                 if not posts_by_sub:
                     return messages, warnings, degraded
 
-        for sub_name, posts in posts_by_sub.items():
+        for posts in posts_by_sub.values():
             for post in posts:
                 messages.append(
                     reddit_post_to_parsed_message(
@@ -590,7 +599,7 @@ def merge_linkedin_parse(
 
 def stage_parse_webpage(
     config: Config,
-    items: tuple["WebpageQueueItem", ...],
+    items: tuple[WebpageQueueItem, ...],
     *,
     dry_run: bool,
     generated_at: datetime,
@@ -767,11 +776,11 @@ def merge_webpage_parse(
 
 def stage_parse_gmail(
     config: Config,
-    targets: tuple["GmailTarget", ...],
+    targets: tuple[GmailTarget, ...],
     *,
     dry_run: bool,
     generated_at: datetime | None = None,
-    client: "GmailClient | None" = None,
+    client: GmailClient | None = None,
 ) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
     """Sync configured Gmail labels and map raw mail to ParsedMessage.
 
@@ -884,6 +893,7 @@ def stage_parse_gmail(
 
         if to_fetch:
             gmail_client = client or build_gmail_client(config.state_dir)
+            notices: list[tuple[str, str]] = []
             fetched, folder_by_label, failures, _resolved = fetch_and_cache_gmail_targets(
                 conn,
                 tuple(to_fetch),
@@ -893,7 +903,17 @@ def stage_parse_gmail(
                 fetched_at=when,
                 folders_include=config.folders_include,
                 folders_exclude=config.folders_exclude,
+                refresh=config.gmail_refresh,
+                notices=notices,
             )
+            for label_name, code in notices:
+                warnings.append(
+                    StageWarning(
+                        code=code,
+                        message=f"Gmail history expired for {label_name}; full sync",
+                        folder=folder_by_label.get(label_name) or folder_for.get(label_name),
+                    )
+                )
             for label_name, raws in fetched.items():
                 _emit(label_name, folder_by_label.get(label_name, label_name), raws)
             for label_name, error in failures:
@@ -948,6 +968,98 @@ def merge_gmail_parse(
 ) -> ParseResult:
     """Combine prior parse results with Gmail messages."""
     return merge_parse(parse_result, gmail_messages, gmail_warnings)
+
+
+def stage_parse_rss(
+    config: Config,
+    feeds: tuple,
+    *,
+    dry_run: bool,
+    generated_at: datetime | None = None,
+) -> tuple[list[ParsedMessage], list[StageWarning], bool]:
+    """Fetch configured RSS/Atom feeds and map items to ParsedMessage."""
+    if not feeds:
+        return [], [], False
+
+    from rollup.error_sanitize import sanitize_provider_message
+    from rollup.rss.cache import fetch_and_cache_feeds, sweep_old_items
+    from rollup.rss.parse import rss_item_to_parsed_message
+    from rollup.state import init_db
+
+    warnings: list[StageWarning] = []
+    messages: list[ParsedMessage] = []
+    degraded = False
+    when = generated_at or datetime.now().astimezone()
+    window_start, window_end = compute_date_window(when, config.lookback_days)
+    conn = init_db(config.db_path)
+    try:
+        if dry_run:
+            warnings.append(
+                StageWarning(
+                    code="rss_dry_run",
+                    message=f"Would sync {len(feeds)} RSS feed(s)",
+                    folder=config.rss.layout,
+                )
+            )
+            return messages, warnings, False
+        by_url, failures, logs = fetch_and_cache_feeds(
+            conn,
+            feeds,
+            config=config.rss,
+            refresh=config.rss_refresh,
+            now=when,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        for line in logs:
+            logger.info(line)
+        feeds_by_url = {feed.url: feed for feed in feeds}
+        for url, items in by_url.items():
+            feed = feeds_by_url.get(url)
+            if feed is None:
+                continue
+            for item in items:
+                try:
+                    messages.append(
+                        rss_item_to_parsed_message(
+                            item,
+                            feed=feed,
+                            layout=config.rss.layout,
+                            max_body_chars=config.max_body_chars,
+                        )
+                    )
+                except Exception as exc:
+                    warnings.append(
+                        StageWarning(
+                            code="rss_parse_error",
+                            message=f"{item.item_key}: {exc}",
+                            folder=feed.slug,
+                        )
+                    )
+        for url, error in failures:
+            degraded = True
+            code = "rss_cache_stale" if error.startswith("rss_cache_stale") else "rss_fetch_failed"
+            warnings.append(
+                StageWarning(
+                    code=code,
+                    message=sanitize_provider_message(error),
+                    folder=url,
+                )
+            )
+        swept = sweep_old_items(conn, now=when)
+        if swept:
+            logger.info("RSS cache: swept %d old item(s)", swept)
+    finally:
+        conn.close()
+    return messages, warnings, degraded
+
+
+def merge_rss_parse(
+    parse_result: ParseResult,
+    rss_messages: list[ParsedMessage],
+    rss_warnings: list[StageWarning],
+) -> ParseResult:
+    return merge_parse(parse_result, rss_messages, rss_warnings)
 
 
 stage_parse = stage_parse_mbox

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 
@@ -13,9 +14,15 @@ from rollup.config_service import (
     apply_and_save,
     validate_patch,
 )
-from rollup.reddit.config import RedditConfig, RedditSub, normalize_sub_name
 from rollup.reddit.cache import count_subs_needing_fetch
-from rollup.reddit.config import filter_reddit_subs
+from rollup.reddit.config import (
+    RedditConfig,
+    RedditMode,
+    RedditSort,
+    RedditSub,
+    filter_reddit_subs,
+    normalize_sub_name,
+)
 from rollup.reddit.fetch import SUB_FETCH_BACKOFF_SECONDS, reddit_fetch_eta_phrase
 from rollup.state import connect_db_mutator
 from rollup.web.config import load_web_config_document
@@ -72,8 +79,8 @@ def _reddit_from_form(base: RedditConfig) -> RedditConfig:
         subs[name] = RedditSub(
             name=name,
             enabled=sub_enabled,
-            mode=sub_mode if sub_mode in REDDIT_MODES else None,
-            sort=sub_sort if sub_sort in REDDIT_SORTS else None,
+            mode=cast(RedditMode, sub_mode) if sub_mode in REDDIT_MODES else None,
+            sort=cast(RedditSort, sub_sort) if sub_sort in REDDIT_SORTS else None,
             limit=sub_limit,
             display_name=existing.display_name if existing else None,
             emoji=existing.emoji if existing else None,
@@ -170,13 +177,13 @@ def reddit_save():
     try:
         doc = load_web_config_document()
     except Exception as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("reddit.reddit_index"))
     reddit = _reddit_from_form(doc.loaded.reddit)
     patch = ConfigPatch(reddit=reddit)
     issues = validate_patch(patch, base=doc.loaded)
     if any(i.severity == "error" for i in issues):
-        flash(issues[0].message)
+        flash(issues[0].message, "error")
         return redirect(url_for("reddit.reddit_index"))
     try:
         apply_and_save(
@@ -187,10 +194,10 @@ def reddit_save():
             backup_dir=Path(current_app.config["STATE_DIR"]) / "config-backups",
         )
     except ConfigConflictError:
-        flash("Config changed elsewhere — reload and try again.")
+        flash("Config changed elsewhere — reload and try again.", "warning")
         return redirect(url_for("reddit.reddit_index"))
     except ConfigValidationError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("reddit.reddit_index"))
-    flash("Reddit settings saved.")
+    flash("Reddit settings saved.", "success")
     return redirect(url_for("reddit.reddit_index"))

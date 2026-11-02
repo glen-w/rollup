@@ -16,7 +16,7 @@ _PREVIEW_FULL_MAX = 2000
 
 def reddit_message_key(post: RedditPost) -> str:
     safe_id = re.sub(r"[^\w]", "", post.post_id)
-    return f"reddit:t3:{safe_id}" if safe_id else f"reddit:t3:unknown"
+    return f"reddit:t3:{safe_id}" if safe_id else "reddit:t3:unknown"
 
 
 def reddit_source_key(subreddit: str) -> str:

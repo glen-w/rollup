@@ -26,7 +26,6 @@ from rollup.state import (
 )
 from rollup.utc import format_utc
 
-
 pytestmark = pytest.mark.skipif(
     not fts5_available(),
     reason="SQLite FTS5 is not available in this build",
@@ -47,7 +46,7 @@ def _insert_body(conn, key: str, body: str) -> None:
 
 def test_fresh_db_has_fts_table(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     assert corpus_table_exists(conn)
     conn.close()
 

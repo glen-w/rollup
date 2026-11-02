@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from rollup.discovery import iter_mbox_files
 from rollup.mbox_identity import MboxIdentity, classify_mbox_mutation, snapshot_mbox
 from rollup.parse import iter_parsed_messages
 from rollup.reader_bodies import ReaderBodyError, make_reader_body_write
-from rollup.reader_body_store import upsert_reader_bodies_v2
+from rollup.reader_body_store import ReaderBodyWrite, upsert_reader_bodies_v2
 from rollup.safety import is_inside
 
 
@@ -141,7 +141,7 @@ def scan_backfill_candidates(
 
     # hash -> first body text for identical-hash dedupe; conflicting hashes → ambiguous
     seen_hash: dict[str, str] = {}
-    body_by_key: dict[str, tuple[str, str]] = {}  # key -> (hash, body)
+    body_by_key: dict[str, tuple[str, ReaderBodyWrite]] = {}  # key -> (hash, write)
     ambiguous: set[str] = set()
     parse_failed = 0
     scanned = 0

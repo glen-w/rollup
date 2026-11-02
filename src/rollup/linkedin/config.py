@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Literal
 
 from rollup.folder_theme import FolderThemeOverride, folder_slug
 from rollup.linkedin.url import validate_content_search_url
@@ -234,7 +235,7 @@ def parse_linkedin_config(raw: object | None, *, path: Path) -> LinkedInConfig:
     return LinkedInConfig(
         enabled=enabled,
         article_fetch=article_fetch,
-        layout=layout,  # type: ignore[arg-type]
+        layout=layout,
         fetch_ttl_hours=fetch_ttl_hours,
         searches=searches,
     )

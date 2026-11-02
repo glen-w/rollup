@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import (
@@ -16,8 +17,6 @@ from flask import (
     url_for,
 )
 
-from datetime import datetime, timezone
-
 from rollup.config import DEFAULT_LOOKBACK_DAYS, DEFAULT_OLLAMA_URL, compute_date_window
 from rollup.config_service import (
     build_digest_argv,
@@ -29,7 +28,6 @@ from rollup.discovery import (
     list_reddit_folder_names,
     list_webpage_folder_names,
 )
-from rollup.webpage.queue import count_in_window, count_items, count_pending
 from rollup.llm_client import list_ollama_models
 from rollup.run_profiles import list_run_profiles
 from rollup.user_config import UserConfigError
@@ -41,12 +39,13 @@ from rollup.web.run_runner import (
     is_busy,
     start_digest_subprocess,
 )
+from rollup.webpage.queue import count_in_window, count_items, count_pending
 
 bp = Blueprint("run", __name__, url_prefix="/run")
 
 
 def _busy_response(message: str = "A digest is already running. Retry shortly."):
-    flash(message)
+    flash(message, "warning")
     response = make_response(
         render_template("errors/503.html", message=message),
         503,
@@ -227,7 +226,7 @@ def run_studio():
         profile = request.args.get("profile")
         doc, effective = _load_effective(profile)
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return render_template(
             "run/index.html",
             doc=None,
@@ -302,14 +301,14 @@ def _shell_quote(arg: str) -> str:
 def run_preview():
     """Update the compose form and show effective run (GET redirect with args)."""
     if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Invalid CSRF token")
+        flash("Invalid CSRF token", "error")
         return redirect(url_for("run.run_studio")), 400
     rotate_csrf_token()
     profile, overrides, extra = _overrides_from_form()
     try:
         doc, effective = _load_effective(profile, overrides)
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("run.run_studio"))
     extra = _with_litellm_model(extra, effective.sticky)
     matched = _matched_folders(
@@ -330,7 +329,7 @@ def run_preview():
     lookback = effective.sticky.get("lookback_days") or DEFAULT_LOOKBACK_DAYS
     webpage_pending, _saved, webpage_in_window = _webpage_counts(lookback)
     db_path = Path(current_app.config["DB_PATH"])
-    flash("Effective run updated (not saved to TOML unless you use Settings).")
+    flash("Effective run updated (not saved to TOML unless you use Settings).", "info")
     return render_template(
         "run/index.html",
         doc=doc,
@@ -362,7 +361,7 @@ def run_preview():
 @bp.post("/dry-run")
 def run_dry():
     if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Invalid CSRF token")
+        flash("Invalid CSRF token", "error")
         return redirect(url_for("run.run_studio")), 400
     rotate_csrf_token()
     if is_busy():
@@ -375,7 +374,7 @@ def run_dry():
             request.form.get("use_single_model") == "1"
             and not (request.form.get("single_model") or "").strip()
         ):
-            flash('Choose a model, or uncheck “Use a single model for this run”.')
+            flash('Choose a model, or uncheck “Use a single model for this run”.', "error")
             return redirect(url_for("run.run_studio"))
         argv = build_digest_argv(
             effective, config_path=_config_path(), dry_run=True, extra=extra or None
@@ -384,16 +383,16 @@ def run_dry():
     except RuntimeError as exc:
         return _busy_response(str(exc))
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("run.run_studio"))
-    flash("Dry-run started — progress updates below.")
+    flash("Dry-run started — progress updates below.", "success")
     return redirect(url_for("run.run_result"))
 
 
 @bp.post("/start")
 def run_start():
     if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Invalid CSRF token")
+        flash("Invalid CSRF token", "error")
         return redirect(url_for("run.run_studio")), 400
     rotate_csrf_token()
     if is_busy():
@@ -406,7 +405,7 @@ def run_start():
             request.form.get("use_single_model") == "1"
             and not (request.form.get("single_model") or "").strip()
         ):
-            flash('Choose a model, or uncheck “Use a single model for this run”.')
+            flash('Choose a model, or uncheck “Use a single model for this run”.', "error")
             return redirect(url_for("run.run_studio"))
         argv = build_digest_argv(
             effective, config_path=_config_path(), dry_run=False, extra=extra or None
@@ -415,9 +414,9 @@ def run_start():
     except RuntimeError as exc:
         return _busy_response(str(exc))
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("run.run_studio"))
-    flash("Digest started — progress updates below.")
+    flash("Digest started — progress updates below.", "success")
     return redirect(url_for("run.run_result"))
 
 

@@ -193,9 +193,11 @@ def run_loopback_auth(
         code = parse_redirect(pending, pasted)
         return finish_auth(pending, code, token_path=token_path)
 
-    handler = type("RollupRedirectHandler", (_RedirectHandler,), {})
-    handler.captured = {}
-    handler.done = threading.Event()
+    class RollupRedirectHandler(_RedirectHandler):
+        captured: dict[str, str] = {}
+        done = threading.Event()
+
+    handler = RollupRedirectHandler
     server = HTTPServer((LOOPBACK_HOST, 0), handler)
     port = server.server_address[1]
     redirect_uri = f"http://{LOOPBACK_HOST}:{port}"

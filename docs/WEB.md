@@ -2,23 +2,34 @@
 
 Local, single-user browser UI for browsing digests, rating emails, reviewing newsletter quality, operating the source registry / reader-body state, editing digest configuration, running guided digests, and managing Articles / LinkedIn / Reddit sources.
 
+The shell is a grouped sidebar — **Briefings** (Home, Archive, Search), **Sources** (Sources, Articles, LinkedIn, Reddit), **Operate** (Run Studio, Settings, Admin) — with a compact header, light and dark themes (follows the OS; the header **Theme** button persists a per-browser override), keyboard-visible focus, and a responsive layout down to phone widths. Everything is plain CSS/JS served from the package under the strict CSP; there is no build step.
+
 | Path | Surface |
 |------|---------|
+| `/` | Redirects to `[ui].landing_page` (`home` by default) |
+| `/home` | Home dashboard: latest briefing, health, next run, source counts, first-run checklist |
 | `/rollups` | Archive (indexed digests) |
 | `/search` | Corpus search (FTS over reader bodies / titles / summaries) |
 | `POST /ask` | Grounded Ask over search hits (CSRF; requires sticky `ollama`) |
 | `/run` | Run Studio (compose + background digest) |
-| `/settings` | Configuration Centre (real TOML) |
+| `/settings` | Configuration Centre (real TOML), tabbed |
 | `/articles` | Webpage article queue |
 | `POST /articles/capture` | Firefox Add to Rollup (Bearer token) |
 | `/linkedin` | Named `fromMember` searches + layout + TTL |
 | `/reddit` | Subreddits + layout + TTL |
-| `/sources` | Quality ranking |
-| `/sources/registry` | Source policy / aliases |
+| `/sources` | Sources — Quality tab (sortable ranking) |
+| `/sources/registry` | Sources — Registry tab (policy, bulk actions, aliases) |
 | `/admin` | Read-only health + body maintenance |
+| `/theme.css` | Generated folder-accent CSS variables (read-only) |
 | `/opds` | OPDS 1.2 catalog of published briefings (e-readers; loopback) |
 
 ![Archive: indexed digests with run stats and artifact links](images/web-archive.png)
+
+## Home (`/home`)
+
+One read-only, offline glance: the latest indexed briefing (status, window, counts, Browse / HTML / Markdown), a condensed read-only doctor, what the next run will do (profile, lookback, summaries mode, enabled network sources), source / article / cached-body counts, a "digest in progress" strip when Run Studio has an active run, and the first-run checklist until `[ui].onboarding_complete` is set. `[ui].landing_page` accepts `home` (default), `archive`, `run`, or `settings`.
+
+The CLI equivalent of the first-run checklist is `rollup init` ([CONFIG](CONFIG.md#guided-setup-rollup-init)); both write the same sticky keys through the same atomic config writer.
 
 ## Install / start
 
@@ -68,6 +79,8 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 ![Settings: first-run checklist and path validation](images/web-settings.png)
 
+Settings is tabbed — Paths · Defaults · Summaries · Outputs · Network sources · Interest profile · Presentation · Profiles · Personalisation — with the active tab kept in the URL hash (`/settings#tab-summaries`); without JavaScript every section renders in one page. Validation problems appear inline next to the field and as a count badge on the owning tab.
+
 Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers (add-ons plus the optional `opds` / `calibre` destinations), LinkedIn/Reddit enablement (manage searches and subs on their own pages), **Gmail** ingest (enable, label prefix, explicit labels, offline credentials / token / cache status — authorisation itself is `rollup gmail auth` on the CLI), **Google Scholar mode** (`default` vs `detailed` paper fetch), **interest profile** (attention / skip-safely prose), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
 
 Saves are previewed as an effective-config diff, confirmed with a one-time maintenance token, validated, backed up, and persisted atomically with optimistic concurrency (revision mismatch → re-preview). Digest settings are **not** stored in SQLite.
@@ -98,13 +111,17 @@ Full-text search over the convenience cache (`message_corpus_fts`, added in sche
 
 Add named `fromMember` content-search URLs, set a display name (and optional slug), toggle which searches to include, choose TOC layout (`feed` default / `per_source` / `per_search`), and set `fetch_ttl_hours` (default 24). Saved in TOML (`[linkedin.searches.*]`). GET never contacts LinkedIn. Session cookies stay in `~/.config/rollup/env`. Run Studio shows enabled search count with a Manage link.
 
+## RSS (`/rss`)
+
+Add HTTPS feed URLs, choose layout (`feed` / `per_source`) and cache TTL, and remove feeds. Saved in TOML (`[rss]`). The page lists feeds and cache age. It does not list items. GET never fetches a feed. Run Studio shows an RSS phase while `RSS fetch N/M` lines are in the log.
+
 ## Reddit (`/reddit`)
 
 Add public subreddit names, checkbox which subs to roll up, set global or per-sub sort/cap/mode, choose TOC layout (`feed` / `per_source`), and set `fetch_ttl_hours` (default 24). Fetches use a public JSON/RSS ladder; no credentials required. Optional Reddit script-app OAuth lives in `~/.config/rollup/env` (never the GUI). Unauthenticated fetches wait ~70s between subs; the page and Run Studio show the estimated wait for subs that would hit the network (cached subs show **cached**). Selections and overrides are saved in TOML (`[reddit]`). GET never contacts Reddit. Run Studio shows enabled sub count (and fetch ETA) with a Manage link.
 
 ## Read-only GET contract
 
-Every web **GET** (Archive, Search, Quality, Registry, Admin, Settings, Run, Articles, LinkedIn, Reddit, reader pages) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes. `POST /ask` is CSRF-protected and still uses the read-only connection; it does not write SQLite.
+Every web **GET** (Home, Archive, Search, Sources, Admin, Settings, Run, Articles, LinkedIn, Reddit, RSS, reader pages, `/theme.css`) opens the database with SQLite URI `mode=ro` and `PRAGMA query_only=ON`. Schema initialisation/`init_db` runs **once at web startup** only. GET handlers never migrate, create directories, write-probe paths, contact Ollama, or parse live mailboxes. `POST /ask` is CSRF-protected and still uses the read-only connection; it does not write SQLite.
 
 Admin deep diagnostics are **POST-only** (`POST /admin/deep-check` with CSRF). Deep-check opens **no write connection** — mutation routes open a short-lived mutator only after CSRF and form validation.
 
@@ -118,21 +135,32 @@ Local **Admin** (`/admin`) shows panel-isolated health: web process settings, de
 
 Manifest diagnostics are allowlisted, truncated, and redacted (no subjects, senders, bodies, URLs, or absolute paths). Directory listing is capped (`max_dir_entries`); candidates are parsed then sorted by persisted timestamp before retaining `max_files`.
 
-## Source registry
+## Sources (Quality | Registry)
 
 ![Registry: enable / disable, always-surface, bulk actions, per-source manage links](images/web-registry.png)
 
-- **Quality** (`/sources`): Bayesian ranking / content browsing, plus live suggestion cards
-- **Registry** (`/sources/registry`): enable/disable, priority, always-surface, overrides, bulk actions, same suggestion cards
+One page, two tabs, shared suggestion cards above both:
+
+- **Quality** (`/sources`): Bayesian ranking as a sortable table (`?sort=score|ratings|lifetime|recent|read|save|dismiss|received|name&dir=asc|desc`)
+- **Registry** (`/sources/registry`): enable/disable, priority, always-surface, overrides; select-all with a live selected count and a bulk toolbar; filter / sort / search preserved across pages
 - Suggestion apply (`POST /sources/<id>/suggest-apply`) calls existing `set_overrides` (disable / lower priority). Never auto-applied, never writes mail.
 - Detail pages show inferred/observed facts vs user overrides with provenance
 - Alias **preview + confirm** creation/merge only (no unalias in this UI)
 
 ## Reader bodies
 
-Pipeline indexing stores plaintext bodies in `message_reader_bodies` when a digest run indexes entries. In the web UI, each entry card offers **Read newsletter** (lazy expander + full-page fallback at `/messages/<opaque>/body`).
+Pipeline indexing stores plaintext bodies in `message_reader_bodies` when a digest run indexes entries. In the web UI, each entry card offers **Read newsletter** (lazy expander + full-page fallback at `/messages/<opaque>/body`, with `j` / `k` / `Esc` navigation and a text-size control).
 
 ![Rollup detail: run stats, folder index, and entry cards with rating / read / source profile controls](images/web-rollup-detail.png)
+
+Entry cards show Mark read / Save / Dismiss and a one-click star rating in a toolbar (reasons stay optional behind a disclosure); each card is anchorable (`#entry-<opaque>`) and post-action redirects return to the same page, filter, and card. Folder sections and chips carry the configured accent via `/theme.css` (the strict CSP forbids inline styles).
+
+## Accessibility and theming
+
+- Skip link, `main#main` landmark, labelled primary navigation with `aria-current`, visible `:focus-visible` rings, `prefers-reduced-motion` honoured, every form control labelled.
+- Light / dark palettes via CSS custom properties; `prefers-color-scheme` by default, `data-theme` override persisted in `localStorage` by the header Theme button (never sent to the server).
+- Flash messages carry a severity (`success` / `info` / `warning` / `error`) and the matching ARIA role.
+- `tests/test_web_ui_shell.py` fails the build if a template reintroduces inline `style=`, `on*=` handlers, or inline scripts, or if any page loses its landmarks / labels.
 
 CLI maintenance:
 

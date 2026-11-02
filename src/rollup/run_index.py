@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from rollup.links_sanitize import (
     LinkSanitizeError,
@@ -671,7 +672,6 @@ def backfill_run_from_manifest(
 
     # Manifest path relative to state_dir/manifests — store relative to state_dir
     started = str(manifest.get("started_at") or "")
-    run_short = str(run_id).replace("-", "")[:8]
     # Do not invent absolute paths; leave manifest_relpath null unless known
     payload = RunIndexPayload(
         run_id=str(run_id),

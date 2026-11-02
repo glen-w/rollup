@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}RSS · Rollup{% endblock %}
+{% block content_class %}content-wide{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>RSS</h1>
+    <p class="page-lede">Feeds fetched at digest time for the collection window. This is not an unread inbox.</p>
+  </div>
+</div>
+<form method="post" action="{{ url_for('rss.rss_save') }}" data-pending="Saving…">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="card" aria-labelledby="rss-defaults-title">
+    <div class="card-header"><h2 id="rss-defaults-title">Defaults</h2><span class="hint-badge ollama">network opt-in</span></div>
+    <div class="card-body">
+      <label class="field-inline">
+        <input type="hidden" name="rss_enabled" value="0">
+        <input type="checkbox" name="rss_enabled" value="1" {% if rss.enabled %}checked{% endif %}>
+        <span>Enable RSS fetch on digest runs</span>
+      </label>
+      <div class="field-row">
+        <label class="field field-narrow">
+          <span class="field-label">Layout</span>
+          <select name="rss_layout">
+            {% for layout in layouts %}
+            <option value="{{ layout }}" {% if rss.layout == layout %}selected{% endif %}>{{ layout }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Cache TTL (hours)</span>
+          <input type="number" name="rss_fetch_ttl_hours" min="0" max="168" value="{{ rss.fetch_ttl_hours }}">
+        </label>
+      </div>
+    </div>
+  </section>
+  <section class="card" aria-labelledby="rss-feeds-title">
+    <div class="card-header"><h2 id="rss-feeds-title">Feeds</h2></div>
+    <div class="card-body">
+      {% if rows %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Include</th>
+              <th scope="col">Feed</th>
+              <th scope="col">Cache</th>
+              <th scope="col">Remove</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>
+                <input type="hidden" name="rss_feed_enabled_{{ row.feed.slug }}" value="0">
+                <input type="checkbox" name="rss_feed_enabled_{{ row.feed.slug }}" value="1" {% if row.feed.enabled %}checked{% endif %} aria-label="Include {{ row.feed.slug }}">
+              </td>
+              <td>{{ row.feed.display_name or row.feed.url }}</td>
+              <td>{% if row.cache_age %}{{ row.items }} items, {{ row.cache_age }}{% else %}not fetched{% endif %}</td>
+              <td><input type="checkbox" name="rss_remove" value="{{ row.feed.slug }}" aria-label="Remove {{ row.feed.slug }}"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="note">No feeds yet. Add an HTTPS URL below.</p>
+      {% endif %}
+      <label class="field">
+        <span class="field-label">Add feed URL</span>
+        <input type="url" name="rss_add_url" placeholder="https://example.com/feed.xml" inputmode="url">
+      </label>
+    </div>
+  </section>
+  <button type="submit" class="btn btn-primary">Save RSS settings</button>
+</form>
+{% endblock %}

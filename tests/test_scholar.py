@@ -21,7 +21,6 @@ from rollup.source_policy import apply_effective_type
 from rollup.state import SCHEMA_VERSION, get_schema_version, init_db
 from rollup.webpage.fetch import WebpageFetchError, WebpageFetchResult
 
-
 SCHOLAR_HTML = """
 <html><body>
 <h3><a href="https://scholar.google.com/scholar_url?url=https%3A%2F%2Farxiv.org%2Fpdf%2F2401.00001.pdf&amp;hl=en">A Novel Approach to Widget Theory</a></h3>
@@ -293,7 +292,7 @@ def test_parse_scholar_config(tmp_path: Path) -> None:
 
 def test_schema_v16_scholar_paper_bodies(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='scholar_paper_bodies'"
     ).fetchone()

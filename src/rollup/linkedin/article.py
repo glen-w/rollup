@@ -13,7 +13,11 @@ import requests
 from rollup.article_html import extract_article_text_from_html
 from rollup.error_sanitize import sanitize_provider_message
 from rollup.linkedin.models import LinkedInPost
-from rollup.webpage.url import assert_safe_fetch_host, canonicalize_https_url, normalize_redirect_url
+from rollup.webpage.url import (
+    assert_safe_fetch_host,
+    canonicalize_https_url,
+    normalize_redirect_url,
+)
 
 logger = logging.getLogger(__name__)
 

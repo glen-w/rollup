@@ -1,54 +1,69 @@
 {% extends "base.html" %}
-{% block title %}Search — Rollup{% endblock %}
+{% block title %}{% if query %}“{{ query }}” · {% endif %}Search · Rollup{% endblock %}
 {% block content %}
-<h1>Search</h1>
-<p class="note">Full-text search over cached reader bodies, titles, and summaries. This is the convenience cache, not a second mailbox. Missing bodies are searched by title and summary only.</p>
+<div class="page-header">
+  <div>
+    <h1>Search</h1>
+    <p class="page-lede">Full-text search over cached reader bodies, titles, and summaries. A convenience cache, not a second mailbox.</p>
+  </div>
+</div>
 
-<form method="get" action="{{ url_for('search.search_index') }}" class="stack-form" role="search">
-  <label>Query
-    <input type="search" name="q" value="{{ query }}" maxlength="500" placeholder="Search the rollup cache" autofocus>
-  </label>
-  <button type="submit" class="primary">Search</button>
+<form method="get" action="{{ url_for('search.search_index') }}" class="card" role="search" id="search-form">
+  <div class="card-body">
+    <label class="field field-wide">
+      <span class="field-label">Query</span>
+      <input type="search" name="q" value="{{ query }}" maxlength="500" placeholder="Search the rollup cache" autofocus>
+      {% if not ask_enabled %}<span class="field-hint">Ask Rollup is off until LLM summaries are enabled in <a href="{{ url_for('settings.settings_index') }}#tab-summaries">Settings</a> (<code>ollama = true</code>).</span>{% endif %}
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Search</button>
+      {% if ask_enabled %}
+      <button type="submit" class="btn" form="ask-form">Ask Rollup</button>
+      {% endif %}
+    </div>
+  </div>
 </form>
-
 {% if ask_enabled %}
-<form method="post" action="{{ url_for('search.ask_post') }}" class="stack-form">
+<form method="post" action="{{ url_for('search.ask_post') }}" id="ask-form" data-pending="Asking…" hidden>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <label>Ask Rollup
-    <input type="text" name="q" value="{{ query }}" maxlength="500" placeholder="Question grounded in matching excerpts">
-  </label>
-  <button type="submit">Ask</button>
+  <input type="hidden" name="q" value="{{ query }}" data-mirror="#search-form input[name=q]">
 </form>
-{% else %}
-<p class="note">Ask Rollup is off until LLM summaries are enabled in Settings (<code>ollama = true</code>).</p>
 {% endif %}
 
 {% if ask_result %}
-<section class="card-section">
-  <h2>Answer</h2>
-  <p>{{ ask_result.answer }}</p>
-  {% if ask_result.citations %}
-  <p class="note">Citations: {{ ask_result.citations | join(', ') }}</p>
-  {% endif %}
+<section class="card" aria-labelledby="answer-title">
+  <div class="card-header"><h2 id="answer-title">Answer</h2><span class="hint-badge ollama">grounded in matching excerpts</span></div>
+  <div class="card-body">
+    <p>{{ ask_result.answer }}</p>
+    {% if ask_result.citations %}
+    <p class="note">Citations: {{ ask_result.citations | join(', ') }}</p>
+    {% endif %}
+  </div>
 </section>
 {% endif %}
 
 {% if query %}
-<section class="card-section">
-  <h2>Results <span class="hint-badge">{{ hits|length }}</span></h2>
+<section class="card" aria-labelledby="results-title">
+  <div class="card-header">
+    <div class="card-title-group"><h2 id="results-title">Results</h2><span class="badge badge-count">{{ hits|length }}</span></div>
+  </div>
+  <div class="card-body">
   {% if not hits %}
-  <p class="empty">{{ refuse_message }}</p>
+  <div class="empty-state"><p>{{ refuse_message }}</p></div>
   {% else %}
-  <ul class="search-hits">
+  <ul class="list-rows search-hits">
     {% for hit in hits %}
     <li>
-      <strong>{% if hit.body_url %}<a href="{{ hit.body_url }}">{{ hit.title }}</a>{% else %}{{ hit.title }}{% endif %}</strong>
-      <div class="muted">{{ hit.message_key }}{% if hit.folder %} · {{ hit.folder }}{% endif %}{% if hit.sender %} · {{ hit.sender }}{% endif %}</div>
-      {% if hit.snippet %}<p>{{ hit.snippet }}</p>{% elif hit.summary %}<p>{{ hit.summary }}</p>{% endif %}
+      <div class="row-main">
+        <strong>{% if hit.body_url %}<a href="{{ hit.body_url }}">{{ hit.title }}</a>{% else %}{{ hit.title }}{% endif %}</strong>
+        <div class="row-meta">{% if hit.folder %}{{ hit.folder }}{% endif %}{% if hit.sender %} · {{ hit.sender | display_sender }}{% endif %}</div>
+        {% if hit.snippet %}<p>{{ hit.snippet }}</p>{% elif hit.summary %}<p>{{ hit.summary }}</p>{% endif %}
+      </div>
     </li>
     {% endfor %}
   </ul>
   {% endif %}
+  </div>
 </section>
 {% endif %}
 {% endblock %}

@@ -12,8 +12,8 @@ from rollup.config import (
     DEFAULT_FINAL_REVIEW_PROFILE,
     DEFAULT_FINAL_REVIEW_PROVIDER,
     DEFAULT_LLM_PROVIDER,
-    DEFAULT_LOOKBACK_DAYS,
     DEFAULT_LOG_DIR,
+    DEFAULT_LOOKBACK_DAYS,
     DEFAULT_MAIL_ROOT,
     DEFAULT_MAX_BODY_CHARS,
     DEFAULT_MAX_DISPLAY_LINKS,
@@ -24,6 +24,7 @@ from rollup.config import (
     DEFAULT_STATE_DIR,
 )
 from rollup.effort import EFFORT_NAMES
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -233,6 +234,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force fresh Gmail label sync (bypass label cache for this run)",
     )
+    rss_group = dig.add_mutually_exclusive_group()
+    rss_group.add_argument(
+        "--rss",
+        action="store_true",
+        help="Enable RSS/Atom ingest for configured feeds (HTTPS only; not an inbox)",
+    )
+    rss_group.add_argument(
+        "--no-rss",
+        action="store_true",
+        help="Disable RSS ingest (default when neither flag is passed)",
+    )
+    dig.add_argument(
+        "--rss-refresh",
+        action="store_true",
+        help="Force fresh RSS fetch (bypass feed cache for this run)",
+    )
     dig.add_argument(
         "--scholar-mode",
         choices=("default", "detailed"),
@@ -433,6 +450,39 @@ def build_parser() -> argparse.ArgumentParser:
         register_writer_cli(dig)
     except OutputWriterError:
         pass
+
+    ini = sub.add_parser(
+        "init",
+        help="Guided first-run setup: discover mail paths, write the sticky TOML, run doctor",
+    )
+    ini.add_argument("--root", help="Newsletters.sbd directory (skips discovery)")
+    ini.add_argument("--mail-root", help="Account directory above the .sbd tree")
+    ini.add_argument(
+        "--gmail-label-prefix",
+        help="Use Gmail labels under this prefix instead of local mbox (e.g. Newsletters/)",
+    )
+    ini.add_argument("--state-dir", help="Proposed state directory")
+    ini.add_argument("--output-dir", help="Proposed output directory")
+    ini.add_argument("--log-dir", help="Proposed log directory")
+    ini.add_argument("--profile", help=f"Run profile (default {DEFAULT_RUN_PROFILE})")
+    ini.add_argument("--lookback-days", type=int, help="Lookback window in days")
+    ini.add_argument("--ollama", action="store_true", default=False, help="Enable Ollama summaries")
+    ini.add_argument(
+        "--no-ollama", action="store_true", default=False, help="Keep preview summaries (default)"
+    )
+    ini.add_argument("--ollama-model", default=None, help="Ollama model when --ollama is set")
+    ini.add_argument(
+        "--yes", "-y", action="store_true", default=False,
+        help="Non-interactive: accept every default (for Docker / scripts)",
+    )
+    ini.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="Print the TOML that would be written; write nothing",
+    )
+    ini.add_argument(
+        "--skip-doctor", action="store_true", default=False,
+        help="Do not run `rollup doctor` after writing",
+    )
 
     doc = sub.add_parser(
         "doctor",

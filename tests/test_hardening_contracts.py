@@ -21,7 +21,6 @@ from rollup.publication import publish_latest_outputs
 from rollup.run_lock import acquire_run_lock
 from rollup.run_options import GroupingConfig, RunOptions
 
-
 NOW = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
 
 

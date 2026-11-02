@@ -5,14 +5,18 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import requests
-from urllib.parse import urlparse
 
 from rollup.article_html import extract_article_text_from_html, extract_title_from_html
 from rollup.error_sanitize import sanitize_provider_message
 from rollup.webpage.config import BACKOFF_SECONDS, MAX_WEBPAGE_FETCHES
-from rollup.webpage.url import assert_safe_fetch_host, canonicalize_https_url, normalize_redirect_url
+from rollup.webpage.url import (
+    assert_safe_fetch_host,
+    canonicalize_https_url,
+    normalize_redirect_url,
+)
 
 logger = logging.getLogger(__name__)
 

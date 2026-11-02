@@ -14,8 +14,8 @@ from rollup.filter import make_digest_entry
 from rollup.models import ClassifiedMessage, ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.summarize import (
-    PROMPTS_DIR,
     PROMPT_VERSION,
+    PROMPTS_DIR,
     OllamaError,
     SummarizeMessageResult,
     apply_summaries,

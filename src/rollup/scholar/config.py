@@ -78,7 +78,7 @@ def parse_scholar_config(raw: object | None, *, path: Path) -> ScholarConfig:
         context="[scholar].max_fetches_per_run",
     )
     return ScholarConfig(
-        mode=mode,  # type: ignore[arg-type]
+        mode=mode,
         max_papers_per_email=max_papers,
         max_fetches_per_run=max_fetches,
     )

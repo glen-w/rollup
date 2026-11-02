@@ -21,6 +21,20 @@ def build_glance(report: DigestReport) -> BriefingSynthesis | None:
     for cluster in report.coverage_clusters[:3]:
         n = len(cluster.member_keys)
         bullets.append(f"Covered {n} ways: {cluster.theme_label}")
+    from rollup.briefing import iter_digest_entries
+
+    continuing = []
+    repeats = []
+    for items in report.dated_by_folder.values():
+        for entry in iter_digest_entries(items):
+            if entry.continuity_label == "continuing":
+                continuing.append(entry.classified.parsed.subject.strip())
+            elif entry.continuity_label == "repeat":
+                repeats.append(entry.classified.parsed.subject.strip())
+    if continuing:
+        bullets.append(f"Still developing: {continuing[0]}")
+    if repeats:
+        bullets.append(f"Seen again: {repeats[0]}")
     folder_n = len(report.dated_by_folder)
     included = report.stats.dated_included + report.stats.undated_needing_review
     if included == 0:
@@ -97,6 +111,8 @@ def build_narrative_prompt(report: DigestReport, glance: BriefingSynthesis) -> s
         f"Glance:\n{json.dumps(list(glance.bullets), ensure_ascii=False)}\n"
         f"High-relevance titles:\n{json.dumps(titles, ensure_ascii=False)}\n"
         f"Coverage clusters:\n{json.dumps(clusters, ensure_ascii=False)}\n"
+        "Only mention Still developing or Seen again when a continuity label "
+        "is already in the glance. Do not invent themes.\n"
     )
 
 

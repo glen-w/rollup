@@ -8,8 +8,8 @@ import pytest
 
 from rollup.llm_client import (
     CompletionRequest,
-    LLMClientError,
     LiteLLMClient,
+    LLMClientError,
     LlmExtraMissingError,
     OllamaClient,
     ProviderAvailabilityCache,

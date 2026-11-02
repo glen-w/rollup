@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from rollup.addons.calibre.config import CalibreConfig, parse_calibre_config
+from rollup.addons.kindle.config import KindleConfig, parse_kindle_config
+from rollup.attention.config import InterestConfig, parse_interest_config
 from rollup.effort import (
     EFFORT_COMPANION_KEYS,
     EFFORT_NAMES,
@@ -15,17 +19,16 @@ from rollup.effort import (
     EffortModelOverride,
 )
 from rollup.folder_theme import FolderThemeOverride
-from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
 from rollup.gmail.config import GmailConfig, parse_gmail_config
+from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
 from rollup.reddit.config import RedditConfig, parse_reddit_config
-from rollup.attention.config import InterestConfig, parse_interest_config
-from rollup.addons.calibre.config import CalibreConfig, parse_calibre_config
+from rollup.rss.config import RssConfig, parse_rss_config
 from rollup.scholar.config import ScholarConfig, parse_scholar_config
 
 if sys.version_info >= (3, 11):
     import tomllib
 else:
-    import tomli as tomllib  # type: ignore[no-redef]
+    import tomli as tomllib
 
 
 class UserConfigError(ValueError):
@@ -57,7 +60,7 @@ STICKY_KEYS = frozenset(
 )
 
 UI_KEYS = frozenset({"landing_page", "preferred_view", "onboarding_complete"})
-UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
+UI_LANDING_PAGES = frozenset({"home", "archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
 TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
@@ -69,8 +72,10 @@ TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
         "linkedin",
         "reddit",
         "gmail",
+        "rss",
         "scholar",
         "calibre",
+        "kindle",
         "interest",
     }
 )
@@ -82,7 +87,7 @@ FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
 class UiPreferences:
     """Web UI preferences stored in TOML [ui], not SQLite."""
 
-    landing_page: str = "archive"
+    landing_page: str = "home"
     preferred_view: str = "html"
     onboarding_complete: bool = False
 
@@ -99,8 +104,10 @@ class LoadedUserConfig:
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
     gmail: GmailConfig = field(default_factory=GmailConfig)
+    rss: RssConfig = field(default_factory=RssConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
     calibre: CalibreConfig = field(default_factory=CalibreConfig)
+    kindle: KindleConfig = field(default_factory=KindleConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
     sources: tuple[Path, ...] = ()
 
@@ -183,7 +190,7 @@ def _parse_ui(raw: Any, *, path: Path) -> UiPreferences:
     if unknown:
         keys = ", ".join(sorted(unknown))
         raise UserConfigError(f"{path}: unknown key(s) in [ui]: {keys}")
-    landing = raw.get("landing_page", "archive")
+    landing = raw.get("landing_page", "home")
     preferred = raw.get("preferred_view", "html")
     complete = raw.get("onboarding_complete", False)
     if not isinstance(landing, str) or landing not in UI_LANDING_PAGES:
@@ -439,6 +446,14 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
     try:
+        rss = parse_rss_config(data.get("rss"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
+    try:
+        kindle = parse_kindle_config(data.get("kindle"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
+    try:
         scholar = parse_scholar_config(data.get("scholar"), path=path)
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
@@ -459,8 +474,10 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         linkedin=linkedin,
         reddit=reddit,
         gmail=gmail,
+        rss=rss,
         scholar=scholar,
         calibre=calibre,
+        kindle=kindle,
         interest=interest,
         sources=(path,),
     )
@@ -495,8 +512,10 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
     linkedin = overlay.linkedin if overlay.sources else base.linkedin
     reddit = overlay.reddit if overlay.sources else base.reddit
     gmail = overlay.gmail if overlay.sources else base.gmail
+    rss = overlay.rss if overlay.sources else base.rss
     scholar = overlay.scholar if overlay.sources else base.scholar
     calibre = overlay.calibre if overlay.sources else base.calibre
+    kindle = overlay.kindle if overlay.sources else base.kindle
     interest = overlay.interest if overlay.sources else base.interest
     return LoadedUserConfig(
         values=values,
@@ -507,8 +526,10 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         linkedin=linkedin,
         reddit=reddit,
         gmail=gmail,
+        rss=rss,
         scholar=scholar,
         calibre=calibre,
+        kindle=kindle,
         interest=interest,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )

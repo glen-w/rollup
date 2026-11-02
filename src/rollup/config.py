@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rollup.addons.calibre.config import CalibreConfig
+from rollup.addons.kindle.config import KindleConfig
+from rollup.attention.config import InterestConfig
 from rollup.gmail.config import GmailConfig
 from rollup.linkedin.config import LinkedInConfig
 from rollup.reddit.config import RedditConfig
-from rollup.attention.config import InterestConfig
+from rollup.rss.config import RssConfig
 from rollup.scholar.config import ScholarConfig
 
 if TYPE_CHECKING:
@@ -103,8 +105,11 @@ class Config:
     reddit: RedditConfig = field(default_factory=RedditConfig)
     no_gmail: bool = True
     gmail: GmailConfig = field(default_factory=GmailConfig)
+    no_rss: bool = True
+    rss: RssConfig = field(default_factory=RssConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
     calibre: CalibreConfig = field(default_factory=CalibreConfig)
+    kindle: KindleConfig = field(default_factory=KindleConfig)
     interest: InterestConfig = field(default_factory=InterestConfig)
     no_attention: bool = False
     attention_report: bool = False
@@ -114,6 +119,7 @@ class Config:
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
     gmail_refresh: bool = False
+    rss_refresh: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -143,6 +149,11 @@ class Config:
     def gmail_enabled(self) -> bool:
         """True when Gmail API ingest is enabled (--gmail / [gmail].enabled)."""
         return not self.no_gmail
+
+    @property
+    def rss_enabled(self) -> bool:
+        """True when RSS ingest is enabled (--rss / [rss].enabled)."""
+        return not self.no_rss
 
 
 def compute_date_window(

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Busy{% endblock %}
+{% block title %}Busy · Rollup{% endblock %}
 {% block content %}
-<h1>Service unavailable</h1>
-<p>{{ message }}</p>
-<p><a href="{{ url_for('rollups.list_rollups') }}">Back to archive</a></p>
+<div class="page-header"><div><h1>Service unavailable</h1><p class="page-lede">Rollup is busy. This usually clears in a few seconds.</p></div></div>
+<div class="banner" role="alert">{{ message }}</div>
+<p><a class="btn" href="{{ url_for('rollups.list_rollups') }}">Back to Archive</a> <a class="btn btn-link" href="{{ url_for('index') }}">Home</a></p>
 {% endblock %}

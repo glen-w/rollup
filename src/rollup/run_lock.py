@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,15 +52,26 @@ def _pid_alive(pid: int) -> bool:
 
 def _read_lock_payload(path: Path) -> dict | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _payload_pid(payload: dict | None) -> int:
+    """PID from a lock payload; anything non-numeric counts as no process."""
+    if not payload:
+        return 0
+    try:
+        return int(payload.get("pid") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _is_stale(payload: dict | None, *, ttl_seconds: int) -> bool:
     if payload is None:
         return True
-    pid = int(payload.get("pid") or 0)
+    pid = _payload_pid(payload)
     if not _pid_alive(pid):
         return True
     started = payload.get("started_at")
@@ -110,33 +122,28 @@ class RunLock:
 
 
 def _lock_fd(fd: int) -> None:
-    try:
-        import fcntl
+    if sys.platform == "win32":
+        import msvcrt
 
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
         return
-    except ImportError:
-        pass
-    # Windows fallback
-    import msvcrt
+    import fcntl
 
-    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def _unlock_fd(fd: int) -> None:
-    try:
-        import fcntl
+    if sys.platform == "win32":
+        import msvcrt
 
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
         return
-    except ImportError:
-        pass
-    import msvcrt
+    import fcntl
 
-    try:
-        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-    except OSError:
-        pass
+    fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 @dataclass(frozen=True)
@@ -162,7 +169,7 @@ def inspect_state_lock(
     if not lock_path.exists():
         return None
     payload = _read_lock_payload(lock_path) or {}
-    pid = int(payload.get("pid") or 0)
+    pid = _payload_pid(payload)
     alive = _pid_alive(pid)
     return LockInspection(
         path=lock_path,

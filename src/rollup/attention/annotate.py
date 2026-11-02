@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
+from typing import cast
 
 from rollup.attention.bands import BAND_LABELS, band_rank
 from rollup.attention.profile import tokenize
-from rollup.attention.score import AttentionScore, AttentionSignals, score_entry
+from rollup.attention.score import AttentionSignals, score_entry
 from rollup.briefing import included_message_keys, iter_digest_entries
 from rollup.models import (
     AttentionBand,
@@ -176,7 +177,7 @@ def format_attention_report(metadata: AttentionMetadata) -> str:
     if metadata.degraded:
         lines.append("  degraded: yes")
     for band, count in metadata.band_counts:
-        lines.append(f"  {BAND_LABELS.get(band, band)}: {count}")
+        lines.append(f"  {BAND_LABELS.get(cast(AttentionBand, band), band)}: {count}")
     return "\n".join(lines)
 
 

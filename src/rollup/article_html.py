@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html2text
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 MIN_ARTICLE_CHARS = 200
 MIN_OG_DESCRIPTION_CHARS = 80
@@ -35,7 +35,7 @@ def extract_article_text_from_html(html: str) -> str:
         return text
 
     meta = soup.find("meta", attrs={"property": "og:description"})
-    if meta is not None:
+    if isinstance(meta, Tag):
         content = meta.get("content")
         if isinstance(content, str) and len(content.strip()) >= MIN_OG_DESCRIPTION_CHARS:
             return content.strip()
@@ -47,7 +47,7 @@ def extract_title_from_html(html: str) -> str:
     """Best-effort page title from og:title, <title>, or h1."""
     soup = BeautifulSoup(html, "html.parser")
     og = soup.find("meta", attrs={"property": "og:title"})
-    if og is not None:
+    if isinstance(og, Tag):
         content = og.get("content")
         if isinstance(content, str) and content.strip():
             return content.strip()

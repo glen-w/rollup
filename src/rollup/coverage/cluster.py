@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from rollup.attention.bands import band_rank
 from rollup.attention.profile import jaccard
-from rollup.briefing import included_message_keys, iter_digest_entries
+from rollup.briefing import included_message_keys
 from rollup.coverage.normalize import entry_main_urls, title_tokens
 from rollup.models import CoverageCluster, DigestEntry, DigestGroup, DigestItem
 

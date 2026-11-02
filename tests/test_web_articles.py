@@ -8,12 +8,12 @@ import pytest
 
 pytest.importorskip("flask")
 
+from datetime import datetime, timezone
+
 from rollup.state import init_db
 from rollup.web.app import create_app
 from rollup.web.csrf import CSRF_SESSION_KEY
 from rollup.web.run_runner import clear_finished_for_tests
-from datetime import datetime, timezone
-
 from rollup.webpage.queue import count_pending, enqueue_url, list_by_status, store_fetched
 
 

@@ -210,7 +210,7 @@ def _consider_lower_priority(
             continue
         if row.save_rate is None or row.save_rate >= LOW_SAVE_RATE_MAX:
             continue
-        apply = "lower_priority"
+        apply: str | None = "lower_priority"
         current = priorities.get(key)
         if current is not None and current <= 0:
             apply = None

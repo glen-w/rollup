@@ -15,6 +15,8 @@ from flask import (
     url_for,
 )
 
+from rollup.addons.kindle.config import KindleConfig, parse_kindle_config, smtp_credentials_present
+from rollup.attention.config import InterestConfig
 from rollup.config_service import (
     ConfigConflictError,
     ConfigPatch,
@@ -30,7 +32,6 @@ from rollup.discovery import (
     list_linkedin_folder_names,
     list_webpage_folder_names,
 )
-from rollup.web.config import load_web_config_document
 from rollup.effort import (
     EFFORT_NAMES,
     EFFORT_PROFILE_SLOTS,
@@ -38,31 +39,32 @@ from rollup.effort import (
     effort_editor_rows,
 )
 from rollup.folder_theme import FolderThemeOverride, folder_display_name, folder_slug, theme_for
-from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.gmail.config import GmailConfig, normalize_label_name
+from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
+from rollup.output_writers import discover_writers
 from rollup.reddit.config import RedditConfig
-from rollup.attention.config import InterestConfig
+from rollup.rss.config import RssConfig
+from rollup.run_profiles import list_run_profiles
 from rollup.scholar.config import (
     MAX_FETCHES_PER_RUN,
     MAX_PAPERS_PER_EMAIL,
     SCHOLAR_MODES,
     ScholarConfig,
 )
-from rollup.webpage.queue import count_items
-from rollup.output_writers import discover_writers
-from rollup.run_profiles import list_run_profiles
 from rollup.user_config import (
     UI_LANDING_PAGES,
     UI_PREFERRED_VIEWS,
     UiPreferences,
     UserConfigError,
 )
+from rollup.web.config import load_web_config_document
 from rollup.web.csrf import rotate_csrf_token, validate_csrf_token
 from rollup.web.maintenance_tokens import (
     consume_maintenance_token,
     fingerprint_parts,
     issue_maintenance_token,
 )
+from rollup.webpage.queue import count_items
 
 bp = Blueprint("settings", __name__, url_prefix="/settings")
 
@@ -255,11 +257,11 @@ def _effort_fingerprint(overrides: dict[str, EffortModelOverride] | None) -> str
 
 
 def _ui_from_form() -> UiPreferences:
-    landing = request.form.get("landing_page", "archive").strip()
+    landing = request.form.get("landing_page", "home").strip()
     preferred = request.form.get("preferred_view", "html").strip()
     complete = "1" in request.form.getlist("onboarding_complete")
     if landing not in UI_LANDING_PAGES:
-        landing = "archive"
+        landing = "home"
     if preferred not in UI_PREFERRED_VIEWS:
         preferred = "html"
     return UiPreferences(
@@ -270,6 +272,8 @@ def _ui_from_form() -> UiPreferences:
 
 
 def _patch_from_request() -> ConfigPatch:
+    from dataclasses import replace
+
     lookback_raw = request.form.get("lookback_days", "").strip()
     lookback = int(lookback_raw) if lookback_raw.isdigit() else None
     gmin_raw = request.form.get("grouping_min_size", "").strip()
@@ -294,17 +298,27 @@ def _patch_from_request() -> ConfigPatch:
         base_linkedin = loaded.linkedin
         base_reddit = loaded.reddit
         base_gmail = loaded.gmail
+        base_rss = loaded.rss
         base_scholar = loaded.scholar
         base_interest = loaded.interest
     except Exception:
         base_linkedin = LinkedInConfig()
         base_reddit = RedditConfig()
         base_gmail = GmailConfig()
+        base_rss = RssConfig()
         base_scholar = ScholarConfig()
         base_interest = InterestConfig()
     linkedin = _linkedin_enabled_from_form(base_linkedin)
     reddit = _reddit_enabled_from_form(base_reddit)
     gmail = _gmail_from_form(base_gmail)
+    rss = replace(base_rss, enabled="1" in request.form.getlist("rss_enabled"))
+    kindle = parse_kindle_config(
+        {
+            "to": request.form.get("kindle_to", "") or None,
+            "from": request.form.get("kindle_from", "") or None,
+        },
+        path=Path("<settings>"),
+    )
     scholar = _scholar_from_form(base_scholar)
     interest = _interest_from_form(base_interest)
     return patch_from_form_values(
@@ -334,6 +348,8 @@ def _patch_from_request() -> ConfigPatch:
         linkedin=linkedin,
         reddit=reddit,
         gmail=gmail,
+        rss=rss,
+        kindle=kindle,
         scholar=scholar,
         interest=interest,
     )
@@ -486,6 +502,9 @@ def _settings_page_context(doc, effective, *, db=None) -> dict:
         "linkedin": doc.loaded.linkedin if doc else LinkedInConfig(),
         "reddit": doc.loaded.reddit if doc else RedditConfig(),
         "gmail": doc.loaded.gmail if doc else GmailConfig(),
+        "rss": doc.loaded.rss if doc else RssConfig(),
+        "kindle": doc.loaded.kindle if doc else KindleConfig(),
+        "kindle_smtp_ready": smtp_credentials_present(),
         "gmail_status": _gmail_status_for_view(doc),
         "scholar": doc.loaded.scholar if doc else ScholarConfig(),
         "scholar_modes": sorted(SCHOLAR_MODES),
@@ -496,17 +515,75 @@ def _settings_page_context(doc, effective, *, db=None) -> dict:
     }
 
 
+_SETTINGS_ERRORS_SESSION_KEY = "settings_field_errors"
+
+# Validation field → settings tab (unknown fields fall back to a general banner).
+_FIELD_TO_TAB = {
+    "mail_root": "tab-paths",
+    "root": "tab-paths",
+    "output_dir": "tab-paths",
+    "state_dir": "tab-paths",
+    "log_dir": "tab-paths",
+    "paths": "tab-paths",
+    "lookback_days": "tab-defaults",
+    "profile": "tab-defaults",
+    "folder": "tab-defaults",
+    "ollama": "tab-summaries",
+    "llm_provider": "tab-summaries",
+    "llm_model": "tab-summaries",
+    "effort": "tab-summaries",
+    "output": "tab-outputs",
+    "schema": "tab-paths",
+}
+
+
+def _stash_field_errors(errors) -> None:
+    from flask import session
+
+    mapping: dict[str, str] = {}
+    for err in errors:
+        key = err.field or "_general"
+        mapping[key] = (
+            f"{mapping[key]} {err.message}" if key in mapping else err.message
+        )
+    session[_SETTINGS_ERRORS_SESSION_KEY] = mapping
+
+
+def _pop_field_errors() -> tuple[dict[str, str], dict[str, int]]:
+    from flask import session
+
+    raw = session.pop(_SETTINGS_ERRORS_SESSION_KEY, None) or {}
+    if not isinstance(raw, dict):
+        return {}, {}
+    field_errors = {str(k): str(v) for k, v in raw.items()}
+    tab_errors: dict[str, int] = {}
+    general: list[str] = []
+    for key, msg in field_errors.items():
+        tab = _FIELD_TO_TAB.get(key)
+        if tab is None:
+            general.append(f"{key}: {msg}" if key != "_general" else msg)
+            continue
+        tab_errors[tab] = tab_errors.get(tab, 0) + 1
+    if general:
+        field_errors["_general"] = " ".join(general)
+    return field_errors, tab_errors
+
+
 @bp.get("")
 @bp.get("/")
 def settings_index():
     try:
         doc = _load_doc()
     except UserConfigError as exc:
-        flash(f"Could not load config: {exc}")
+        flash(f"Could not load config: {exc}", "error")
         doc = None
     effective = resolve_effective(doc.loaded) if doc else None
+    field_errors, tab_errors = _pop_field_errors()
     return render_template(
         "settings/index.html",
+        page_title="Settings",
+        field_errors=field_errors,
+        tab_errors=tab_errors,
         **_settings_page_context(doc, effective, db=getattr(g, "db_ro", None)),
     )
 
@@ -514,7 +591,7 @@ def settings_index():
 @bp.post("/preview")
 def settings_preview():
     if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Invalid CSRF token")
+        flash("Invalid CSRF token", "error")
         return redirect(url_for("settings.settings_index")), 400
     rotate_csrf_token()
     try:
@@ -523,8 +600,11 @@ def settings_preview():
         issues = validate_patch(patch, base=doc.loaded)
         errors = [i for i in issues if i.severity == "error"]
         if errors:
-            for err in errors:
-                flash(f"{err.field}: {err.message}")
+            _stash_field_errors(errors)
+            flash(
+                f"{len(errors)} problem{'s' if len(errors) != 1 else ''} to fix before previewing.",
+                "error",
+            )
             return redirect(url_for("settings.settings_index"))
         before = resolve_effective(doc.loaded)
         # Build a temporary merged loaded view for after
@@ -596,7 +676,7 @@ def settings_preview():
         )
         # Stash patch fields in session via hidden form re-post on confirm —
         # we re-parse the same form fields on confirm.
-        flash("Review the effective configuration diff, then confirm to save.")
+        flash("Review the effective configuration diff, then confirm to save.", "info")
         writers = sorted(discover_writers())
         return render_template(
             "settings/confirm.html",
@@ -610,14 +690,14 @@ def settings_preview():
             writers=writers,
         )
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("settings.settings_index"))
 
 
 @bp.post("/save")
 def settings_save():
     if not validate_csrf_token(request.form.get("csrf_token")):
-        flash("Invalid CSRF token")
+        flash("Invalid CSRF token", "error")
         return redirect(url_for("settings.settings_index")), 400
     rotate_csrf_token()
     try:
@@ -632,7 +712,7 @@ def settings_save():
             preview_fingerprint=preview_fp,
         )
         if not ok:
-            flash(f"Save confirmation failed ({reason}). Preview again.")
+            flash(f"Save confirmation failed ({reason}). Preview again.", "warning")
             return redirect(url_for("settings.settings_index"))
         state_dir = Path(current_app.config["STATE_DIR"])
         saved = apply_and_save(
@@ -645,16 +725,16 @@ def settings_save():
         from rollup.web.app import refresh_config_derived
 
         refresh_config_derived(current_app)
-        flash(f"Saved configuration to {saved.path}")
+        flash(f"Saved configuration to {saved.path}", "success")
         for n in notices:
-            flash(n)
+            flash(n, "warning")
     except ConfigConflictError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("settings.settings_index")), 409
     except ConfigValidationError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("settings.settings_index")), 400
     except UserConfigError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("settings.settings_index")), 400
     return redirect(url_for("settings.settings_index"))

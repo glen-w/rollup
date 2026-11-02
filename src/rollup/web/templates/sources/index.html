@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "partials/info_macros.html" import info_row, enabled_badge, pager %}
+{% block title %}Sources{% if view == 'registry' %} · Registry{% else %} · Quality{% endif %} · Rollup{% endblock %}
+{% block content_class %}content-wide{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Sources</h1>
+    <p class="page-lede">{% if view == 'registry' %}Operational controls: enable, disable, always-surface, overrides. Nothing here touches your mail.{% else %}Newsletter quality ranked by confidence-adjusted score from your ratings and reading behaviour.{% endif %}</p>
+  </div>
+</div>
+
+<ul class="tabs">
+  <li><a href="{{ url_for('sources.list_sources') }}"{% if view == 'quality' %} aria-current="page"{% endif %}>Quality</a></li>
+  <li><a href="{{ url_for('sources.list_registry') }}"{% if view == 'registry' %} aria-current="page"{% endif %}>Registry</a></li>
+</ul>
+
+{% include "partials/suggestion_cards.html" %}
+
+{% if view == 'quality' %}
+  {% if not sources %}
+  <div class="empty-state"><p>No sources with indexed messages or ratings yet.</p><p>Rate a few newsletters from a briefing and rankings will appear here.</p></div>
+  {% else %}
+  {% macro sort_link(key, label) -%}
+    {%- set is_active = sort == key -%}
+    {%- set next_dir = 'asc' if (is_active and sort_dir == 'desc') else 'desc' -%}
+    <a href="?sort={{ key }}&amp;dir={{ next_dir }}"{% if is_active %} aria-sort="{{ 'descending' if sort_dir == 'desc' else 'ascending' }}"{% endif %}>{{ label }}</a>
+  {%- endmacro %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th scope="col">{{ sort_link('name', 'Source') }}</th>
+          <th scope="col" class="num">{{ sort_link('score', 'Adjusted') }}</th>
+          <th scope="col" class="num">{{ sort_link('ratings', 'Ratings') }}</th>
+          <th scope="col" class="num">{{ sort_link('lifetime', 'Lifetime') }}</th>
+          <th scope="col" class="num">{{ sort_link('recent', 'Recent') }}</th>
+          <th scope="col">Trend</th>
+          <th scope="col" class="num">{{ sort_link('read', 'Read') }}</th>
+          <th scope="col" class="num">{{ sort_link('save', 'Save') }}</th>
+          <th scope="col" class="num">{{ sort_link('dismiss', 'Dismiss') }}</th>
+          <th scope="col">{{ sort_link('received', 'Last received') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sources %}
+        <tr>
+          <td><a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.canonical_source_key), from='quality') }}">{{ s.display_name or s.canonical_source_key }}</a></td>
+          <td class="num">{{ "%.2f"|format(s.adjusted_score) if s.adjusted_score is not none else "—" }}</td>
+          <td class="num">{{ s.rating_count }}</td>
+          <td class="num">{% if s.lifetime_average is not none %}{{ "%.2f"|format(s.lifetime_average) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if s.recent_weighted is not none %}{{ "%.2f"|format(s.recent_weighted) }}{% else %}—{% endif %}</td>
+          <td><span class="{% if s.trend == 'up' %}trend-up{% elif s.trend == 'down' %}trend-down{% else %}muted{% endif %}">{{ s.trend }}</span></td>
+          <td class="num">{% if s.read_rate is not none %}{{ "%.0f%%"|format(s.read_rate * 100) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if s.save_rate is not none %}{{ "%.0f%%"|format(s.save_rate * 100) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if s.dismiss_rate is not none %}{{ "%.0f%%"|format(s.dismiss_rate * 100) }}{% else %}—{% endif %}</td>
+          <td class="nowrap">{% if s.last_received_at %}{{ s.last_received_at | human_datetime }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {{ pager(page, has_prev, has_next, extra_query="&sort=" ~ sort ~ "&dir=" ~ sort_dir) }}
+  {% endif %}
+
+{% else %}
+  <form method="get" class="registry-filters" action="{{ url_for('sources.list_registry') }}">
+    <label class="field">
+      <span class="field-label">Filter</span>
+      <select name="filter">
+        <option value="all" {% if enabled_filter == 'all' %}selected{% endif %}>all</option>
+        <option value="enabled" {% if enabled_filter == 'enabled' %}selected{% endif %}>enabled</option>
+        <option value="disabled" {% if enabled_filter == 'disabled' %}selected{% endif %}>disabled</option>
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Sort</span>
+      <select name="sort">
+        <option value="last_seen_desc" {% if sort == 'last_seen_desc' %}selected{% endif %}>last seen ↓</option>
+        <option value="last_seen_asc" {% if sort == 'last_seen_asc' %}selected{% endif %}>last seen ↑</option>
+        <option value="priority_desc" {% if sort == 'priority_desc' %}selected{% endif %}>priority ↓</option>
+        <option value="key_asc" {% if sort == 'key_asc' %}selected{% endif %}>key</option>
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Search</span>
+      <input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="key or name">
+    </label>
+    <button type="submit" class="btn">Apply</button>
+  </form>
+
+  {% if not page_result.rows %}
+  <div class="empty-state"><p>No sources match.</p></div>
+  {% else %}
+  <form method="post" action="{{ url_for('sources.sources_bulk') }}" data-bulk>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="bulk-toolbar" role="group" aria-label="Bulk actions">
+      <label class="field-inline"><input type="checkbox" data-select-all aria-label="Select all on this page"> <span>All</span></label>
+      <span class="selected-count" data-selected-count aria-live="polite">None selected</span>
+      <span class="toolbar-spacer"></span>
+      <button type="submit" class="btn btn-sm" name="action" value="enable" data-bulk-action>Enable</button>
+      <button type="submit" class="btn btn-sm" name="action" value="disable" data-bulk-action>Disable</button>
+      <button type="submit" class="btn btn-sm" name="action" value="always_surface_on" data-bulk-action>Always-surface on</button>
+      <button type="submit" class="btn btn-sm" name="action" value="always_surface_off" data-bulk-action>Always-surface off</button>
+    </div>
+    <p class="muted small">{{ page_result.rows | length }} source{{ 's' if page_result.rows | length != 1 else '' }} on this page{% if page_result.total is not none %} · {{ page_result.total }} total{% elif page_result.has_next %} · more pages{% endif %}</p>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col" class="check"><span class="visually-hidden">Select</span></th>
+            <th scope="col">Source</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="num">Priority</th>
+            <th scope="col">Last seen</th>
+            <th scope="col" class="num">Messages</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in page_result.rows %}
+          <tr>
+            <td class="check"><input type="checkbox" name="source_sel" value="{{ encode_opaque(s.source_key) }}:{{ s.revision }}" data-bulk-item aria-label="Select {{ s.display_name or s.source_key }}"></td>
+            <td>
+              <a href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.source_key), from='registry') }}"><strong>{{ s.display_name or s.source_key }}</strong></a>
+              <div class="muted small mono">{{ s.source_key }}</div>
+            </td>
+            <td>{{ enabled_badge(s.enabled) }}</td>
+            <td class="num">{{ s.priority }}</td>
+            <td class="nowrap">{% if s.last_seen_at %}{{ s.last_seen_at | human_datetime }}{% else %}<span class="is-empty">—</span>{% endif %}</td>
+            <td class="num">{{ s.message_count_total }}</td>
+            <td><a class="btn btn-sm btn-link" href="{{ url_for('sources.source_detail', id_enc=encode_opaque(s.source_key), from='registry') }}">Manage</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+  {{ pager(page_result.page, page_result.page > 1, page_result.has_next, extra_query=registry_query_tail) }}
+  {% endif %}
+{% endif %}
+{% endblock %}

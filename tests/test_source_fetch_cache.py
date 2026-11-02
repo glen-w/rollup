@@ -15,7 +15,7 @@ from rollup.linkedin.cache import (
     save_listing_snapshot,
     store_article_body,
 )
-from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
+from rollup.linkedin.config import LinkedInSearch
 from rollup.linkedin.models import LinkedInPost
 from rollup.pipeline import stage_parse_reddit
 from rollup.reddit.cache import (
@@ -23,6 +23,8 @@ from rollup.reddit.cache import (
     fetch_and_cache_reddit_subs,
     get_listing_snapshot,
     partition_reddit_subs,
+)
+from rollup.reddit.cache import (
     save_listing_snapshot as save_reddit_snapshot,
 )
 from rollup.reddit.config import RedditConfig, RedditSub

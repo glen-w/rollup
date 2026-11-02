@@ -37,10 +37,10 @@ from rollup.reader_body_admin import (
 from rollup.reader_body_backfill import (
     BackfillError,
     BackfillScope,
+    apply_backfill_writes,
     delete_all_bodies,
     prune_orphans,
     scan_backfill_candidates,
-    apply_backfill_writes,
     validate_newsletter_root,
 )
 from rollup.reader_body_store import bump_maintenance_generation, get_maintenance_generation
@@ -393,7 +393,7 @@ def _maintenance_confirm_flow(
             invalidate_tokens_for_generation(new_gen)
     finally:
         lock.release()
-    flash(success_message.format(result=result))
+    flash(success_message.format(result=result), "success")
     return redirect(url_for("admin.admin_index"))
 
 
@@ -690,7 +690,7 @@ def admin_bodies_vacuum():
             raise
         finally:
             lock.release()
-        flash("Database vacuum completed.")
+        flash("Database vacuum completed.", "success")
         return redirect(url_for("admin.admin_index"))
 
     token = issue_maintenance_token(

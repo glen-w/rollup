@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from statistics import median
-from typing import Sequence
 
 from rollup.source_models import (
     CADENCE_INFERENCE_MIN_SAMPLES,

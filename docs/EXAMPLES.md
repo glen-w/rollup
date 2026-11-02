@@ -65,6 +65,26 @@ Full guide: [DOCKER.md](DOCKER.md).
 | EPUB writer | `pip install 'rollup[epub]'` |
 | uv | `uv sync --extra dev --extra web` |
 
+## First-run setup (`rollup init`)
+
+Guided setup that discovers Thunderbird, asks for anything it cannot find, writes
+the sticky TOML outside the mail root, and finishes with `rollup doctor`:
+
+```bash
+rollup init                                   # interactive
+rollup init --dry-run                         # print the TOML, write nothing
+rollup init --yes --root ~/path/to/Newsletters.sbd \
+  --state-dir ~/rollup/state --output-dir ~/rollup/output --log-dir ~/rollup/logs
+rollup init --gmail-label-prefix Newsletters/ # Gmail-only; then `rollup gmail auth`
+rollup --config ./rollup.toml init --yes --root tests/fixtures/Newsletters.sbd \
+  --state-dir /tmp/rollup/state --output-dir /tmp/rollup/output --log-dir /tmp/rollup/logs
+```
+
+Re-running `init` merges into the existing file (folder themes, profiles, and model
+overrides are kept; a `.bak` is written first). It never contacts the network unless
+you accept the optional Ollama probe. Exit `0` success, `1` cancelled, `2` invalid input
+or doctor reported errors.
+
 ## Inventory
 
 Discover mbox folders and message counts (read-only; no body parsing):
@@ -607,6 +627,18 @@ python -m rollup digest --output calibre --calibre-drop-dir ~/Calibre\ Library/a
 ```
 
 Both writers are **optional**: failure is `partial` (exit 2), not a hard stop. See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md) and [WEB.md](WEB.md).
+
+### RSS ingest and Send to Kindle
+
+RSS is an opt-in window fetch, not an inbox. Kindle emails the finished briefing. SMTP secrets stay in the environment.
+
+```bash
+python -m rollup digest --rss --no-ollama --lookback-days 7
+python -m rollup digest --rss-refresh --no-ollama --lookback-days 7
+python -m rollup digest --output kindle --kindle-to name@kindle.com --lookback-days 7
+```
+
+Configure feeds under `[rss.feeds.*]` ([CONFIG.md](CONFIG.md)) and open `GET /rss` while `rollup web` is running. `[kindle].to` and `[kindle].from` live in TOML. A Kindle SMTP failure is `partial: optional writer`. An RSS-only fetch failure is exit 1; with mail still publishing it is `partial: rss`. A continuity-ledger write failure is `partial: continuity ledger`.
 
 ### Custom profile sets
 

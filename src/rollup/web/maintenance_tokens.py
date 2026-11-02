@@ -17,7 +17,9 @@ _lock = threading.Lock()
 _NONCES: dict[str, tuple[int, str, str, str, int | None]] = {}
 
 
-def _sign(secret: bytes | str, payload: str) -> str:
+def _sign(secret: bytes | str | None, payload: str) -> str:
+    if secret is None:
+        raise RuntimeError("web app secret is not configured")
     key = secret if isinstance(secret, bytes) else secret.encode("utf-8")
     return hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -35,7 +37,7 @@ def _prune_locked(now: int) -> None:
 
 def issue_maintenance_token(
     *,
-    secret: bytes | str,
+    secret: bytes | str | None,
     action: str,
     scope_fingerprint: str,
     preview_fingerprint: str,
@@ -66,7 +68,7 @@ def issue_maintenance_token(
 def consume_maintenance_token(
     token: str | None,
     *,
-    secret: bytes | str,
+    secret: bytes | str | None,
     action: str,
     scope_fingerprint: str,
     preview_fingerprint: str,

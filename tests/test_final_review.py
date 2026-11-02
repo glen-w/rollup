@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 
 from rollup.classify import classify_message
 from rollup.config import Config, compute_date_window
-from rollup.filter import make_digest_entry
 from rollup.final_review import (
     FINAL_REVIEW_PROMPT_VERSION,
     build_final_review_prompt,
@@ -28,7 +28,6 @@ from rollup.final_review import (
 from rollup.final_review_profiles import (
     FINAL_REVIEW_DEFAULT_NUM_CTX,
     FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
-    FinalReviewConfigError,
     FinalReviewProfile,
     resolve_final_review_profile,
     validate_final_review_config,
@@ -42,6 +41,9 @@ from rollup.state import (
     init_db_with_summaries,
     store_final_review_generation,
 )
+
+if TYPE_CHECKING:
+    from rollup.models import DigestEntry
 
 
 def _parsed(
@@ -79,7 +81,7 @@ def _entry(
     subject: str = "Test Subject",
     summary: str = "- bullet one",
     folder: str = "tech",
-) -> "DigestEntry":
+) -> DigestEntry:
     from rollup.models import DigestEntry
 
     parsed = _parsed(message_key=message_key, subject=subject, folder=folder)

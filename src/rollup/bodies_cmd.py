@@ -15,7 +15,7 @@ from rollup.reader_body_backfill import (
     prune_orphans,
     run_backfill,
 )
-from rollup.state import connect_db, get_schema_version, init_db
+from rollup.state import connect_db, init_db
 
 
 def _db(state_dir: Path, migrate: bool):

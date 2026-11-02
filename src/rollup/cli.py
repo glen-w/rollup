@@ -9,6 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from rollup.addons.calibre.config import CalibreConfig
+from rollup.addons.kindle.config import KindleConfig
 from rollup.config import (
     DEFAULT_EFFORT,
     DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO,
@@ -30,14 +32,13 @@ from rollup.effort import (
     resolve_effort_name,
     resolve_profile_set,
 )
-from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.gmail.config import GmailConfig
-from rollup.reddit.config import RedditConfig
-from rollup.addons.calibre.config import CalibreConfig
-from rollup.scholar.config import SCHOLAR_MODES, ScholarConfig
+from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.paths import resolve_mail_paths
 from rollup.pipeline import run_digest
+from rollup.reddit.config import RedditConfig
 from rollup.render import digest_output_stem, render_stats_block
+from rollup.rss.config import RssConfig
 from rollup.run_options import (
     GroupingConfig,
     default_manifest_config,
@@ -49,10 +50,13 @@ from rollup.run_profiles import (
     resolve_run_profile,
 )
 from rollup.safety import SafetyError, validate_read_root, validate_writable_run_paths
+from rollup.scholar.config import SCHOLAR_MODES, ScholarConfig
 from rollup.summary_profiles import (
     get_canonical_newsletter_types,
-    list_summary_profiles as list_summary_profile_infos,
     require_valid_summary_profile_set,
+)
+from rollup.summary_profiles import (
+    list_summary_profiles as list_summary_profile_infos,
 )
 from rollup.user_config import (
     LoadedUserConfig,
@@ -133,6 +137,29 @@ def _resolve_no_gmail(args: argparse.Namespace) -> bool:
 def _resolve_gmail_config(args: argparse.Namespace) -> GmailConfig:
     loaded = getattr(args, "_loaded_user_config", None)
     return getattr(loaded, "gmail", None) or GmailConfig()
+
+
+def _resolve_no_rss(args: argparse.Namespace) -> bool:
+    """Default is no RSS unless --rss is passed (or [rss].enabled)."""
+    if getattr(args, "rss", False):
+        return False
+    return True
+
+
+def _resolve_rss_config(args: argparse.Namespace) -> RssConfig:
+    loaded = getattr(args, "_loaded_user_config", None)
+    return getattr(loaded, "rss", None) or RssConfig()
+
+
+def _resolve_kindle_config(args: argparse.Namespace) -> KindleConfig:
+    from dataclasses import replace
+
+    loaded = getattr(args, "_loaded_user_config", None)
+    kindle = getattr(loaded, "kindle", None) or KindleConfig()
+    raw = getattr(args, "kindle_to", None)
+    if isinstance(raw, str) and raw.strip():
+        return replace(kindle, to=raw.strip())
+    return kindle
 
 
 def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
@@ -354,6 +381,9 @@ def _build_config(
         reddit=_resolve_reddit_config(args),
         no_gmail=_resolve_no_gmail(args),
         gmail=_resolve_gmail_config(args),
+        no_rss=_resolve_no_rss(args),
+        rss=_resolve_rss_config(args),
+        kindle=_resolve_kindle_config(args),
         scholar=_resolve_scholar_config(args),
         calibre=_resolve_calibre_config(args),
         interest=_resolve_interest_config(args),
@@ -365,6 +395,7 @@ def _build_config(
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
         gmail_refresh=getattr(args, "gmail_refresh", False),
+        rss_refresh=getattr(args, "rss_refresh", False),
     )
 
 
@@ -413,6 +444,10 @@ def _apply_loaded_config(
         if loaded.gmail.enabled:
             args.gmail = True
             args.no_gmail = False
+    if not flag_present(argv, "--rss") and not flag_present(argv, "--no-rss"):
+        if loaded.rss.enabled:
+            args.rss = True
+            args.no_rss = False
     return profile.name
 
 
@@ -854,9 +889,7 @@ def cmd_digest(args: argparse.Namespace) -> int:
 
     from rollup.output_writers import (
         OutputWriterError,
-        WriteContext,
         discover_writers,
-        run_enabled_writers,
         validate_requested_writers,
     )
 
@@ -1050,7 +1083,7 @@ def cmd_cron(args: argparse.Namespace) -> int:
     return 1
 
 
-from rollup.cli_parser import build_parser
+from rollup.cli_parser import build_parser  # noqa: E402  (cli_parser is re-exported here; kept after handlers to avoid an import cycle)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1059,8 +1092,15 @@ def main(argv: list[str] | None = None) -> None:
     load_rollup_env()
     raw = list(argv) if argv is not None else sys.argv[1:]
     try:
-        config_path, _ = extract_config_path(raw)
-        loaded = load_user_config(explicit_path=config_path)
+        config_path, remaining = extract_config_path(raw)
+        try:
+            loaded = load_user_config(explicit_path=config_path)
+        except UserConfigError as exc:
+            # `rollup init` exists to create the file; a missing --config is its normal input.
+            if remaining[:1] == ["init"] and "not found" in str(exc):
+                loaded = LoadedUserConfig()
+            else:
+                raise
     except UserConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(2)
@@ -1091,6 +1131,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(cmd_digest(args))
     elif args.command == "doctor":
         sys.exit(cmd_doctor(args))
+    elif args.command == "init":
+        from rollup.init_cmd import cmd_init
+
+        sys.exit(cmd_init(args))
     elif args.command == "cron":
         sys.exit(cmd_cron(args))
     elif args.command == "config":

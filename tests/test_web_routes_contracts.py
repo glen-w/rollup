@@ -22,7 +22,6 @@ from rollup.web.app import create_app
 from rollup.web.secrets import WebSecretError, load_or_create_secret
 from rollup.web_ids import encode_opaque
 
-
 NOW = datetime(2024, 6, 1, tzinfo=timezone.utc)
 
 

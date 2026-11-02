@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% from "partials/info_macros.html" import status_badge %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Home</h1>
+    <p class="page-lede">Your local briefing at a glance. Everything here is read-only and offline.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-primary" href="{{ url_for('run.run_studio') }}">Run Studio</a>
+    <a class="btn" href="{{ url_for('search.search_index') }}">Search</a>
+  </div>
+</div>
+
+{% if busy and active %}
+<div class="banner banner-info">
+  <strong>Digest in progress</strong> — {{ 'dry-run' if active.dry_run else 'digest' }} started from Run Studio.
+  <a href="{{ url_for('run.run_result') }}">Follow progress</a>
+</div>
+{% endif %}
+
+{% if config.onboarding %}
+<section class="card" aria-labelledby="onboarding-title">
+  <div class="card-header"><h2 id="onboarding-title">First-run checklist</h2></div>
+  <div class="card-body">
+    <ul class="checklist">
+      {% for label, done, hint in config.onboarding %}
+      <li class="{% if done %}done{% endif %}">
+        <span class="check" aria-hidden="true">{% if done %}✓{% else %}○{% endif %}</span>
+        <span><strong>{{ label }}</strong><span class="visually-hidden">{{ ' (done)' if done else ' (to do)' }}</span>
+          <span class="muted"> — {{ hint }}</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="note"><a href="{{ url_for('settings.settings_index') }}">Open Settings</a> · <a href="{{ url_for('run.run_studio') }}">Dry-run in Run Studio</a></p>
+  </div>
+</section>
+{% endif %}
+
+<div class="home-grid">
+  <section class="card run-card" aria-labelledby="latest-title">
+    <div class="card-header">
+      <div class="card-title-group">
+        <h2 id="latest-title">Latest briefing</h2>
+        {% if latest %}{{ status_badge(latest.status) }}{% if latest.degraded %}<span class="degraded-tag">degraded</span>{% endif %}{% endif %}
+      </div>
+    </div>
+    <div class="card-body">
+      {% if not latest %}
+      <div class="empty-state">
+        <p>No briefing indexed yet.</p>
+        <p><a href="{{ url_for('run.run_studio') }}">Run your first digest</a></p>
+      </div>
+      {% else %}
+      <p class="run-title">{{ latest.started_at | human_datetime }}</p>
+      {% if latest.window_start %}<p class="run-window">{{ latest.window_start | human_date_range(latest.window_end) }}</p>{% endif %}
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-value">{{ latest.messages_included if latest.messages_included is not none else '—' }}</div><div class="stat-label">items</div></div>
+        <div class="stat"><div class="stat-value">{{ latest.sources_included if latest.sources_included is not none else '—' }}</div><div class="stat-label">sources</div></div>
+        <div class="stat"><div class="stat-value">{{ latest.groups_created if latest.groups_created is not none else '—' }}</div><div class="stat-label">groups</div></div>
+        <div class="stat"><div class="stat-value">{{ latest.summaries_ollama if latest.summaries_ollama is not none else '—' }}</div><div class="stat-label">LLM summaries</div></div>
+      </div>
+      {% endif %}
+    </div>
+    {% if latest %}
+    <div class="card-footer artifact-links">
+      {% if latest.entry_index_version %}<a class="btn btn-primary btn-sm" href="{{ url_for('rollups.rollup_detail', run_id=latest.run_id) }}">Browse</a>{% endif %}
+      {% if latest.has_html %}<a class="btn btn-sm" href="{{ url_for('artifacts.serve_artifact', run_id=latest.run_id, kind='html') }}">HTML</a>{% endif %}
+      {% if latest.has_md %}<a class="btn btn-sm" href="{{ url_for('artifacts.serve_artifact', run_id=latest.run_id, kind='md') }}">Markdown</a>{% endif %}
+      <a class="btn btn-link btn-sm" href="{{ url_for('rollups.list_rollups') }}">All briefings ({{ counts.runs or 0 }})</a>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card" aria-labelledby="health-title">
+    <div class="card-header">
+      <div class="card-title-group">
+        <h2 id="health-title">Health</h2>
+        {% if doctor %}{% if doctor.ok %}{{ status_badge('pass', 'OK') }}{% else %}{{ status_badge('fail', 'issues') }}{% endif %}{% endif %}
+      </div>
+      <a class="btn btn-link btn-sm" href="{{ url_for('admin.admin_index') }}">Admin</a>
+    </div>
+    <div class="card-body">
+      {% if not doctor %}
+      <p class="muted">Doctor unavailable.</p>
+      {% elif doctor.ok and not doctor.problems %}
+      <p class="muted">All read-only checks pass.</p>
+      {% else %}
+      <p class="muted">{{ doctor.error_count }} error(s) · {{ doctor.warning_count }} warning(s)</p>
+      <ul class="check-list">
+        {% for c in doctor.problems %}
+        <li class="status-{{ c.status }}"><span class="check-status">{{ c.status }}</span>{{ c.message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="next-run-title">
+    <div class="card-header">
+      <h2 id="next-run-title">Next run</h2>
+      <a class="btn btn-link btn-sm" href="{{ url_for('settings.settings_index') }}">Settings</a>
+    </div>
+    <div class="card-body">
+      {% if not config.ok %}
+      <p class="muted">Configuration could not be resolved. <a href="{{ url_for('settings.settings_index') }}">Open Settings</a>.</p>
+      {% else %}
+      <dl class="info-grid">
+        <dt>Profile</dt><dd>{{ config.profile }}</dd>
+        <dt>Lookback</dt><dd>{{ config.lookback_days or '—' }} days</dd>
+        <dt>Summaries</dt>
+        <dd>{% if config.llm %}<span class="hint-badge ollama">LLM ({{ config.provider }})</span>{% else %}<span class="hint-badge local">preview excerpts</span>{% endif %}</dd>
+        <dt>Network</dt>
+        <dd>
+          {% if config.linkedin_enabled %}<span class="badge badge-info">LinkedIn · {{ config.linkedin_searches }}</span>{% endif %}
+          {% if config.reddit_enabled %}<span class="badge badge-info">Reddit · {{ config.reddit_subs }}</span>{% endif %}
+          {% if config.gmail_enabled %}<span class="badge badge-info">Gmail</span>{% endif %}
+          {% if not (config.linkedin_enabled or config.reddit_enabled or config.gmail_enabled) %}<span class="muted">mail only</span>{% endif %}
+        </dd>
+      </dl>
+      {% endif %}
+    </div>
+    <div class="card-footer">
+      <a class="btn btn-sm" href="{{ url_for('run.run_studio') }}">Compose a run</a>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="sources-title">
+    <div class="card-header">
+      <h2 id="sources-title">Sources</h2>
+      <a class="btn btn-link btn-sm" href="{{ url_for('sources.list_sources') }}">Manage</a>
+    </div>
+    <div class="card-body">
+      <div class="stat-grid">
+        <div class="stat"><div class="stat-value">{{ counts.sources if counts.sources is not none else '—' }}</div><div class="stat-label">newsletters</div></div>
+        <div class="stat"><div class="stat-value">{{ counts.sources_disabled if counts.sources_disabled is not none else '—' }}</div><div class="stat-label">disabled</div></div>
+        <div class="stat"><div class="stat-value">{{ counts.articles_pending if counts.articles_pending is not none else '—' }}</div><div class="stat-label">articles to fetch</div></div>
+        <div class="stat"><div class="stat-value">{{ counts.bodies if counts.bodies is not none else '—' }}</div><div class="stat-label">cached bodies</div></div>
+      </div>
+    </div>
+    <div class="card-footer quick-links">
+      <a class="btn btn-sm" href="{{ url_for('articles.articles_index') }}">Articles</a>
+      <a class="btn btn-sm" href="{{ url_for('linkedin.linkedin_index') }}">LinkedIn</a>
+      <a class="btn btn-sm" href="{{ url_for('reddit.reddit_index') }}">Reddit</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

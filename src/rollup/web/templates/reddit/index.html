@@ -1,110 +1,132 @@
 {% extends "base.html" %}
-{% block title %}Reddit — Rollup{% endblock %}
+{% block title %}Reddit · Rollup{% endblock %}
+{% block content_class %}content-wide{% endblock %}
 {% block content %}
-<h1>Reddit</h1>
-<p class="note">Add public subreddits by name for digest inclusion. Fetch uses a public JSON/RSS ladder — no account required. Optional script-app OAuth lives in <code>~/.config/rollup/env</code>, never TOML. Sorts <code>rising</code> and <code>controversial</code> map to <code>hot</code>. Unauthenticated feeds are rate-limited (~1 request per minute per sub); Rollup waits {{ reddit_backoff_seconds }}s between subs.</p>
+<div class="page-header">
+  <div>
+    <h1>Reddit</h1>
+    <p class="page-lede">Public subreddits rolled into the briefing. Fetch uses a public JSON/RSS ladder — no account required. GET never contacts Reddit.</p>
+  </div>
+</div>
 {% if reddit_fetch_eta %}
-<p class="note">{{ enabled_sub_count }} enabled sub{{ 's' if enabled_sub_count != 1 else '' }}: {% if reddit_fetch_eta == 'cached' %}<strong>cached</strong> (no network fetch within TTL){% else %}<strong>{{ reddit_fetch_eta }}</strong> fetch{% endif %} ({{ reddit_backoff_seconds }}s between subs when fetching). HTTP 429 adds extra wait.</p>
+<div class="banner banner-info">{{ enabled_sub_count }} enabled sub{{ 's' if enabled_sub_count != 1 else '' }}: {% if reddit_fetch_eta == 'cached' %}<strong>cached</strong> (no network fetch within TTL){% else %}<strong>{{ reddit_fetch_eta }}</strong> fetch{% endif %} ({{ reddit_backoff_seconds }}s between subs when fetching). HTTP 429 adds extra wait.</div>
 {% endif %}
+<details class="card">
+  <summary>Notes</summary>
+  <div class="card-body">
+    <p class="note">Optional script-app OAuth lives in <code>~/.config/rollup/env</code>, never TOML. Sorts <code>rising</code> and <code>controversial</code> map to <code>hot</code>. Unauthenticated feeds are rate-limited (~1 request per minute per sub); Rollup waits {{ reddit_backoff_seconds }}s between subs.</p>
+  </div>
+</details>
 
-<form method="post" action="{{ url_for('reddit.reddit_save') }}" class="settings-form stack-form">
+<form method="post" action="{{ url_for('reddit.reddit_save') }}" data-pending="Saving…">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <details class="panel" open>
-    <summary>Global defaults</summary>
-    <label>
-      <input type="hidden" name="reddit_enabled" value="0">
-      <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>
-      Enable Reddit fetch on digest
-    </label>
-    <label>Layout
-      <select name="reddit_layout">
-        {% for layout in layouts %}
-        <option value="{{ layout }}" {% if reddit.layout == layout %}selected{% endif %}>{{ layout }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Default sort
-      <select name="reddit_sort">
-        {% for sort in sorts %}
-        <option value="{{ sort }}" {% if reddit.sort == sort %}selected{% endif %}>{{ sort }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Default mode
-      <select name="reddit_mode">
-        {% for mode in modes %}
-        <option value="{{ mode }}" {% if reddit.mode == mode %}selected{% endif %}>{{ mode }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Post cap (per sub)
-      <input type="number" name="reddit_limit" min="1" max="50" value="{{ reddit.limit }}">
-    </label>
-    <label>Listing cache TTL (hours, 0 = always fetch)
-      <input type="number" name="reddit_fetch_ttl_hours" min="0" max="168" value="{{ reddit.fetch_ttl_hours }}">
-    </label>
-  </details>
+  <section class="card" aria-labelledby="rd-defaults-title">
+    <div class="card-header"><h2 id="rd-defaults-title">Defaults</h2><span class="hint-badge ollama">network opt-in</span></div>
+    <div class="card-body">
+      <label class="field-inline">
+        <input type="hidden" name="reddit_enabled" value="0">
+        <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>
+        <span>Enable Reddit fetch on digest runs</span>
+      </label>
+      <div class="field-row">
+        <label class="field field-narrow">
+          <span class="field-label">Layout</span>
+          <select name="reddit_layout">
+            {% for layout in layouts %}
+            <option value="{{ layout }}" {% if reddit.layout == layout %}selected{% endif %}>{{ layout }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Default sort</span>
+          <select name="reddit_sort">
+            {% for sort in sorts %}
+            <option value="{{ sort }}" {% if reddit.sort == sort %}selected{% endif %}>{{ sort }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Default mode</span>
+          <select name="reddit_mode">
+            {% for mode in modes %}
+            <option value="{{ mode }}" {% if reddit.mode == mode %}selected{% endif %}>{{ mode }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Post cap (per sub)</span>
+          <input type="number" name="reddit_limit" min="1" max="50" value="{{ reddit.limit }}">
+        </label>
+        <label class="field field-narrow">
+          <span class="field-label">Cache TTL (hours)</span>
+          <input type="number" name="reddit_fetch_ttl_hours" min="0" max="168" value="{{ reddit.fetch_ttl_hours }}">
+          <span class="field-hint">0 = always fetch</span>
+        </label>
+      </div>
+    </div>
+  </section>
 
-  <details class="panel" open>
-    <summary>Subreddits</summary>
-    {% if subs %}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Include</th>
-          <th>Subreddit</th>
-          <th>Mode</th>
-          <th>Sort</th>
-          <th>Cap</th>
-          <th>Remove</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for sub in subs %}
-        <tr>
-          <td>
-            <input type="checkbox" name="sub_enabled_{{ sub.name }}" value="1" {% if sub.enabled %}checked{% endif %}>
-            <input type="hidden" name="sub_name" value="{{ sub.name }}">
-          </td>
-          <td>r/{{ sub.name }}</td>
-          <td>
-            <select name="sub_mode">
-              <option value="">(inherit)</option>
-              {% for mode in modes %}
-              <option value="{{ mode }}" {% if sub.mode == mode %}selected{% endif %}>{{ mode }}</option>
-              {% endfor %}
-            </select>
-          </td>
-          <td>
-            <select name="sub_sort">
-              <option value="">(inherit)</option>
-              {% for sort in sorts %}
-              <option value="{{ sort }}" {% if sub.sort == sort %}selected{% endif %}>{{ sort }}</option>
-              {% endfor %}
-            </select>
-          </td>
-          <td>
-            <input type="number" name="sub_limit" min="1" max="50" placeholder="{{ reddit.limit }}"
-              value="{{ sub.limit if sub.limit is not none else '' }}">
-          </td>
-          <td>
-            <input type="checkbox" name="sub_remove" value="{{ sub.name }}" title="Remove on save">
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="empty">No subreddits yet. Add one below.</p>
-    {% endif %}
-    <label>Add subreddit
-      <input type="text" name="add_sub" placeholder="python or r/python">
-    </label>
-  </details>
+  <section class="card" aria-labelledby="rd-subs-title">
+    <div class="card-header"><div class="card-title-group"><h2 id="rd-subs-title">Subreddits</h2><span class="badge badge-count">{{ subs | length }}</span></div></div>
+    <div class="card-body">
+      {% if subs %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col" class="check">Include</th>
+              <th scope="col">Subreddit</th>
+              <th scope="col">Mode</th>
+              <th scope="col">Sort</th>
+              <th scope="col">Cap</th>
+              <th scope="col" class="check">Remove</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for sub in subs %}
+            <tr>
+              <td class="check">
+                <input type="checkbox" name="sub_enabled_{{ sub.name }}" value="1" {% if sub.enabled %}checked{% endif %} aria-label="Include r/{{ sub.name }}">
+                <input type="hidden" name="sub_name" value="{{ sub.name }}">
+              </td>
+              <td>r/{{ sub.name }}</td>
+              <td>
+                <select name="sub_mode" aria-label="Mode for r/{{ sub.name }}">
+                  <option value="">(inherit)</option>
+                  {% for mode in modes %}
+                  <option value="{{ mode }}" {% if sub.mode == mode %}selected{% endif %}>{{ mode }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <select name="sub_sort" aria-label="Sort for r/{{ sub.name }}">
+                  <option value="">(inherit)</option>
+                  {% for sort in sorts %}
+                  <option value="{{ sort }}" {% if sub.sort == sort %}selected{% endif %}>{{ sort }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input type="number" name="sub_limit" min="1" max="50" placeholder="{{ reddit.limit }}" value="{{ sub.limit if sub.limit is not none else '' }}" aria-label="Post cap for r/{{ sub.name }}"></td>
+              <td class="check"><input type="checkbox" name="sub_remove" value="{{ sub.name }}" aria-label="Remove r/{{ sub.name }} on save"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Ticked “Remove” rows are deleted when you save.</p>
+      {% else %}
+      <p class="empty">No subreddits yet. Add one below.</p>
+      {% endif %}
+      <label class="field">
+        <span class="field-label">Add subreddit</span>
+        <input type="text" name="add_sub" placeholder="python or r/python" autocomplete="off">
+      </label>
+    </div>
+  </section>
 
-  <div class="panel-actions">
-    <button type="submit">Save Reddit settings</button>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Save Reddit settings</button>
   </div>
 </form>
 {% endblock %}

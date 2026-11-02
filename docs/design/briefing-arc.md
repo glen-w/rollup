@@ -3,6 +3,8 @@
 **Status:** contracts, attention, coverage, synthesis, corpus FTS/Ask, source
 intelligence, and reading destinations (OPDS / Calibre drop) have landed.
 Send-to-Kindle remains a later writer plugin. Not a commitment calendar.
+The sequence that thickens these layers — 1.0 bar, then the edition arcs —
+is [the roadmap](../ROADMAP.md). This note holds the invariants.
 
 Rollup reduces a collection window into a **bounded reading object**. These
 layers deepen that briefing. They do not add another stream to triage.
@@ -43,7 +45,7 @@ Fixed labels (not user-tunable):
 ## Pipeline slots
 
 ```
-filter → group → annotate_attention → cluster_coverage
+filter → group → annotate_attention → cluster_coverage → continuity
       → summarize → group_summaries → synthesize_briefing
       → final_review → render
 ```
@@ -64,8 +66,7 @@ blocks. Reader bodies never appear in manifests.
 
 ## Non-goals (this arc)
 
-- Send-to-Kindle (optional network writer on the same seam)
-- RSS ingest, richer LinkedIn (Gmail read-only ingest shipped separately; not a briefing layer)
+- Richer LinkedIn (RSS ingest and Send-to-Kindle shipped as transports/writers, not briefing layers)
 - Embeddings / vector DB
 - Auto-unsubscribe or mutating Thunderbird
 - Dropping mail from the briefing

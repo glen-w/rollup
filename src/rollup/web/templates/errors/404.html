@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Not found{% endblock %}
+{% block title %}Not found · Rollup{% endblock %}
 {% block content %}
-<h1>Not found</h1>
-<p>{{ message }}</p>
-<p><a href="{{ url_for('rollups.list_rollups') }}">Back to archive</a></p>
+<div class="page-header"><div><h1>Not found</h1><p class="page-lede">Nothing lives at this address.</p></div></div>
+<div class="banner" role="alert">{{ message }}</div>
+<p><a class="btn" href="{{ url_for('rollups.list_rollups') }}">Back to Archive</a> <a class="btn btn-link" href="{{ url_for('index') }}">Home</a></p>
 {% endblock %}

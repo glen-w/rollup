@@ -274,7 +274,7 @@ def test_gmail_raw_parses_identically_to_mbox() -> None:
 
 def test_schema_v18_gmail_tables(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "rollup.db")
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"gmail_messages", "gmail_label_sync"} <= tables
     conn.close()

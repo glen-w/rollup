@@ -13,7 +13,6 @@ from rollup.corpus import CorpusHit, fts5_available, upsert_corpus_row
 from rollup.corpus_cmd import cmd_ask
 from rollup.state import init_db
 
-
 pytestmark = pytest.mark.skipif(
     not fts5_available(),
     reason="SQLite FTS5 is not available in this build",

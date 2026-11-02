@@ -6,7 +6,6 @@ from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
-
 from rollup.discovery import iter_mbox_files
 from rollup.parse import (
     compute_content_hash,

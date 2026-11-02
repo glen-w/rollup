@@ -82,6 +82,7 @@ MANIFEST_TOP_LEVEL_ALLOWLIST = frozenset(
         "attention",
         "coverage",
         "briefing_synthesis",
+        "continuity",
         "degradations",
         "lifecycle_events",
     }
@@ -114,11 +115,14 @@ _DEGRADATION_ATTRS: tuple[str, ...] = (
     "web_index_failed",
     "required_writer_failed",
     "optional_writer_failed",
+    "archive_failed",
     "mbox_mutation_detected",
     "linkedin_degraded",
     "reddit_degraded",
     "webpage_degraded",
     "gmail_degraded",
+    "rss_degraded",
+    "continuity_ledger_failed",
     "final_review_failed",
     "group_summaries_degraded",
 )
@@ -127,7 +131,7 @@ _MAX_LIFECYCLE_EVENTS = 40
 _MAX_EVENT_MESSAGE = 240
 
 
-def _degradation_flags(agg: "AggregatedResults") -> dict[str, bool]:
+def _degradation_flags(agg: AggregatedResults) -> dict[str, bool]:
     return {name: True for name in _DEGRADATION_ATTRS if getattr(agg, name, False)}
 
 
@@ -556,6 +560,13 @@ class ManifestBuilder:
                 "cache_write_errors": agg.group_summary_cache_write_errors,
                 "error_counts": dict(agg.group_summary_error_counts),
             }
+
+        if self.report is not None:
+            from rollup.continuity import continuity_counts
+
+            counts_block = continuity_counts(self.report)
+            if counts_block.get("continuing") or counts_block.get("repeat"):
+                payload["continuity"] = counts_block
 
         if agg is not None:
             degradations = _degradation_flags(agg)

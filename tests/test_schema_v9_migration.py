@@ -7,12 +7,10 @@ from pathlib import Path
 import pytest
 
 from rollup.state import (
-    MESSAGE_READER_BODIES_V9,
     SCHEMA_VERSION,
     connect_db,
-    ensure_message_reader_bodies_v10,
     ensure_message_reader_bodies_v9,
-    ensure_web_schema,
+    ensure_message_reader_bodies_v10,
     get_schema_version,
     init_db,
 )
@@ -21,7 +19,7 @@ from rollup.state import (
 def test_fresh_db_schema_version(tmp_path: Path):
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()
@@ -109,7 +107,7 @@ def test_repair_schema_version_without_reader_bodies_table(tmp_path: Path):
     conn.commit()
     conn.close()
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reader_bodies'"
     ).fetchone()

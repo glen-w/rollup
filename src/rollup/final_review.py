@@ -11,13 +11,13 @@ from datetime import datetime
 from pathlib import Path
 
 from rollup.config import Config
-from rollup.provider_errors import is_provider_call_error
 from rollup.final_review_profiles import (
     FINAL_REVIEW_ESTIMATED_CHARS_PER_TOKEN,
     FINAL_REVIEW_RESERVED_OUTPUT_TOKENS,
     FinalReviewProfile,
     resolve_final_review_profile,
 )
+from rollup.llm_client import ProviderAvailabilityCache, validate_ollama_url
 from rollup.models import (
     DigestEntry,
     DigestReport,
@@ -32,7 +32,7 @@ from rollup.models import (
     FinalReviewSource,
     FinalReviewStatus,
 )
-from rollup.llm_client import ProviderAvailabilityCache, validate_ollama_url
+from rollup.provider_errors import is_provider_call_error
 
 logger = logging.getLogger(__name__)
 
@@ -604,7 +604,7 @@ def call_final_review_model(
     )
     max_tokens = None
     if profile.options and "num_predict" in profile.options:
-        max_tokens = int(profile.options["num_predict"])  # type: ignore[arg-type]
+        max_tokens = int(profile.options["num_predict"])
     stream_result = client.complete(
         CompletionRequest(
             model=profile.model,

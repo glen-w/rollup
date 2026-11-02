@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from typing import Literal
 
 from flask import Blueprint, Response, g, redirect, render_template, request, url_for
 from markupsafe import Markup
@@ -46,7 +47,7 @@ def _csrf_or_400():
     return None
 
 
-def _canonical_opaque(id_enc: str, *, kind: str) -> str | None:
+def _canonical_opaque(id_enc: str, *, kind: Literal["message", "source"]) -> str | None:
     try:
         key = decode_opaque(id_enc, kind=kind)
     except IdError:

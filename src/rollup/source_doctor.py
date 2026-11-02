@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 
 from rollup.source_models import CADENCE_LABELS, GROUPING_POLICIES
-from rollup.source_registry import load_alias_map, _flatten_aliases, SourceRegistryError
+from rollup.source_registry import SourceRegistryError, load_alias_map
 from rollup.state import get_schema_version
 from rollup.summary_profiles import get_builtin_summary_profile_set
 
@@ -74,8 +74,8 @@ def run_source_doctor(conn: sqlite3.Connection) -> dict[str, Any]:
 
     # Orphan aliases
     orphans = 0
-    for alias, canonical in conn.execute(
-        "SELECT alias_key, canonical_source_key FROM source_aliases"
+    for (canonical,) in conn.execute(
+        "SELECT canonical_source_key FROM source_aliases"
     ):
         row = conn.execute(
             "SELECT 1 FROM sources WHERE source_key = ?", (canonical,)
@@ -151,7 +151,7 @@ def run_source_doctor(conn: sqlite3.Connection) -> dict[str, Any]:
 
     # Superseded anomalies
     anomalies = 0
-    for key, life, by in conn.execute(
+    for key, _life, by in conn.execute(
         "SELECT source_key, lifecycle, superseded_by FROM sources WHERE lifecycle = 'superseded'"
     ):
         if not by:

@@ -25,13 +25,13 @@ from time import perf_counter
 
 from rollup.config import Config
 from rollup.final_review_codes import GroupSummaryErrorCode
-from rollup.provider_errors import is_provider_call_error
 from rollup.models import (
-    DigestEntry,
     DigestGroup,
     DigestItem,
     GroupSummaryMetadata,
+    SummarySource,
 )
+from rollup.provider_errors import is_provider_call_error
 from rollup.summarize import clean_summary_output
 
 logger = logging.getLogger(__name__)
@@ -299,7 +299,7 @@ def _summarise_group(
     last_error: GroupSummaryErrorCode | None = None
     attempts = 1 + GROUP_SUMMARY_MAX_RETRIES
 
-    for attempt in range(attempts):
+    for _attempt in range(attempts):
         if stats["ollama_calls"] >= max_calls:
             stats["error_counts"]["budget_skipped"] += 1
             stats["groups_skipped_budget"] += 1
@@ -377,7 +377,7 @@ def _apply_group_summaries_to_items(
         )
         if summary is not None:
             stats["groups_succeeded"] += 1
-            fresh_source = (
+            fresh_source: SummarySource = (
                 "litellm" if config.llm_provider == "litellm" else "ollama"
             )
             item = replace(

@@ -3,40 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Rollup{% endblock %}</title>
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{% if page_title %}{{ page_title }} · {% endif %}Rollup{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='web.css') }}">
+  <link rel="stylesheet" href="{{ url_for('theme_css') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <script src="{{ url_for('static', filename='theme.js') }}"></script>
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="{{ url_for('rollups.list_rollups') }}">
-      <img src="{{ url_for('branding', name='rollup_logo.png') }}" alt="Rollup" width="150" height="150">
-    </a>
-    <nav>
-      <a href="{{ url_for('rollups.list_rollups') }}">Archive</a>
-      <a href="{{ url_for('search.search_index') }}">Search</a>
-      <a href="{{ url_for('run.run_studio') }}">Run</a>
-      <a href="{{ url_for('articles.articles_index') }}">Articles</a>
-      <a href="{{ url_for('linkedin.linkedin_index') }}">LinkedIn</a>
-      <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a>
-      <a href="{{ url_for('settings.settings_index') }}">Settings</a>
-      <a href="{{ url_for('sources.list_sources') }}">Quality</a>
-      <a href="{{ url_for('sources.list_registry') }}">Registry</a>
-      <a href="{{ url_for('admin.admin_index') }}">Admin</a>
-    </nav>
-  </header>
-  <main>
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-      <ul class="flash">
-        {% for message in messages %}
-        <li>{{ message }}</li>
-        {% endfor %}
-      </ul>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app">
+    <header class="site-header">
+      <a class="brand" href="{{ url_for('index') }}">
+        <img src="{{ url_for('branding', name='rollup_logo.png') }}" alt="" width="36" height="36">
+        <span>Rollup</span>
+      </a>
+      <button type="button" class="nav-toggle" aria-controls="sidebar" aria-expanded="false" data-nav-toggle>Menu</button>
+      <span class="header-spacer"></span>
+      {% if nav_run_busy %}
+      <a class="header-status" href="{{ url_for('run.run_result') }}">
+        <span class="badge badge-info">running</span> digest in progress
+      </a>
       {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
+      <button type="button" class="btn btn-sm btn-secondary" data-theme-toggle aria-label="Toggle colour theme" title="Toggle colour theme">Theme</button>
+    </header>
+    <aside class="sidebar" id="sidebar">
+      <nav class="site-nav" aria-label="Primary">
+        {% for group in nav_sections %}
+        <div class="nav-group">
+          <p class="nav-group-title">{{ group.title }}</p>
+          <ul>
+            {% for item in group.links %}
+            <li><a href="{{ item.url }}"{% if item.key == nav_active %} aria-current="page"{% endif %}>{{ item.label }}</a></li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </nav>
+    </aside>
+    <main id="main" class="content {% block content_class %}{% endblock %}" tabindex="-1">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+          {% set cat = category if category in ['success', 'error', 'warning', 'info'] else 'info' %}
+          <div class="flash flash-{{ cat }}" role="{{ 'alert' if cat == 'error' else 'status' }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
   <script src="{{ url_for('static', filename='web.js') }}" defer></script>
   <script src="{{ url_for('static', filename='ratings.js') }}" defer></script>
   {% block extra_scripts %}{% endblock %}

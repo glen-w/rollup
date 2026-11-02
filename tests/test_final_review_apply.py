@@ -5,15 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
-from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.config import DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO, Config
 from rollup.final_review import compute_digest_fingerprint
 from rollup.final_review_apply import (
     apply_final_review_patches,
     should_globally_skip_apply,
 )
-from rollup.final_review_profiles import FinalReviewConfigError, validate_final_review_config
+from rollup.final_review_profiles import validate_final_review_config
 from rollup.models import (
     ClassifiedMessage,
     DigestEntry,

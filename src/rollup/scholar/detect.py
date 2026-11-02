@@ -17,7 +17,7 @@ SCHOLAR_SUBJECT_PREFIX = "scholar alert:"
 
 
 def is_scholar_paper_key(message_key: str | None) -> bool:
-    return bool(message_key) and message_key.startswith(PAPER_MESSAGE_KEY_PREFIX)
+    return message_key is not None and message_key.startswith(PAPER_MESSAGE_KEY_PREFIX)
 
 
 def is_scholar_source_key(source_key: str | None, list_id: str | None = None) -> bool:

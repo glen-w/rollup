@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from rollup.classify import classify_message
+from rollup.filter import make_digest_entry
 from rollup.models import (
     BriefingSynthesis,
     CoverageCluster,
     DigestReport,
     DigestStats,
+    ParsedMessage,
 )
-from rollup.classify import classify_message
-from rollup.filter import make_digest_entry
-from rollup.models import ParsedMessage
 from rollup.parse import compute_content_hash
 from rollup.synthesis import apply_synthesis, build_glance, parse_narrative
 

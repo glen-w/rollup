@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Literal, Mapping
+from typing import Any, Literal
 
 from rollup.config import (
     DEFAULT_EFFORT as _DEFAULT_EFFORT_STR,
+)
+from rollup.config import (
     DEFAULT_MAX_CHARS_FOR_LLM,
     DEFAULT_OLLAMA_MODEL,
 )
@@ -83,7 +86,7 @@ def _replace_profile(
     think: bool | str | None = None,
     description: str | None = None,
 ) -> SummaryProfile:
-    kwargs: dict[str, object] = {"model": model}
+    kwargs: dict[str, Any] = {"model": model}
     if num_ctx is not None:
         kwargs["num_ctx"] = num_ctx
     if timeout_seconds is not None:
@@ -299,7 +302,7 @@ def resolve_effort_name(name: str | None) -> EffortName:
         raise UnknownEffortError(
             f"Unknown effort {name!r}. Available: {', '.join(EFFORT_NAMES)}"
         )
-    return name  # type: ignore[return-value]
+    return name
 
 
 def apply_single_model(

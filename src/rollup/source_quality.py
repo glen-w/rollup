@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from datetime import datetime, timezone
 
-from rollup.source_registry import resolve_alias
 from rollup.utc import parse_utc
 
 PRIOR_WEIGHT = 3.0
@@ -196,10 +194,10 @@ def score_sources(
             if inter[2]:
                 dismiss_n += 1
 
-        def rate(num: int) -> float | None:
-            if pop_n == 0:
+        def rate(num: int, *, denominator: int = pop_n) -> float | None:
+            if denominator == 0:
                 return None
-            return num / pop_n
+            return num / denominator
 
         # last_received: prefer observation, else max from entries
         last_recv = last_seen.get(can)

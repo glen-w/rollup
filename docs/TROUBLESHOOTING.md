@@ -16,7 +16,9 @@ Fix hints are always included. Exit code 0 means no error-level checks failed
 
 ### Newsletter root does not exist
 
-Point `--root` at your Thunderbird `.sbd` tree, or use the synthetic fixtures:
+Run `rollup init`: it scans Thunderbird profiles, asks for the `.sbd` path when it
+finds nothing, and writes the sticky config. Or point `--root` at your Thunderbird
+`.sbd` tree directly, or use the synthetic fixtures:
 
 ```bash
 rollup inventory --root tests/fixtures/Newsletters.sbd
@@ -162,7 +164,17 @@ Gmail ingest is opt-in (`[gmail].enabled` or `--gmail`) and read-only. Start wit
 - **`Gmail label not found`:** the label name in `[gmail].labels` / `label_prefix` does not exist. `rollup gmail labels` lists what the account has and marks selected ones.
 - **401 after it used to work:** the refresh token was revoked or expired; re-run `rollup gmail auth`.
 - **429 / 5xx:** Rollup backs off and retries a few times, then reuses the stale label snapshot (`gmail_cache_stale`) or marks the run partial (`gmail_fetch_failed`, exit 2). Gmail-only runs with nothing fetched are exit 1.
-- **Old messages keep appearing / new ones missing:** labels are served from cache for `fetch_ttl_hours` (default 6). Pass `--gmail-refresh` or set the TTL to `0`.
+- **Old messages keep appearing / new ones missing:** labels are served from cache for `fetch_ttl_hours` (default 6). Pass `--gmail-refresh` or set the TTL to `0`. A TTL expiry with a stored history id uses `history.list` instead of a full list. `gmail_history_expired` means that cursor was too old and Rollup fell back to `messages.list`.
+- **Kindle send failed:** the dated digest can still be success-with-partial (`partial: optional writer`). Set `[kindle].to`, `[kindle].from`, and `ROLLUP_KINDLE_SMTP_HOST` / `ROLLUP_KINDLE_SMTP_PASSWORD`. Doctor check `kindle_smtp` does not print the password.
+
+### RSS fetch failed
+
+RSS ingest is opt-in (`[rss].enabled` or `--rss`). `rollup doctor` reports `rss_feeds`.
+
+- **`rss_url_ssrf` / `rss_url_invalid`:** the feed URL or a redirect is not public HTTPS (private, loopback, link-local, or credentials in the URL).
+- **`rss_doctype_rejected`:** the document declares a DTD or entity. Rollup will not parse it.
+- **429 / timeout:** a stale snapshot is reused (`rss_cache_stale`, exit 2) when one exists. With no snapshot the run is `rss_fetch_failed`. RSS-only runs with nothing parsed are exit 1.
+- **`partial: continuity ledger`:** the briefing published, but saving cross-run labels failed. The next run simply has a shorter memory.
 - **Large newsletters skipped:** raw messages over 2 MB are not fetched (logged as a warning).
 - **Dry-run / Settings GET:** never contacts Gmail.
 

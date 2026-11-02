@@ -15,11 +15,20 @@ from rollup.filter import (
     count_summary_sources,
     group_dated_by_folder,
 )
-from rollup.models import DigestEntry, DigestReport, DigestStats, DigestSummaryMetadata
+from rollup.models import (
+    CoverageCluster,
+    DigestEntry,
+    DigestItem,
+    DigestReport,
+    DigestStats,
+    DigestSummaryMetadata,
+    ParsedMessage,
+)
 from rollup.pipeline.ingest import (
     merge_gmail_parse,
     merge_linkedin_parse,
     merge_reddit_parse,
+    merge_rss_parse,
     merge_webpage_parse,
     stage_discover,
     stage_enrich_scholar,
@@ -27,6 +36,7 @@ from rollup.pipeline.ingest import (
     stage_parse_gmail,
     stage_parse_linkedin,
     stage_parse_reddit,
+    stage_parse_rss,
     stage_parse_webpage,
 )
 from rollup.pipeline.session import _DigestSession, _failure_result
@@ -268,7 +278,7 @@ def build_digest_report(
     undated_entries: list[DigestEntry] | list[Any],
     stats: DigestStats,
     summary_metadata: DigestSummaryMetadata | None,
-    dated_by_folder: dict | None = None,
+    dated_by_folder: dict[str, tuple[DigestItem, ...]] | None = None,
 ) -> DigestReport:
     if dated_by_folder is None:
         # Flatten groups for folder grouping when needed.
@@ -310,13 +320,14 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     discovery = stage_discover(config, generated_at=generated_at)
     aggregated.discovery = discovery
     logger.info(
-        "Digest: root=%s folders=%d linkedin=%d reddit=%d webpage=%d gmail=%d lookback=%dd dry_run=%s no_ollama=%s",
+        "Digest: root=%s folders=%d linkedin=%d reddit=%d webpage=%d gmail=%d rss=%d lookback=%dd dry_run=%s no_ollama=%s",
         config.root,
         len(discovery.folders),
         len(discovery.linkedin_searches),
         len(discovery.reddit_subs),
         len(discovery.webpage_items),
         len(discovery.gmail_targets),
+        len(discovery.rss_feeds),
         config.lookback_days,
         run_options.dry_run,
         config.no_ollama,
@@ -366,6 +377,17 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     )
     parse_result = merge_reddit_parse(parse_result, rd_messages, rd_warnings)
     aggregated.reddit_degraded = reddit_degraded
+    rss_feeds = discovery.rss_feeds if (
+        effective_run.allow_rss_network or run_options.dry_run
+    ) else ()
+    rss_messages, rss_warnings, rss_degraded = stage_parse_rss(
+        config,
+        rss_feeds,
+        dry_run=run_options.dry_run,
+        generated_at=generated_at,
+    )
+    parse_result = merge_rss_parse(parse_result, rss_messages, rss_warnings)
+    aggregated.rss_degraded = rss_degraded
     linkedin_searches = discovery.linkedin_searches if (
         effective_run.allow_linkedin_network or run_options.dry_run
     ) else ()
@@ -521,7 +543,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
     )
     session.summarize_result = summarize_result
     aggregated.summarize = summarize_result
-    aggregated.source_snapshot = snapshot  # type: ignore[attr-defined]
+    aggregated.source_snapshot = snapshot
 
     # Rebuild item structure with summaries when grouping is active.
     if grouping.enabled and grouping_result.groups:
@@ -553,7 +575,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             complete=complete,
         )
 
-    coverage_clusters = ()
+    coverage_clusters: tuple[CoverageCluster, ...] = ()
     if not getattr(config, "no_coverage", False):
         from rollup.coverage.stage import apply_coverage
 
@@ -565,6 +587,16 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             if effective_run.allow_attention_llm
             else None,
         )
+
+    from rollup.continuity import apply_continuity
+
+    dated_items, undated_items, continuity_unreadable = apply_continuity(
+        tuple(dated_items),
+        tuple(undated_items),
+        conn=session.conn,
+        run_id=session.ctx.run_id,
+    )
+    session.continuity_unreadable = continuity_unreadable
 
     all_rendered = list(summarize_result.dated_entries) + list(
         summarize_result.undated_entries
@@ -655,6 +687,11 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
             else None
         ),
     )
+    if getattr(session, "continuity_unreadable", False) and session.report.briefing_synthesis:
+        session.report = replace(
+            session.report,
+            briefing_synthesis=replace(session.report.briefing_synthesis, degraded=True),
+        )
     return None
 
 
@@ -708,7 +745,7 @@ def _attention_complete(config):
         client = get_llm_client(
             provider=config.llm_provider,
             ollama_url=config.ollama_url,
-            allow_remote_ollama=config.allow_remote_ollama,
+            allow_remote=config.allow_remote_ollama,
             llm_api_base=config.llm_api_base,
         )
         model = config.llm_model or config.ollama_model

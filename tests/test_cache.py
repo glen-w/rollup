@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-
 from rollup.state import (
     SCHEMA_VERSION,
     get_cached_summary,
@@ -105,7 +104,7 @@ def test_summary_cache_preserves_newsletter_types(tmp_path: Path) -> None:
 def test_init_db_with_summaries_schema_version(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db_with_summaries(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     rows = conn.execute("SELECT id, version FROM schema_version").fetchall()
     assert rows == [(1, SCHEMA_VERSION)]
     conn.close()

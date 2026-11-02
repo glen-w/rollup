@@ -25,7 +25,7 @@ from rollup.state import schema as state_schema
 
 def test_public_names_are_package_reexports() -> None:
     assert SCHEMA_VERSION is state_schema.SCHEMA_VERSION
-    assert SCHEMA_VERSION == 18
+    assert SCHEMA_VERSION == 19
     assert SOURCE_REGISTRY_SCHEMA_V7 is state_schema.SOURCE_REGISTRY_SCHEMA_V7
     assert apply_connection_pragmas is state.apply_connection_pragmas
     assert init_db is state.init_db

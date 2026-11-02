@@ -94,6 +94,7 @@ def list_rollups():
         page=page,
         page_size=page_size,
         total=total,
+        total_pages=max(1, -(-total // page_size)),
         has_prev=page > 1,
         preferred_view=_preferred_view(),
         has_next=offset + page_size < total,
@@ -119,7 +120,7 @@ def rollup_detail(run_id: str):
     if run is None:
         return render_template("errors/404.html", message="Run not found"), 404
     cols = [c[0] for c in cur.description]
-    run_dict = dict(zip(cols, run))
+    run_dict = dict(zip(cols, run, strict=False))
 
     cur = g.db.execute(
         """SELECT * FROM rollup_entries
@@ -136,7 +137,7 @@ def rollup_detail(run_id: str):
     run_enc = encode_run_opaque(run_id)
     entries = []
     for row in entries_raw:
-        e = dict(zip(entry_cols, row))
+        e = dict(zip(entry_cols, row, strict=False))
         inter = get_interaction(g.db, e["message_key"])
         if inter.is_dismissed and not show_dismissed:
             continue
@@ -181,6 +182,8 @@ def rollup_detail(run_id: str):
         page=page,
         page_size=page_size,
         total_entries=total_entries,
+        total_pages=max(1, -(-total_entries // page_size)),
         has_prev=page > 1,
         has_next=offset + page_size < total_entries,
+        return_to=request.full_path.rstrip("?"),
     )

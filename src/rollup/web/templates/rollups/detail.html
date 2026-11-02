@@ -1,81 +1,82 @@
 {% extends "base.html" %}
-{% from "partials/info_macros.html" import info_row, status_badge %}
-{% block title %}Rollup {{ run.run_id[:8] }}{% endblock %}
+{% from "partials/info_macros.html" import info_row, status_badge, pager %}
+{% block title %}Briefing {{ run.started_at | human_datetime if run.started_at else run.run_id[:8] }} · Rollup{% endblock %}
 {% block content %}
 <article class="rollup-detail">
-  <h1 title="{{ run.started_at or '' }}">Rollup {% if run.started_at %}{{ run.started_at | human_datetime }}{% else %}{{ run.run_id }}{% endif %}</h1>
-  {% if run.window_start %}
-  <p class="rollup-subhead"><em>{{ run.window_start | human_date_range(run.window_end) }}{% if run.messages_included is not none %} · {{ run.messages_included }} newsletters{% endif %}</em></p>
-  {% endif %}
-
-  <details class="panel">
-    <summary>Run details · {{ status_badge(run.status) }}{% if run.degraded %} <span class="degraded-tag">degraded</span>{% endif %}</summary>
-    <div class="card-body">
-      <div class="stats-panel">
-        <dl class="info-grid">
-          {{ info_row("Included", run.messages_included) }}
-          {{ info_row("Sources", run.sources_included) }}
-          {{ info_row("Groups", run.groups_created) }}
-          {{ info_row("Ollama", run.summaries_ollama) }}
-          {{ info_row("LiteLLM", run.summaries_litellm) }}
-          {{ info_row("Cache", run.summaries_cache) }}
-        </dl>
-      </div>
-      <p class="artifact-links">
-        {% if run.markdown_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}
-        {% if run.html_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='html') }}">HTML</a>{% endif %}
-        {% if run.manifest_relpath %}<a href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='manifest') }}">Manifest</a>{% endif %}
+  <nav class="breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="{{ url_for('rollups.list_rollups') }}">Archive</a></li><li aria-current="page">Briefing</li></ol></nav>
+  <div class="page-header">
+    <div>
+      <h1 title="{{ run.started_at or '' }}">{% if run.started_at %}{{ run.started_at | human_datetime }}{% else %}{{ run.run_id }}{% endif %}</h1>
+      <p class="page-lede">
+        {% if run.window_start %}{{ run.window_start | human_date_range(run.window_end) }}{% endif %}
+        {% if run.messages_included is not none %} · {{ run.messages_included }} item{{ 's' if run.messages_included != 1 else '' }}{% endif %}
+        · {{ status_badge(run.status) }}{% if run.degraded %} <span class="degraded-tag">degraded</span>{% endif %}
       </p>
+    </div>
+    <div class="page-actions artifact-links">
+      {% if run.html_relpath %}<a class="btn btn-sm" href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='html') }}">HTML</a>{% endif %}
+      {% if run.markdown_relpath %}<a class="btn btn-sm" href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='md') }}">Markdown</a>{% endif %}
+      {% if run.manifest_relpath %}<a class="btn btn-link btn-sm" href="{{ url_for('artifacts.serve_artifact', run_id=run.run_id, kind='manifest') }}">Manifest</a>{% endif %}
+    </div>
+  </div>
+
+  <details class="card">
+    <summary>Run details</summary>
+    <div class="card-body">
+      <dl class="info-grid">
+        {{ info_row("Included", run.messages_included) }}
+        {{ info_row("Sources", run.sources_included) }}
+        {{ info_row("Groups", run.groups_created) }}
+        {{ info_row("Ollama summaries", run.summaries_ollama) }}
+        {{ info_row("LiteLLM summaries", run.summaries_litellm) }}
+        {{ info_row("Cached summaries", run.summaries_cache) }}
+        <dt>Run id</dt><dd><code>{{ run.run_id }}</code></dd>
+      </dl>
     </div>
   </details>
 
   {% if run.entry_index_version == 0 %}
-  <p class="banner">Entry-level browsing is unavailable for this historic run (metadata only). Regenerate a digest to index entries.</p>
+  <div class="banner">Entry-level browsing is unavailable for this historic run (metadata only). Regenerate a digest to index entries.</div>
   {% else %}
-  <details class="panel" open>
-    <summary>Browse entries ({{ entries | length }} on this page)</summary>
-    <div class="card-body">
-      <p class="rollup-controls">
-        {% if show_dismissed %}
-          <a href="?">Hide dismissed</a>
-        {% else %}
-          <a href="?show_dismissed=1">Show dismissed</a>
-        {% endif %}
-        {% if entries %}
-         · <button type="button" id="expand-all-cards" aria-label="Expand all newsletter cards">Expand all</button>
-         · <button type="button" id="collapse-all-cards" aria-label="Collapse all newsletter cards">Collapse all</button>
-        {% endif %}
-      </p>
+  <div class="rollup-controls">
+    <span class="muted">{{ entries | length }} of {{ total_entries }} entr{{ 'y' if total_entries == 1 else 'ies' }} on this page</span>
+    <span aria-hidden="true">·</span>
+    {% if show_dismissed %}
+      <a href="?page={{ page }}">Hide dismissed</a>
+    {% else %}
+      <a href="?page={{ page }}&amp;show_dismissed=1">Show dismissed</a>
+    {% endif %}
+    {% if entries %}
+     <span aria-hidden="true">·</span>
+     <button type="button" id="expand-all-cards">Expand all</button>
+     <span aria-hidden="true">·</span>
+     <button type="button" id="collapse-all-cards">Collapse all</button>
+    {% endif %}
+  </div>
 
-      {% if folder_sections | length > 1 %}
-      <nav class="rollup-toc" aria-label="Contents">
-        <ul>
-          {% for section in folder_sections %}
-          <li><a href="#{{ folder_section_id(section.folder_name) }}">{{ folder_display_name(section.folder_name) }} ({{ section.entries | length }})</a></li>
-          {% endfor %}
-        </ul>
-      </nav>
-      {% endif %}
-
+  {% if folder_sections | length > 1 %}
+  <nav aria-label="Folders">
+    <ul class="folder-chips">
       {% for section in folder_sections %}
-      <section id="{{ folder_section_id(section.folder_name) }}" class="folder-section {{ folder_accent_class(section.folder_name) }}">
-        <h2>{{ folder_display_name(section.folder_name) }}</h2>
-        <p class="folder-byline"><em>{{ section.entries | length }} newsletter{{ 's' if section.entries | length != 1 else '' }} on this page</em></p>
-        {% for e in section.entries %}
-          {% include "partials/entry_card.html" %}
-        {% endfor %}
-      </section>
-      {% else %}
-      <p class="empty">No entries on this page.</p>
+      <li class="{{ folder_accent_class(section.folder_name) }}"><a href="#{{ folder_section_id(section.folder_name) }}">{{ folder_display_name(section.folder_name) }} <span class="count">{{ section.entries | length }}</span></a></li>
       {% endfor %}
-    </div>
-  </details>
-
-  <nav class="pager">
-    {% if has_prev %}<a href="?page={{ page - 1 }}{% if show_dismissed %}&show_dismissed=1{% endif %}">Previous</a>{% endif %}
-    <span>Page {{ page }}</span>
-    {% if has_next %}<a href="?page={{ page + 1 }}{% if show_dismissed %}&show_dismissed=1{% endif %}">Next</a>{% endif %}
+    </ul>
   </nav>
+  {% endif %}
+
+  {% for section in folder_sections %}
+  <section id="{{ folder_section_id(section.folder_name) }}" class="folder-section {{ folder_accent_class(section.folder_name) }}" aria-label="{{ folder_display_name(section.folder_name) }}">
+    <h2>{{ folder_display_name(section.folder_name) }}</h2>
+    <p class="folder-byline">{{ section.entries | length }} item{{ 's' if section.entries | length != 1 else '' }} on this page</p>
+    {% for e in section.entries %}
+      {% include "partials/entry_card.html" %}
+    {% endfor %}
+  </section>
+  {% else %}
+  <div class="empty-state"><p>No entries on this page.</p></div>
+  {% endfor %}
+
+  {{ pager(page, has_prev, has_next, extra_query=("&show_dismissed=1" if show_dismissed else ""), total_pages=total_pages) }}
   {% endif %}
 </article>
 {% endblock %}

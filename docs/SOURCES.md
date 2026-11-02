@@ -79,3 +79,4 @@ Observations are regenerable from mail; back up overrides and aliases.
 - Reproducibility across machines depends on registry state (`policy_state_revision` in manifests); `config_fingerprint` does not include per-source overrides.
 - LinkedIn `li:member:` keys follow Voyager actor ids; mute noisy authors with `rollup sources disable li:member:…` (see [CONFIG.md](CONFIG.md#linkedin-content-searches-optional)).
 - Google Scholar alerts share one source key (`from:scholaralerts-noreply@google.com` or `list:scholar-alerts.google.com`). Detailed vs default handling is `[scholar].mode` / Settings, not a per-source registry field. See [CONFIG.md](CONFIG.md#google-scholar-alerts-optional-detailed-mode).
+- RSS items use source key `rss:feed:<host>`. The feed list is `[rss]`, not an unread stream. Mute a host with `rollup sources disable rss:feed:…`.

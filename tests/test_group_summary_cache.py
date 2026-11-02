@@ -7,19 +7,19 @@ from pathlib import Path
 
 from rollup.state import (
     SCHEMA_VERSION,
+    get_cached_summary_generation,
     get_group_summary_generation,
     get_schema_version,
     init_db_with_summaries,
     store_group_summary_generation,
     store_summary_generation,
-    get_cached_summary_generation,
 )
 
 
 def test_schema_version_is_six(tmp_path: Path) -> None:
     conn = init_db_with_summaries(tmp_path / "rollup.db")
     assert get_schema_version(conn) == SCHEMA_VERSION
-    assert SCHEMA_VERSION == 18
+    assert SCHEMA_VERSION == 19
     conn.close()
 
 

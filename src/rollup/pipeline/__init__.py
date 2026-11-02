@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from rollup.clock import Clock, DEFAULT_CLOCK
+from rollup.clock import DEFAULT_CLOCK, Clock
 from rollup.config import Config, compute_date_window
 from rollup.effective_run import resolve_effective_run
 from rollup.pipeline.ingest import (
@@ -28,7 +31,6 @@ from rollup.pipeline.publish import (
 )
 from rollup.pipeline.session import (
     _DigestSession,
-    _failure_result,
     _prepare_lock_and_manifest,
     _release_resources,
     _validate_run_paths,
@@ -66,9 +68,14 @@ from rollup.pipeline.types import (
     StageWarning,
     SummarizeResult,
 )
-from rollup.render import atomic_write_digest
+
+# Patch seam: publish.py resolves this name through the package at call time.
+from rollup.render import atomic_write_digest as atomic_write_digest
 from rollup.run_context import RunContext
 from rollup.run_options import GroupingConfig, ManifestConfig, RunOptions
+
+if TYPE_CHECKING:
+    from rollup.output_writers import OutputWriter
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +131,8 @@ def run_digest(
     manifest_config: ManifestConfig | None = None,
     clock: Clock | None = None,
     acquire_lock: bool = True,
-    output_writers: list | None = None,
-    writer_cli_args: object | None = None,
+    output_writers: Mapping[str, OutputWriter] | None = None,
+    writer_cli_args: argparse.Namespace | None = None,
 ) -> DigestRunResult:
     """Run the full digest pipeline with typed stage results."""
     clock = clock or DEFAULT_CLOCK

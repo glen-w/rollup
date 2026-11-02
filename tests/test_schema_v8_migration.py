@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,8 +26,6 @@ from rollup.run_index import (
     index_rollup_run,
 )
 from rollup.state import (
-    SOURCE_REGISTRY_SCHEMA_V7,
-    SCHEMA_VERSION,
     connect_db,
     ensure_source_registry_schema,
     ensure_web_schema,
@@ -36,7 +33,6 @@ from rollup.state import (
     init_db,
 )
 from rollup.utc import format_utc
-
 
 NOW = datetime(2024, 6, 1, tzinfo=timezone.utc)
 
@@ -237,8 +233,6 @@ def test_failed_index_leaves_prior_intact(tmp_path: Path):
 
 
 def test_duplicate_message_key_collision_warning(tmp_path: Path):
-    from rollup.run_index import flatten_report_entries
-
     def entry(key: str) -> DigestEntry:
         parsed = ParsedMessage(
             message_key=key,

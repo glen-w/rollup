@@ -1,84 +1,110 @@
 {% extends "base.html" %}
-{% block title %}Run Studio — Rollup{% endblock %}
+{% block title %}Run Studio · Rollup{% endblock %}
 {% block content %}
-<h1>Run Studio</h1>
-<p class="meta">Compose a digest, preview the effective run, dry-run discovery, then generate outputs.</p>
+<div class="page-header">
+  <div>
+    <h1>Run Studio</h1>
+    <p class="page-lede">Compose a digest, review the effective run, dry-run discovery, then generate outputs as a background process.</p>
+  </div>
+  {% if busy %}
+  <div class="page-actions"><a class="btn" href="{{ url_for('run.run_result') }}">Follow the current run</a></div>
+  {% endif %}
+</div>
 
 {% if busy %}
 {% include "run/_progress_panel.html" %}
 {% endif %}
 
 {% if effective %}
-<section class="card-section effective-run">
-  <h2>Effective run</h2>
-  <dl class="kv">
-    <dt>Profile</dt><dd>{{ effective.profile_name }}</dd>
-    <dt>Lookback</dt><dd>{{ sticky.get('lookback_days', '—') }} days</dd>
-    <dt>LLM</dt>
-    <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">LLM enabled ({{ sticky.get('llm_provider', 'ollama') }})</span>{% if sticky.get('llm_provider') == 'litellm' %} <span class="hint-badge writes">newsletter text may leave this machine</span>{% endif %}{% else %}<span class="hint-badge local">preview excerpts (no model)</span>{% endif %}</dd>
-    <dt>Writers</dt><dd>{{ effective.writers | join(', ') }} (+ Markdown/HTML)</dd>
-    <dt>Newsletter root</dt><dd><code>{{ sticky.get('root', '—') }}</code></dd>
-    <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
-    <dt>Matched folders</dt>
-    <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
-    <dt>LinkedIn</dt>
-    <dd>{% if linkedin_enabled %}<span class="hint-badge ollama">enabled</span> — {{ linkedin_search_count }} search{{ 'es' if linkedin_search_count != 1 else '' }} — <a href="{{ url_for('linkedin.linkedin_index') }}">Manage</a>{% else %}<span class="hint-badge local">off</span> — <a href="{{ url_for('linkedin.linkedin_index') }}">Manage</a>{% endif %}</dd>
-    <dt>Reddit</dt>
-    <dd>{% if reddit_enabled %}<span class="hint-badge ollama">enabled</span> — {{ reddit_sub_count }} sub{{ 's' if reddit_sub_count != 1 else '' }}{% if reddit_fetch_eta %}, {% if reddit_fetch_eta == 'cached' %}cached{% else %}{{ reddit_fetch_eta }} fetch{% endif %}{% endif %} — <a href="{{ url_for('reddit.reddit_index') }}">Manage</a>{% else %}<span class="hint-badge local">off</span>{% endif %}</dd>
-    <dt>Articles</dt>
-    <dd>{% if webpage_in_window_count %}<span class="hint-badge ollama">{{ webpage_in_window_count }} in lookback</span>{% if webpage_pending_count %} · {{ webpage_pending_count }} to fetch{% endif %} — <a href="{{ url_for('articles.articles_index') }}">Manage</a>{% elif webpage_pending_count %}<span class="hint-badge ollama">{{ webpage_pending_count }} to fetch</span> — <a href="{{ url_for('articles.articles_index') }}">Manage</a>{% else %}<span class="hint-badge local">empty</span>{% endif %}</dd>
-    {% if use_single_model and selected_single_model %}
-    <dt>Single model</dt>
-    <dd><code>{{ selected_single_model }}</code> <span class="muted">(this run only)</span></dd>
-    {% endif %}
-  </dl>
+<section class="card effective-run" aria-labelledby="effective-title">
+  <div class="card-header"><h2 id="effective-title">Effective run</h2><span class="muted small">what the next run will do</span></div>
+  <div class="card-body">
+    <dl class="info-grid">
+      <dt>Profile</dt><dd>{{ effective.profile_name }}</dd>
+      <dt>Lookback</dt><dd>{{ sticky.get('lookback_days', '—') }} days</dd>
+      <dt>Summaries</dt>
+      <dd>{% if effective.ollama_contacted %}<span class="hint-badge ollama">LLM enabled ({{ sticky.get('llm_provider', 'ollama') }})</span>{% if sticky.get('llm_provider') == 'litellm' %} <span class="hint-badge writes">newsletter text may leave this machine</span>{% endif %}{% else %}<span class="hint-badge local">preview excerpts (no model)</span>{% endif %}</dd>
+      <dt>Writers</dt><dd>{{ effective.writers | join(', ') }} <span class="muted">(+ Markdown/HTML)</span></dd>
+      <dt>Newsletter root</dt><dd><code>{{ sticky.get('root', '—') }}</code></dd>
+      <dt>Output dir</dt><dd><code>{{ sticky.get('output_dir', '—') }}</code> <span class="hint-badge writes">writes here</span></dd>
+      <dt>Matched folders</dt>
+      <dd>{% if matched_folders %}{{ matched_folders | join(', ') }}{% else %}<span class="muted">none discovered / path missing</span>{% endif %}</dd>
+      <dt>LinkedIn</dt>
+      <dd>{% if linkedin_enabled %}<span class="hint-badge ollama">enabled</span> {{ linkedin_search_count }} search{{ 'es' if linkedin_search_count != 1 else '' }}{% else %}<span class="hint-badge local">off</span>{% endif %} · <a href="{{ url_for('linkedin.linkedin_index') }}">Manage</a></dd>
+      <dt>Reddit</dt>
+      <dd>{% if reddit_enabled %}<span class="hint-badge ollama">enabled</span> {{ reddit_sub_count }} sub{{ 's' if reddit_sub_count != 1 else '' }}{% if reddit_fetch_eta %}, {% if reddit_fetch_eta == 'cached' %}cached{% else %}{{ reddit_fetch_eta }} fetch{% endif %}{% endif %}{% else %}<span class="hint-badge local">off</span>{% endif %} · <a href="{{ url_for('reddit.reddit_index') }}">Manage</a></dd>
+      <dt>Articles</dt>
+      <dd>{% if webpage_in_window_count %}<span class="hint-badge ollama">{{ webpage_in_window_count }} in lookback</span>{% if webpage_pending_count %} · {{ webpage_pending_count }} to fetch{% endif %}{% elif webpage_pending_count %}<span class="hint-badge ollama">{{ webpage_pending_count }} to fetch</span>{% else %}<span class="hint-badge local">none</span>{% endif %} · <a href="{{ url_for('articles.articles_index') }}">Manage</a></dd>
+      {% if use_single_model and selected_single_model %}
+      <dt>Single model</dt>
+      <dd><code>{{ selected_single_model }}</code> <span class="muted">(this run only)</span></dd>
+      {% endif %}
+    </dl>
+  </div>
 </section>
 
-<form method="post" class="settings-form">
+<form method="post" class="card" data-pending="Starting…">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-  <section class="card-section">
-    <h2>Compose</h2>
-    <p class="note">Temporary adjustments apply to this run only unless you save them in Settings.</p>
-    <label>Profile
-      <select name="profile">
-        {% for p in profiles %}
-        <option value="{{ p.name }}" {% if effective.profile_name == p.name %}selected{% endif %}>{{ p.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Lookback days (override)
-      <input type="number" name="lookback_days" min="1" placeholder="{{ sticky.get('lookback_days', 7) }}">
-    </label>
-    <label>Folders (comma-separated override)
-      <input type="text" name="folder" placeholder="{{ (sticky.get('folder') or []) | join(', ') }}">
-    </label>
-    <label>Effort
-      <select name="effort">
-        <option value="">(profile default)</option>
-        {% for e in ['light', 'balanced', 'high'] %}
-        <option value="{{ e }}">{{ e }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>LLM summaries
-      <select name="ollama">
-        <option value="">(profile default)</option>
-        <option value="1">on — generate with configured model</option>
-        <option value="0">off — preview excerpts only (no model)</option>
-      </select>
-    </label>
-    <p class="note">Off skips Ollama and LiteLLM entirely. Local Ollama still counts as on.</p>
+  <div class="card-header"><h2>Compose</h2><span class="muted small">temporary — not saved unless you use Settings</span></div>
+  <div class="card-body">
+    <div class="grid-2">
+      <div>
+        <label class="field">
+          <span class="field-label">Profile</span>
+          <select name="profile">
+            {% for p in profiles %}
+            <option value="{{ p.name }}" {% if effective.profile_name == p.name %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Lookback days <span class="muted">(override)</span></span>
+          <input type="number" name="lookback_days" min="1" placeholder="{{ sticky.get('lookback_days', 7) }}">
+        </label>
+        <label class="field">
+          <span class="field-label">Folders <span class="muted">(comma-separated override)</span></span>
+          <input type="text" name="folder" placeholder="{{ (sticky.get('folder') or []) | join(', ') }}">
+        </label>
+      </div>
+      <div>
+        <label class="field">
+          <span class="field-label">Effort</span>
+          <select name="effort">
+            <option value="">(profile default)</option>
+            {% for e in ['light', 'balanced', 'high'] %}
+            <option value="{{ e }}">{{ e }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">LLM summaries</span>
+          <select name="ollama">
+            <option value="">(profile default)</option>
+            <option value="1">on — generate with configured model</option>
+            <option value="0">off — preview excerpts only (no model)</option>
+          </select>
+          <span class="field-hint">Off skips Ollama and LiteLLM entirely. Local Ollama still counts as on.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Writers</span>
+          <select name="output_mode">
+            <option value="">(config default)</option>
+            <option value="all">all</option>
+            <option value="none">Markdown/HTML only</option>
+          </select>
+        </label>
+      </div>
+    </div>
     {% set provider = (sticky.get('llm_provider') if sticky else 'ollama') or 'ollama' %}
     {% set selected = selected_single_model|default('') %}
-    <label class="inline-check">
-      <input type="checkbox" name="use_single_model" id="use-single-model" value="1"
-             {% if use_single_model %}checked{% endif %}>
-      Use a single model for this run
+    <label class="field-inline">
+      <input type="checkbox" name="use_single_model" id="use-single-model" value="1" {% if use_single_model %}checked{% endif %}>
+      <span>Use a single model for this run</span>
     </label>
     <div id="single-model-fields" class="single-model-fields" {% if not use_single_model %}hidden{% endif %}>
       {% if provider != 'litellm' %}
-      <label>Ollama model
+      <label class="field">
+        <span class="field-label">Ollama model</span>
         <select name="single_model" id="single-model-select"
                 data-models-url="{{ url_for('run.run_ollama_models') }}"
                 data-selected="{{ selected }}">
@@ -89,42 +115,43 @@
           {% endif %}
         </select>
       </label>
-      <label id="single-model-custom-wrap" hidden>
-        Model tag (Ollama not reachable — type a tag)
+      <label class="field" id="single-model-custom-wrap" hidden>
+        <span class="field-label">Model tag <span class="muted">(Ollama not reachable — type a tag)</span></span>
         <input type="text" id="single-model-custom" placeholder="llama3.2:3b" value="{{ selected }}">
       </label>
       {% else %}
-      <label>LiteLLM model
-        <input type="text" name="single_model" id="single-model-input"
-               value="{{ selected }}" placeholder="openai/gpt-4o">
+      <label class="field">
+        <span class="field-label">LiteLLM model</span>
+        <input type="text" name="single_model" id="single-model-input" value="{{ selected }}" placeholder="openai/gpt-4o">
       </label>
       {% endif %}
       <p class="note">Replaces every effort-ladder model (including group/fallback and final review) for this run only. Enables LLM summaries. Not saved to TOML.</p>
     </div>
-    <label>Writers
-      <select name="output_mode">
-        <option value="">(config default)</option>
-        <option value="all">all</option>
-        <option value="none">Markdown/HTML only</option>
-      </select>
-    </label>
-  </section>
-
-  <p class="run-actions">
-    <button type="submit" formaction="{{ url_for('run.run_preview') }}"{% if busy %} disabled{% endif %}>Update effective preview</button>
-    <button type="submit" formaction="{{ url_for('run.run_dry') }}"{% if busy %} disabled{% endif %}>Dry-run / discovery</button>
-    <button type="submit" class="primary" formaction="{{ url_for('run.run_start') }}"{% if busy %} disabled{% endif %}>Run digest</button>
-  </p>
+  </div>
+  <div class="card-footer run-actions">
+    <button type="submit" class="btn" formaction="{{ url_for('run.run_preview') }}" data-keep-label{% if busy %} disabled{% endif %}>Update preview</button>
+    <button type="submit" class="btn" formaction="{{ url_for('run.run_dry') }}"{% if busy %} disabled{% endif %}>Dry-run / discovery</button>
+    <button type="submit" class="btn btn-primary" formaction="{{ url_for('run.run_start') }}"{% if busy %} disabled{% endif %}>Run digest</button>
+    {% if busy %}<span class="muted small">Disabled while a run is in progress.</span>{% endif %}
+  </div>
 </form>
 
-<section class="card-section">
-  <h2>Automation</h2>
-  <p class="note">No in-app scheduler — copy a CLI or cron command instead. See docs/CRON.md.</p>
-  <pre class="cli-block">{{ cli_command }}</pre>
-  <pre class="cli-block">{{ cron_hint }}</pre>
+<section class="card" aria-labelledby="automation-title">
+  <div class="card-header"><h2 id="automation-title">Automation</h2><span class="muted small">no in-app scheduler — copy a command</span></div>
+  <div class="card-body">
+    <p class="note">Equivalent CLI for this effective run, and a sample weekly cron line. See <code>docs/CRON.md</code>.</p>
+    <div class="cli-row">
+      <pre class="cli-block" id="cli-command">{{ cli_command }}</pre>
+      <button type="button" class="btn btn-sm cli-copy" data-copy-target="#cli-command">Copy</button>
+    </div>
+    <div class="cli-row">
+      <pre class="cli-block" id="cron-hint">{{ cron_hint }}</pre>
+      <button type="button" class="btn btn-sm cli-copy" data-copy-target="#cron-hint">Copy</button>
+    </div>
+  </div>
 </section>
 {% else %}
-<p class="banner">Could not resolve configuration. <a href="{{ url_for('settings.settings_index') }}">Open Settings</a>.</p>
+<div class="banner banner-danger">Could not resolve configuration. <a href="{{ url_for('settings.settings_index') }}">Open Settings</a>.</div>
 {% endif %}
 {% endblock %}
 

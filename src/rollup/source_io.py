@@ -218,7 +218,6 @@ def import_sources(
             )
             updated += 1
         for row in aliases:
-            from rollup.source_registry import alias_sources
 
             # Use internal path without nested transaction
             alias_key = str(row["alias_key"])
@@ -271,11 +270,11 @@ def _merge_override_updates(
     row: dict[str, Any], *, merge: bool, conn: sqlite3.Connection, key: str
 ) -> dict[str, Any]:
     """3-valued merge: absent=unchanged, null=clear, value=set."""
+    updates: dict[str, Any] = {}
     if not merge:
         updates = {f: row.get(f) for f in _OVERRIDE_FIELDS}
         return updates
     current = load_overrides(conn, key)
-    updates: dict[str, Any] = {}
     for field in _OVERRIDE_FIELDS:
         if field not in row:
             updates[field] = getattr(current, field)

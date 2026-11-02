@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from rollup.links import (
-    clean_anchor_text,
-    clean_href,
     classify_link,
     classify_links,
+    clean_anchor_text,
+    clean_href,
     domain_for_display,
     is_generic_anchor_text,
     is_raw_url_text,

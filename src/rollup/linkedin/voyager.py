@@ -146,14 +146,16 @@ def post_from_update_v2(
     if not text:
         return None
 
-    meta = update.get("updateMetadata") if isinstance(update.get("updateMetadata"), dict) else {}
+    meta_raw = update.get("updateMetadata")
+    meta: dict[str, Any] = meta_raw if isinstance(meta_raw, dict) else {}
     activity_id = _activity_id_from_value(
         meta.get("urn")
         or meta.get("id")
         or update.get("entityUrn")
         or update.get("urn")
     )
-    actor = update.get("actor") if isinstance(update.get("actor"), dict) else {}
+    actor_raw = update.get("actor")
+    actor: dict[str, Any] = actor_raw if isinstance(actor_raw, dict) else {}
     name_obj = actor.get("name")
     if isinstance(name_obj, dict):
         author_name = str(name_obj.get("text") or "(unknown)")
@@ -168,7 +170,8 @@ def post_from_update_v2(
     if created_at is None:
         created_at = created_at_from_activity_id(activity_id)
     permalink = ""
-    social = update.get("socialContent") if isinstance(update.get("socialContent"), dict) else {}
+    social_raw = update.get("socialContent")
+    social: dict[str, Any] = social_raw if isinstance(social_raw, dict) else {}
     share_url = social.get("shareUrl")
     if isinstance(share_url, str) and share_url.startswith("https://"):
         permalink = share_url.split("?", 1)[0]

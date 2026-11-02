@@ -219,7 +219,7 @@ def parse_reddit_config(raw: object | None, *, path: Path) -> RedditConfig:
 
     return RedditConfig(
         enabled=enabled,
-        layout=layout,  # type: ignore[arg-type]
+        layout=layout,
         sort=sort,
         limit=limit,
         mode=mode,

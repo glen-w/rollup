@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from rollup.addons.offline_text import (
-    clip_heading,
-    strip_urls_for_offline,
-    wrap_text,
-)
-from rollup.addons.txt.render import atomic_write_txt_digest, render_txt
 from rollup.addons.json.serialize import (
     SCHEMA_VERSION,
     atomic_write_json_digest,
     render_json,
     report_to_dict,
 )
+from rollup.addons.offline_text import (
+    clip_heading,
+    strip_urls_for_offline,
+    wrap_text,
+)
+from rollup.addons.txt.render import atomic_write_txt_digest, render_txt
 from rollup.classify import classify_message
 from rollup.config import Config, compute_date_window
 from rollup.filter import make_digest_entry
@@ -393,7 +393,7 @@ def test_epub_missing_dependency_message(
     reason="ebooklib not installed",
 )
 def test_epub_builds_zip_with_chapters_without_links(tmp_path: Path) -> None:
-    from rollup.addons.epub.render import render_epub_bytes, atomic_write_epub_digest
+    from rollup.addons.epub.render import atomic_write_epub_digest, render_epub_bytes
 
     report = _report_with_content()
     data = render_epub_bytes(report, 8)

@@ -48,7 +48,7 @@ Product shape: [CONTRACT.md](CONTRACT.md). Where this is headed: [ROADMAP.md](RO
 |----------|----------|--------------------|
 | Consumer newsletter reader | [Meco](https://www.meco.app) | Meco is further ahead on mobile UX, highlights, notes, unsubscribe, discovery, and audio. Rollup wins on control, self-hosting, arbitrary model choice, and the posture that **your existing mail remains authoritative**. Meco is a dedicated reading environment (own address or connected Gmail/Outlook). Rollup never requires a special newsletter address, never moves messages into another service, and never becomes authoritative for subscriptions. |
 | Traditional self-hosted reader | [FreshRSS](https://freshrss.org), [Miniflux](https://miniflux.app) | Built around a **stream**: unread counts, triage, tags, APIs. Mature at that job. Rollup must not become another feed reader. It has richer **digest construction** — classification, grouping, source policy, publication semantics — because the output is a finished briefing, not a queue. |
-| Self-hosted read-later | [Readeck](https://readeck.org) | Ahead on effortless capture, highlighting, search, and e-reader / OPDS distribution. Rollup is an **active briefing pipeline**, not a capture-and-archive library. OPDS as a *destination* for the finished briefing is on the [roadmap](ROADMAP.md); a read-later inbox is not. |
+| Self-hosted read-later | [Readeck](https://readeck.org) | Ahead on effortless capture, highlighting, search, and e-reader / OPDS distribution. Rollup is an **active briefing pipeline**, not a capture-and-archive library. OPDS has shipped as a *destination* for finished editions (`GET /opds` lists rollups, not items). A read-later inbox is not the product. |
 | AI digest / briefing | [Cruxwire](https://cruxwire.app), [CondenseIt](https://github.com/vector0902/condenseit) | Closest philosophically: local or cloud LLMs, ranking, summarisation, browser digests. They remain ahead on **learned/semantic ranking**. Rollup now ships lexical attention bands, a coverage overlay, corpus FTS, and source suggestions, still without silently dropping mail. Rollup stays ahead on mail-store fidelity, source policy, and publication integrity. |
 | AI email digest | [SummerMail](https://github.com/wanleung/summermail) | Similar Ollama / LiteLLM + web dashboard idea, centred on general Gmail/IMAP and importance scoring rather than a highly controlled reading corpus. Rollup digests what you already filed; it does not try to score an inbox. |
 | All-in-one reader | [Lion Reader](https://github.com/brendanlong/lion-reader) | Broader capture surface — RSS, newsletters, read-later, file import, APIs / MCP, PWA. Useful as a warning: Rollup should **not** become a universal reader. Output artifacts are the cheaper path to cross-device reading. |
@@ -64,12 +64,14 @@ Product shape: [CONTRACT.md](CONTRACT.md). Where this is headed: [ROADMAP.md](RO
 
 Those are strong products. Rollup should stay a **briefing engine over a corpus
 you already chose**. Thunderbird handles the ongoing newsletter stream;
-Reddit, LinkedIn, and article capture supply additional material; Rollup does
+Reddit, LinkedIn, RSS, and article capture supply additional material; Rollup does
 not replace those places. It takes a time window and produces the rollup.
 
-The interesting direction is not “support more feeds.” It is **cross-source
-consolidation**, “what actually mattered this week?”, relevance, recurring
-themes, redundancy, and “what can I safely skip?” See [ROADMAP.md](ROADMAP.md).
+Lexical attention, a coverage overlay, an offline glance, corpus search, and
+source suggestions now exist in thin form. The interesting direction is to
+thicken the edition — a glance that cites, continuity with last week's
+manifest, cadence-aware bands, coverage that survives syndication — rather
+than to support more feeds. See [ROADMAP.md](ROADMAP.md).
 
 ## Starting from Thunderbird
 

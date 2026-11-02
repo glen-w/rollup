@@ -17,6 +17,9 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
+from rollup.web.csrf import validate_csrf_token as csrf_ok
+from rollup.web.db import mutation_connection, require_ro
+from rollup.web.secrets import rotate_extension_token
 from rollup.webpage.queue import (
     enqueue_url,
     get_by_url_hash,
@@ -25,9 +28,6 @@ from rollup.webpage.queue import (
     retry_item,
 )
 from rollup.webpage.url import url_hash, validate_queue_url
-from rollup.web.csrf import validate_csrf_token as csrf_ok
-from rollup.web.db import mutation_connection, require_ro
-from rollup.web.secrets import rotate_extension_token
 
 bp = Blueprint("articles", __name__, url_prefix="/articles")
 
@@ -83,12 +83,12 @@ def articles_add():
     raw_url = request.form.get("url", "").strip()
     display_title = request.form.get("display_title", "").strip() or None
     if not raw_url:
-        flash("URL is required.")
+        flash("URL is required.", "error")
         return redirect(url_for("articles.articles_index"))
     try:
         validate_queue_url(raw_url)
     except ValueError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("articles.articles_index"))
     try:
         with mutation_connection() as conn:
@@ -96,7 +96,7 @@ def articles_add():
             enqueue_url(conn, raw_url, display_title=display_title)
             conn.commit()
     except ValueError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("articles.articles_index"))
     except Exception:
         return (
@@ -106,7 +106,7 @@ def articles_add():
             ),
             503,
         )
-    flash("Article saved. It will appear in digests whose lookback covers the save date.")
+    flash("Article saved. It will appear in digests whose lookback covers the save date.", "success")
     return redirect(url_for("articles.articles_index"))
 
 
@@ -173,7 +173,7 @@ def articles_token_rotate():
     state_dir = Path(current_app.config["STATE_DIR"])
     token = rotate_extension_token(state_dir)
     current_app.config["EXTENSION_TOKEN"] = token
-    flash("Extension token rotated. Update the Firefox add-on options.")
+    flash("Extension token rotated. Update the Firefox add-on options.", "success")
     return redirect(url_for("articles.articles_index"))
 
 
@@ -195,9 +195,9 @@ def articles_remove(item_id: int):
             503,
         )
     if not removed:
-        flash("Queue item not found.")
+        flash("Queue item not found.", "error")
     else:
-        flash("Removed.")
+        flash("Removed.", "success")
     return redirect(url_for("articles.articles_index"))
 
 
@@ -219,9 +219,9 @@ def articles_retry(item_id: int):
             503,
         )
     if item is None:
-        flash("Queue item not found.")
+        flash("Queue item not found.", "error")
     elif item.status != "pending":
-        flash("Only failed items can be retried.")
+        flash("Only failed items can be retried.", "warning")
     else:
-        flash("Queued for retry on the next digest.")
+        flash("Queued for retry on the next digest.", "success")
     return redirect(url_for("articles.articles_index"))

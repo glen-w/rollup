@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import unicodedata
 from dataclasses import dataclass
 
 from rollup.payload_limits import MAX_READER_BODY_LEN
@@ -276,7 +275,7 @@ def build_reader_body_writes_from_entries(
     report_entries: list,
 ) -> tuple[list[ReaderBodyWrite], int, int]:
     """Build writes from digest entries; returns (writes, identical_dupes, conflicts)."""
-    from rollup.models import DigestEntry, DigestGroup, DigestItem
+    from rollup.models import DigestEntry, DigestGroup
 
     winners: dict[str, ReaderBodyWrite] = {}
     identical = 0
@@ -306,7 +305,6 @@ def build_reader_body_writes_from_entries(
             return
         conflicts += 1
 
-    sections: list[tuple[str, list]] = []
     # Caller passes flattened digest items via report walk
     for item in report_entries:
         if isinstance(item, DigestGroup):

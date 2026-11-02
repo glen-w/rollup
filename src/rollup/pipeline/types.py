@@ -71,6 +71,7 @@ class DiscoveryResult:
     reddit_subs: tuple[RedditSub, ...] = ()
     webpage_items: tuple[WebpageQueueItem, ...] = ()
     gmail_targets: tuple[GmailTarget, ...] = ()
+    rss_feeds: tuple[Any, ...] = ()
     warnings: tuple[StageWarning, ...] = ()
 
 
@@ -182,12 +183,15 @@ class AggregatedResults:
     web_index_error: str | None = None
     required_writer_failed: bool = False
     optional_writer_failed: bool = False
+    archive_failed: bool = False
     writer_artifacts: list[Path] = field(default_factory=list)
     mbox_mutation_detected: bool = False
     linkedin_degraded: bool = False
     reddit_degraded: bool = False
     webpage_degraded: bool = False
     gmail_degraded: bool = False
+    rss_degraded: bool = False
+    continuity_ledger_failed: bool = False
     webpage_queue_ingest: list[tuple[int, str]] = field(default_factory=list)
     no_input_reason: str | None = None
     messages_included: int = 0

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import (
     Flask,
+    Response,
     abort,
     g,
     make_response,
@@ -49,7 +50,7 @@ def _refresh_config_derived(app: Flask) -> None:
         app.config["UI_PREFERRED_VIEW"] = doc.loaded.ui.preferred_view
     except Exception:
         app.config.setdefault("FOLDER_THEMES", {})
-        app.config.setdefault("UI_LANDING_PAGE", "archive")
+        app.config.setdefault("UI_LANDING_PAGE", "home")
         app.config.setdefault("UI_PREFERRED_VIEW", "html")
 
 
@@ -98,7 +99,7 @@ def create_app(
         CONFIG_PATH=str(Path(config_path).expanduser()) if config_path else None,
         CONFIG_EXPLICIT=bool(config_path),
         FOLDER_THEMES={},
-        UI_LANDING_PAGE="archive",
+        UI_LANDING_PAGE="home",
         UI_PREFERRED_VIEW="html",
     )
 
@@ -131,11 +132,11 @@ def create_app(
     app.jinja_env.globals["folder_section_id"] = folder_section_id
 
     @app.before_request
-    def _open_db_ro() -> None:
+    def _open_db_ro() -> Response | None:
         import sqlite3
 
         if request.endpoint == "static":
-            return
+            return None
         path = Path(app.config["DB_PATH"])
         try:
             g.db_ro = open_readonly(path)
@@ -161,6 +162,7 @@ def create_app(
         # write connections explicitly after CSRF/form validation.
         g.db = g.db_ro
         g.db_write = None
+        return None
 
     @app.teardown_request
     def _close_db(exc: BaseException | None) -> None:
@@ -195,18 +197,21 @@ def create_app(
         return render_template("errors/400.html", message=message), 400
 
     from rollup.web.routes.admin import bp as admin_bp
-    from rollup.web.routes.artifacts import bp as artifacts_bp
-    from rollup.web.routes.messages import bp as messages_bp
-    from rollup.web.routes.rollups import bp as rollups_bp
-    from rollup.web.routes.sources import bp as sources_bp
-    from rollup.web.routes.settings import bp as settings_bp
-    from rollup.web.routes.run import bp as run_bp
     from rollup.web.routes.articles import bp as articles_bp
-    from rollup.web.routes.reddit import bp as reddit_bp
+    from rollup.web.routes.artifacts import bp as artifacts_bp
+    from rollup.web.routes.home import bp as home_bp
     from rollup.web.routes.linkedin import bp as linkedin_bp
-    from rollup.web.routes.search import bp as search_bp
+    from rollup.web.routes.messages import bp as messages_bp
     from rollup.web.routes.opds import bp as opds_bp
+    from rollup.web.routes.reddit import bp as reddit_bp
+    from rollup.web.routes.rollups import bp as rollups_bp
+    from rollup.web.routes.rss import bp as rss_bp
+    from rollup.web.routes.run import bp as run_bp
+    from rollup.web.routes.search import bp as search_bp
+    from rollup.web.routes.settings import bp as settings_bp
+    from rollup.web.routes.sources import bp as sources_bp
 
+    app.register_blueprint(home_bp)
     app.register_blueprint(rollups_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(opds_bp)
@@ -218,6 +223,7 @@ def create_app(
     app.register_blueprint(run_bp)
     app.register_blueprint(articles_bp)
     app.register_blueprint(reddit_bp)
+    app.register_blueprint(rss_bp)
     app.register_blueprint(linkedin_bp)
 
     @app.get("/branding/<name>")
@@ -232,13 +238,40 @@ def create_app(
             max_age=0,
         )
 
+    @app.get("/theme.css")
+    def theme_css():
+        """Per-folder accent variables (CSP forbids inline styles).
+
+        Read-only: configured overrides plus every folder name already indexed.
+        """
+        from rollup.web.theme_css import render_theme_css
+
+        conn = getattr(g, "db_ro", None)
+        body = render_theme_css(app.config.get("FOLDER_THEMES") or {}, conn)
+        resp = make_response(body)
+        resp.headers["Content-Type"] = "text/css; charset=utf-8"
+        return resp
+
+    @app.context_processor
+    def _inject_nav():
+        from rollup.web.nav import active_nav_key, nav_sections
+        from rollup.web.run_runner import is_busy
+
+        return {
+            "nav_sections": nav_sections(),
+            "nav_active": active_nav_key(),
+            "nav_run_busy": is_busy(),
+        }
+
     @app.get("/")
     def index():
-        landing = app.config.get("UI_LANDING_PAGE") or "archive"
+        landing = app.config.get("UI_LANDING_PAGE") or "home"
         if landing == "run":
             return redirect(url_for("run.run_studio"))
         if landing == "settings":
             return redirect(url_for("settings.settings_index"))
-        return redirect(url_for("rollups.list_rollups"))
+        if landing == "archive":
+            return redirect(url_for("rollups.list_rollups"))
+        return redirect(url_for("home.home_index"))
 
     return app

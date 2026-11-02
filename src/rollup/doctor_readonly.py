@@ -6,8 +6,8 @@ import sqlite3
 from pathlib import Path
 
 from rollup import __version__
-from rollup.state import CANONICAL_TABLES, SCHEMA_VERSION, get_schema_version
 from rollup.doctor import DoctorCheck, DoctorReport
+from rollup.state import CANONICAL_TABLES, SCHEMA_VERSION, get_schema_version
 
 
 def _exists_dir(check_id: str, path: Path | None, label: str) -> DoctorCheck:

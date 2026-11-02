@@ -4,7 +4,40 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
+- **Roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) separates the 1.0 bar from the post-1.0 arcs. RSS ingest, Send to Kindle, and Gmail history sync moved from “still thin / parked” into 0.12.
+
+## 0.12.0 — 2026-11-02
+
 ### Added
+
+- **Briefing continuity** (schema **v19** `briefing_continuity`): prior published windows can mark a card Still developing or Seen again. Inclusion does not change. An empty ledger adds no chrome. The ledger is written only after required artifacts publish; a failed write is `continuity_ledger_failed` (exit 2) and does not roll back `latest.*`.
+- **RSS / Atom ingest** (`[rss]`, `--rss` / `--no-rss` / `--rss-refresh`, `GET /rss`): opt-in HTTPS feeds, TTL cache, stale fallback, per-hop SSRF checks, DOCTYPE rejection. Not an unread inbox. RSS-only fetch failure is exit 1; mixed with mail it is exit 2.
+- **Send to Kindle**: optional `kindle` writer. `[kindle].to` and `[kindle].from` in TOML. SMTP host and password stay in `ROLLUP_KINDLE_SMTP_*`. Failure is partial after the dated digest publishes.
+- **Gmail history sync**: a stale TTL with a stored `historyId` uses GET `history.list` and bounded concurrent GET `messages.get`. Expired history falls back to a full list (`gmail_history_expired`). The client remains GET-only.
+- **Digest attempts** (`digest_attempts`): a row is written when the run lock is acquired and updated when the run finishes, so Admin can show a hard failure that never wrote a manifest. A crash before that insert is still invisible; the incomplete-history note stays.
+
+## 0.11.0 — 2026-11-02
+
+Expansion and hardening wave: a real CI quality gate, fault-injection proof of the
+publication contract, guided setup, and the renderer split into a package.
+
+### Added
+
+- **`rollup init`**: guided first-run setup. Runs Thunderbird discovery, asks for the `Newsletters.sbd` path or a Gmail label prefix when nothing is found, proposes state / output / log directories and refuses any inside the mail root, merges into an existing TOML through the atomic backed-up writer, then runs `rollup doctor`. `--yes` for scripts and Docker, `--dry-run` to print the TOML, `--skip-doctor`. A missing `--config` file is accepted for `init` only.
+- **CI quality gate**: `test` job on Python 3.10–3.13 running `ruff check`, `mypy`, and `pytest --cov-fail-under=80`, plus advisory `pip-audit`; `.github/dependabot.yml` for pip, Actions, and Docker; `make check` / `make lint` / `make types` / `make test` / `make fix` mirror CI locally. `ruff`, `mypy`, `pytest-cov`, `pip-audit`, and `types-beautifulsoup4` join the `dev` extra; `[tool.ruff]` / `[tool.mypy]` live in `pyproject.toml`.
+- **Golden render snapshots** (`tests/fixtures/golden/`, `tests/test_render_golden.py`): the fixture digest's Markdown and HTML are pinned byte-for-byte; `ROLLUP_UPDATE_GOLDENS=1` regenerates deliberately.
+- **Fault-injection tests across the publication boundary** (`tests/test_publication_faults.py`): every step from staged write through web index is broken in turn and the exit code, `latest.*`, seen-state, temp cleanup, and manifest `degradations` / `lifecycle_events` are asserted; crash-then-recover on the next run is covered.
+- **Schema lineage tests** (`tests/test_schema_lineage.py`): a database rebuilt at every historical version upgrades to v18 with rows intact; a crash inside a step never advances `schema_version`; newer databases are refused before any mutation.
+- **Run-lock, parser, and web invariants**: stale / dead-PID / TTL / corrupt-payload / cross-process lock tests; a generated malformed-mbox corpus (truncated headers, bad dates, invalid UTF-8, deep multipart, oversize bodies, link storms, junk bytes) that must never raise; a route-enumerating web test that proves every mutating route rejects missing or forged credentials, every route refuses a non-loopback `Host`, every response carries CSP / nosniff / `X-Frame-Options` / no-store, and GET routes leave the database untouched.
+- `archive_failed` degradation: if moving the previous batch to `archive/` fails after the new digest landed, the run is partial (exit 2) instead of a hard failure, and `latest.*` / seen-state still proceed.
+- **Web UI shell and design system:** grouped sidebar navigation (Briefings / Sources / Operate) with `aria-current`, compact header, skip link, `main` landmark, visible focus rings, reduced-motion support, light **and dark** themes (follows the OS; a header toggle persists a per-browser override), responsive layout down to phone widths, and consistent button / field / badge / table / tab components (`web.css`, no build step, no new dependencies).
+- **Home dashboard** (`GET /home`): latest briefing with artifact links, read-only doctor summary, next-run configuration, source / article counts, and the first-run checklist. `[ui].landing_page` gains `home` and it is now the default landing (`archive` / `run` / `settings` still honoured).
+- **Sources page** merges Quality and Registry behind tabs; Quality is a sortable table (`?sort=&dir=`), Registry gets select-all, a live selected count, and a bulk toolbar; source detail shows a breadcrumb back to the originating tab.
+- **Tabbed Settings** (Paths · Defaults · Summaries · Outputs · Network sources · Interest profile · Presentation · Profiles · Personalisation) with hash sync, keyboard arrows, inline validation messages and per-tab error badges; folder accents use a colour picker; every control is labelled.
+- **Rollup detail:** folder chips with accents, always-visible Mark read / Save / Dismiss toolbar, one-click star rating (reasons remain optional), entry anchors (`#entry-…`), human-readable dates.
+- `GET /theme.css` publishes configured and observed folder accents as CSS variables so accents work for any folder under the strict CSP (no inline styles).
+- Run Studio copy buttons for the CLI / cron lines; Search uses one query field for Search and Ask with a pending state; Admin maintenance is a separate preview → confirm card with danger styling and confirmations.
+- Tests: `tests/test_web_ui_shell.py` guards templates against CSP-hostile markup (`style=`, `on*=`, inline scripts), checks landmarks / labels / unique ids on every page, and covers `next` round-trips, pager encoding, Home, and `/theme.css`.
 
 - **OPDS destination:** `opds` writer writes `{stem}.atom.xml` for the finished briefing; loopback `GET /opds` lists recent published rollups for e-readers. Not a read-later library.
 - **Calibre drop folder:** `[calibre].drop_dir` / `--calibre-drop-dir` copies every artifact of the run (EPUB, Atom, HTML, Markdown, JSON, TXT, XTEINK) into a watch directory (no network; must be outside the mail root). Optional writer.
@@ -16,7 +49,23 @@ All notable changes to Rollup are documented in this file.
 
 ### Changed
 
+- `rollup.render` is now a package: `render.model` (format-neutral ordering, anchors, bylines, coverage notes, attention labels, link bundling, truncation), `render.markdown` and `render.html` (pure emitters), `render.files` (stems, branding assets, staged writes). Every name previously imported from `rollup.render`, including underscore helpers, is re-exported. Output is byte-identical (goldens).
+- Staged Markdown/HTML are now fsynced before the rename into their final names, as the contract already stated.
+- `trusted_host_allowed` checks the loopback allow-list before resolving the `Host` header, so an attacker-controlled hostname is never looked up; in testing mode an unresolvable `Host` is a 400, not a 500.
+- `run_digest(output_writers=…)` is typed as `Mapping[str, OutputWriter]` and `writer_cli_args` as `argparse.Namespace`.
+- Flash messages carry a severity (success / info / warning / error) with matching styling and ARIA roles.
+- Post-action redirects (rate, read, save, dismiss, suggestion apply) preserve the page, `show_dismissed`, and scroll back to the card; Registry pager URL-encodes the search term and keeps filters.
 - Dated digest files are written **before** prior batches move to `archive/`, so a crash mid-publish cannot empty the output root.
+
+### Fixed
+
+- Attention LLM reband passed `allow_remote_ollama=` to `get_llm_client`, which only accepts `allow_remote=`; the refine path would have raised `TypeError` under `--ollama`.
+- `pipeline.stages` referenced `ParsedMessage` without importing it.
+- A `rollup.lock` whose `pid` is not numeric made lock acquisition and `inspect_state_lock` raise `ValueError`; it is now treated as stale.
+- `source_quality` rate closure captured the loop variable late (B023).
+- Star import in `state.migrations` replaced with explicit names; 105 ruff findings and 84 mypy errors cleared with no behaviour change.
+- Strict CSP silently disabled inline behaviour: the "Clear all overrides" confirmation never ran, Settings accent previews never rendered, and only six hard-coded folder slugs had accents in the web rollup view. All three now work without relaxing the policy.
+- Reddit subreddit table was unstyled (`data-table` class mismatch); entry cards showed raw ISO timestamps.
 - Pipeline exit constants are imported from `rollup.run_contracts`.
 
 ## 0.10.0 — 2026-11-02

@@ -338,7 +338,10 @@ def test_preferred_view_highlighted_on_archive(app) -> None:
     client = application.test_client()
     resp = client.get("/rollups")
     assert resp.status_code == 200
-    assert b"Open preferred (Markdown)" in resp.data
+    html = resp.data.decode("utf-8")
+    # The preferred artifact is rendered as the primary action.
+    assert 'class="btn btn-sm btn-primary" href="/artifacts/' in html
+    assert "/md" in html.split('class="btn btn-sm btn-primary" href="/artifacts/', 1)[1][:80]
 
 
 def test_run_busy_returns_503(app, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -361,8 +364,8 @@ def test_run_busy_returns_503(app, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_dry_run_subprocess(app, monkeypatch: pytest.MonkeyPatch) -> None:
     """Dry-run POST starts subprocess path; mock runner to avoid full digest."""
     from rollup.web import run_runner
-    from rollup.web.run_runner import ActiveRun
     from rollup.web.routes import run as run_routes
+    from rollup.web.run_runner import ActiveRun
 
     application, _cfg = app
     client = application.test_client()
@@ -471,8 +474,8 @@ def test_settings_saves_effort_models(app) -> None:
 
 def test_run_studio_single_model_in_argv(app, monkeypatch: pytest.MonkeyPatch) -> None:
     from rollup.web import run_runner
-    from rollup.web.run_runner import ActiveRun
     from rollup.web.routes import run as run_routes
+    from rollup.web.run_runner import ActiveRun
 
     application, _cfg = app
     client = application.test_client()
@@ -518,8 +521,8 @@ def test_run_studio_ignores_single_model_unless_checked(
     app, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from rollup.web import run_runner
-    from rollup.web.run_runner import ActiveRun
     from rollup.web.routes import run as run_routes
+    from rollup.web.run_runner import ActiveRun
 
     application, _cfg = app
     client = application.test_client()
@@ -695,8 +698,8 @@ def test_run_status_idle(app) -> None:
 
 
 def test_run_result_shows_progress_when_running(app, monkeypatch: pytest.MonkeyPatch) -> None:
-    from rollup.web.run_runner import ActiveRun
     from rollup.web.routes import run as run_routes
+    from rollup.web.run_runner import ActiveRun
 
     application, _cfg = app
     run = ActiveRun(
@@ -781,8 +784,8 @@ def test_run_studio_litellm_single_model_adds_llm_model(
     app, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from rollup.web import run_runner
-    from rollup.web.run_runner import ActiveRun
     from rollup.web.routes import run as run_routes
+    from rollup.web.run_runner import ActiveRun
 
     application, cfg = app
     text = cfg.read_text(encoding="utf-8")

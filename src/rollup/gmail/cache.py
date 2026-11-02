@@ -22,6 +22,7 @@ from rollup.gmail.config import (
 )
 from rollup.gmail.session import (
     GmailClient,
+    GmailHistoryExpired,
     GmailNotFoundError,
     GmailRawMessage,
     GmailSessionError,
@@ -275,6 +276,67 @@ def gmail_window_query(window_start: datetime, *, extra_query: str | None) -> st
     return " ".join(parts)
 
 
+def apply_history_delta(
+    message_ids: list[str],
+    records: list[dict],
+    *,
+    label_id: str,
+    limit: int,
+) -> list[str]:
+    """Apply history.list records onto a cached id list. Newest additions stay first."""
+    ids = list(message_ids)
+    seen = set(ids)
+
+    def _add(gmail_id: object) -> None:
+        if isinstance(gmail_id, str) and gmail_id not in seen:
+            ids.insert(0, gmail_id)
+            seen.add(gmail_id)
+
+    def _drop(gmail_id: object) -> None:
+        if isinstance(gmail_id, str) and gmail_id in seen:
+            ids.remove(gmail_id)
+            seen.discard(gmail_id)
+
+    for record in records:
+        for added in record.get("messagesAdded") or []:
+            message = added.get("message") if isinstance(added, dict) else None
+            if isinstance(message, dict):
+                labels = message.get("labelIds") or []
+                if not labels or label_id in labels:
+                    _add(message.get("id"))
+        for removed in record.get("messagesDeleted") or []:
+            message = removed.get("message") if isinstance(removed, dict) else None
+            if isinstance(message, dict):
+                _drop(message.get("id"))
+        for change in record.get("labelsRemoved") or []:
+            if not isinstance(change, dict):
+                continue
+            if label_id in (change.get("labelIds") or []):
+                message = change.get("message") or {}
+                if isinstance(message, dict):
+                    _drop(message.get("id"))
+        for change in record.get("labelsAdded") or []:
+            if not isinstance(change, dict):
+                continue
+            if label_id in (change.get("labelIds") or []):
+                message = change.get("message") or {}
+                if isinstance(message, dict):
+                    _add(message.get("id"))
+    return ids[:limit]
+
+
+def _profile_history_id(client: GmailClient) -> str | None:
+    get_profile = getattr(client, "get_profile", None)
+    if get_profile is None:
+        return None
+    try:
+        payload = get_profile()
+    except GmailSessionError:
+        return None
+    history_id = payload.get("historyId") if isinstance(payload, dict) else None
+    return str(history_id) if history_id else None
+
+
 def fetch_and_cache_gmail_targets(
     conn: sqlite3.Connection,
     targets: tuple[GmailTarget, ...],
@@ -286,6 +348,8 @@ def fetch_and_cache_gmail_targets(
     folders_include: tuple[str, ...],
     folders_exclude: tuple[str, ...],
     on_label_fetched=None,
+    refresh: bool = False,
+    notices: list[tuple[str, str]] | None = None,
 ) -> tuple[dict[str, list[GmailRawMessage]], dict[str, str], list[tuple[str, str]], tuple[GmailTarget, ...]]:
     """Resolve labels, fetch new raw messages, persist snapshots.
 
@@ -321,34 +385,79 @@ def fetch_and_cache_gmail_targets(
             continue
         logger.info("Gmail fetch %d/%d %s", index, total, target.label_name)
         try:
-            ids = client.list_message_ids(
-                label_id=target.label_id,
-                query=query,
-                max_results=config.max_messages_per_label,
-            )
+            snapshot = get_label_snapshot(conn, target.label_name)
+            history_id: str | None = None
+            ids: list[str] | None = None
+            list_history = getattr(client, "list_history", None)
+            if (
+                not refresh
+                and snapshot is not None
+                and snapshot.history_id
+                and snapshot.label_id == target.label_id
+                and list_history is not None
+            ):
+                try:
+                    history_id, records = list_history(
+                        start_history_id=snapshot.history_id,
+                        label_id=target.label_id,
+                    )
+                    ids = apply_history_delta(
+                        list(snapshot.message_ids),
+                        records,
+                        label_id=target.label_id,
+                        limit=config.max_messages_per_label,
+                    )
+                except GmailHistoryExpired:
+                    if notices is not None:
+                        notices.append((target.label_name, "gmail_history_expired"))
+                    logger.info("Gmail history expired for %s; full sync", target.label_name)
+                    ids = None
+            if ids is None:
+                ids = client.list_message_ids(
+                    label_id=target.label_id,
+                    query=query,
+                    max_results=config.max_messages_per_label,
+                )
+                history_id = history_id or _profile_history_id(client)
             already = cached_message_ids(conn, ids)
+            missing = [gmail_id for gmail_id in ids if gmail_id not in already]
             fetched: list[GmailRawMessage] = []
             skipped_large = 0
-            for gmail_id in ids:
-                if gmail_id in already:
-                    continue
-                try:
-                    msg = client.get_message_raw(gmail_id)
-                except GmailNotFoundError:
-                    continue
-                if len(msg.raw) > MAX_RAW_MESSAGE_BYTES:
-                    skipped_large += 1
-                    continue
-                save_raw_message(conn, msg, fetched_at=fetched_at)
-                fetched.append(msg)
+            batch = getattr(client, "get_messages_raw", None)
+            if batch is not None and missing:
+                got, _skipped = batch(missing)
+                for msg in got:
+                    if len(msg.raw) > MAX_RAW_MESSAGE_BYTES:
+                        skipped_large += 1
+                        continue
+                    save_raw_message(conn, msg, fetched_at=fetched_at)
+                    fetched.append(msg)
+            else:
+                for gmail_id in missing:
+                    try:
+                        msg = client.get_message_raw(gmail_id)
+                    except GmailNotFoundError:
+                        continue
+                    except GmailSessionError:
+                        continue
+                    if len(msg.raw) > MAX_RAW_MESSAGE_BYTES:
+                        skipped_large += 1
+                        continue
+                    save_raw_message(conn, msg, fetched_at=fetched_at)
+                    fetched.append(msg)
             conn.commit()
             kept_ids = [i for i in ids if i in already or any(m.gmail_id == i for m in fetched)]
+            if history_id is None:
+                history_id = _profile_history_id(client) or (
+                    snapshot.history_id if snapshot is not None else None
+                )
             save_label_snapshot(
                 conn,
                 label_name=target.label_name,
                 label_id=target.label_id,
                 message_ids=kept_ids,
                 fetched_at=fetched_at,
+                history_id=history_id,
             )
             messages_by_label[target.label_name] = load_raw_messages(conn, kept_ids)
             if skipped_large:

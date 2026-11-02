@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.config import DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO, Config
 from rollup.final_review import compute_digest_fingerprint
 from rollup.final_review_apply import (
     apply_final_review_patches,

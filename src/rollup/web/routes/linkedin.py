@@ -153,17 +153,17 @@ def linkedin_save():
     try:
         doc = load_web_config_document()
     except Exception as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("linkedin.linkedin_index"))
     try:
         linkedin = _linkedin_from_form(doc.loaded.linkedin)
     except (LinkedInUrlError, ValueError) as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("linkedin.linkedin_index"))
     patch = ConfigPatch(linkedin=linkedin)
     issues = validate_patch(patch, base=doc.loaded)
     if any(i.severity == "error" for i in issues):
-        flash(issues[0].message)
+        flash(issues[0].message, "error")
         return redirect(url_for("linkedin.linkedin_index"))
     try:
         apply_and_save(
@@ -174,13 +174,13 @@ def linkedin_save():
             backup_dir=Path(current_app.config["STATE_DIR"]) / "config-backups",
         )
     except ConfigConflictError:
-        flash("Config changed elsewhere — reload and try again.")
+        flash("Config changed elsewhere — reload and try again.", "warning")
         return redirect(url_for("linkedin.linkedin_index"))
     except ConfigValidationError as exc:
-        flash(str(exc))
+        flash(str(exc), "error")
         return redirect(url_for("linkedin.linkedin_index"))
     from rollup.web.app import refresh_config_derived
 
     refresh_config_derived(current_app)
-    flash("LinkedIn searches saved.")
+    flash("LinkedIn searches saved.", "success")
     return redirect(url_for("linkedin.linkedin_index"))

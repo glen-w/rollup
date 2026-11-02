@@ -54,7 +54,7 @@ These do not change without an explicit contract revision:
   **irreversible boundary** only after required artifacts land
 - Reader bodies are a capped convenience cache, not a mailbox archive
 - Ranking, when added, changes attention — not deterministic inclusion
-- Network sources (LinkedIn, Reddit, webpages; RSS if it ever exists) are
+- Network sources (LinkedIn, Reddit, webpages, RSS) are
   **ingest transports** for the collection window. Rollup never grows an RSS
   inbox, unread counts, mark-all-read, or a scrolling feed
 
@@ -67,8 +67,8 @@ These do not change without an explicit contract revision:
 - Exposing classifier thresholds as user knobs
 - Built-in workflow engine, generic plugin-everything, or a mobile app
 - An RSS **reader** (unread counts, folders, stars, sync, mark-all-read). RSS
-  as a silent ingest transport is [parked](ROADMAP.md), same pattern as LinkedIn
-  / Reddit today
+  as a silent ingest transport exists, same pattern as LinkedIn / Reddit:
+  opt-in, window fetch, SQLite cache, no inbox
 - Official LinkedIn API (v1 uses session cookies + Voyager `profileUpdatesV2`)
 
 ## Sensible defaults
@@ -98,6 +98,8 @@ Ordering after a successful no-input gate:
 7. Web-index (typed secondary degradation; does not alone force partial)
 8. Derive final status / exit
 
+Moving the previous batch into `archive/` is housekeeping after step 2; its failure is the typed `archive_failed` degradation (exit 2) and never blocks steps 3–6. Fault-injection coverage for each step: `tests/test_publication_faults.py`.
+
 Publication is **staged + rename**, not a filesystem-wide atomic multi-file transaction. Crash between renames is recovered on the next run (stale temps discarded; half-published sets reported; latest/seen not advanced incorrectly).
 
 ### Writers
@@ -110,7 +112,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **18** (Gmail label/message cache, FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See migration tests under `tests/test_schema_migrations.py`.
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **18** (Gmail label/message cache, FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See `tests/test_schema_migrations.py` and the lineage replay in `tests/test_schema_lineage.py` (every historical version upgrades to the current one; a crash inside a step never advances the version).
 
 ### Primary summary variant
 

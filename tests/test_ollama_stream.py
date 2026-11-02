@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from rollup.ollama_stream import consume_ollama_stream
 
@@ -155,7 +152,7 @@ def test_response_close_on_early_stop() -> None:
         _stream_lines({"error": "boom"}),
     ]
     expected = ["local_char_cap", "eof_without_done", "parse_error", "http_error"]
-    for resp, reason in zip(cases, expected):
+    for resp, reason in zip(cases, expected, strict=True):
         if reason == "local_char_cap":
             result = consume_ollama_stream(
                 resp, max_output_chars=100, show_progress=False

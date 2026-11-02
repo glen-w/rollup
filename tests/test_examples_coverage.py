@@ -12,6 +12,9 @@ README_PATH = PROJECT_ROOT / "README.md"
 
 # Each entry is (capability label, required substring in EXAMPLES.md).
 REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
+    ("init command", "rollup init"),
+    ("init non-interactive", "init --yes"),
+    ("init dry-run", "init --dry-run"),
     ("inventory command", "rollup inventory"),
     ("digest command", "rollup digest"),
     ("doctor command", "rollup doctor"),
@@ -74,6 +77,10 @@ REQUIRED_EXAMPLE_COVERAGE: tuple[tuple[str, str], ...] = (
     ("no coverage", "--no-coverage"),
     ("coverage report", "--coverage-report"),
     ("briefing synthesis", "--briefing-synthesis"),
+    ("rss digest", "--rss"),
+    ("rss refresh", "--rss-refresh"),
+    ("kindle writer", "--output kindle"),
+    ("kindle address", "--kindle-to"),
     ("reddit digest", "--reddit"),
     ("no reddit", "--no-reddit"),
     ("reddit config ref", "CONFIG.md#reddit-subreddits"),

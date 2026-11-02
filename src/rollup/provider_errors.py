@@ -33,7 +33,7 @@ def is_provider_call_error(exc: BaseException) -> bool:
     """Return True if *exc* is a named provider transport/payload failure."""
     if isinstance(exc, PROVIDER_PAYLOAD_EXCEPTIONS):
         return True
-    from rollup.llm_client import LlmExtraMissingError, LLMClientError
+    from rollup.llm_client import LLMClientError, LlmExtraMissingError
 
     if isinstance(exc, (LlmExtraMissingError, LLMClientError)):
         return True

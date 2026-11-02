@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
-from pathlib import Path
 import subprocess
 import sys
 import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 
 class _Handler(BaseHTTPRequestHandler):

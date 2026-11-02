@@ -19,7 +19,7 @@ from rollup.pipeline import (
 )
 from rollup.state import SCHEMA_VERSION, get_schema_version, init_db
 from rollup.webpage.config import WEBPAGE_FOLDER_NAME
-from rollup.webpage.fetch import WebpageFetchError, fetch_webpage
+from rollup.webpage.fetch import fetch_webpage
 from rollup.webpage.parse import webpage_to_parsed_message
 from rollup.webpage.queue import (
     count_pending,
@@ -78,7 +78,7 @@ def _minimal_config(tmp_path: Path, **overrides) -> Config:
 def test_schema_v13_webpage_body_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     cols = {
         row[1] for row in conn.execute("PRAGMA table_info(webpage_queue)").fetchall()
     }

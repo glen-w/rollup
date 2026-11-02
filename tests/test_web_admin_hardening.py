@@ -13,9 +13,8 @@ import pytest
 
 pytest.importorskip("flask")
 
-from rollup.run_index import IndexEntry, RunIndexPayload, index_rollup_run
+from rollup.run_index import RunIndexPayload, index_rollup_run
 from rollup.state import (
-    SchemaCompatibilityError,
     assert_schema_readable,
     connect_db_readonly,
     init_db,
@@ -136,7 +135,6 @@ def test_deep_check_post_csrf(tmp_path: Path) -> None:
     # With CSRF from session
     with client:
         client.get("/admin")
-        from flask import session
         # Obtain token via form page then post
         page = client.get("/admin")
         html = page.get_data(as_text=True)

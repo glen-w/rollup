@@ -33,19 +33,20 @@ def trusted_host_allowed(req: Request, *, bind_host: str, bind_port: int) -> boo
     host, port_s = _normalise_host_header(raw)
     if not host:
         return False
-    try:
-        loopback = is_loopback_host(host)
-    except BindError:
-        return False
-    if not loopback:
-        return False
     bind = (bind_host or "").strip().lower()
     if bind.startswith("[") and bind.endswith("]"):
         bind = bind[1:-1]
     allowed_hosts = {bind, "127.0.0.1", "localhost", "::1"}
     if bind == "127.0.0.1":
         allowed_hosts.add("localhost")
+    # Allow-list first: never resolve an attacker-controlled hostname.
     if host not in allowed_hosts:
+        return False
+    try:
+        loopback = is_loopback_host(host)
+    except BindError:
+        return False
+    if not loopback:
         return False
     if port_s is None:
         return True
@@ -66,8 +67,13 @@ def init_security_headers(app: Flask) -> None:
                 raw = (request.headers.get("Host") or "").split(":")[0]
                 if raw.startswith("["):
                     raw = raw.strip("[]")
-                if raw and not is_loopback_host(raw):
-                    abort(400)
+                if raw:
+                    try:
+                        loopback = is_loopback_host(raw)
+                    except BindError:
+                        loopback = False
+                    if not loopback:
+                        abort(400)
                 return
         bind_host = str(app.config.get("WEB_BIND_HOST", "127.0.0.1"))
         bind_port = int(app.config.get("WEB_BIND_PORT", 8765))

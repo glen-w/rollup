@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from rollup.grouping import apply_grouping
 from rollup.models import ClassifiedMessage, DigestEntry
+from rollup.pipeline import (
+    DiscoveryResult,
+    ParseCounts,
+    ParseResult,
+    evaluate_no_input,
+    merge_reddit_parse,
+    stage_parse_reddit,
+)
 from rollup.reddit.config import (
     RedditConfig,
     RedditSub,
@@ -25,8 +34,8 @@ from rollup.reddit.fetch import (
     reddit_fetch_eta_phrase,
     reddit_fetch_wait_seconds,
 )
-from rollup.reddit.parse import reddit_post_to_parsed_message, reddit_source_key
 from rollup.reddit.models import RedditPost
+from rollup.reddit.parse import reddit_post_to_parsed_message, reddit_source_key
 from rollup.reddit.session import (
     RedditNotFoundError,
     build_json_url,
@@ -35,14 +44,6 @@ from rollup.reddit.session import (
     rss_sort_path,
 )
 from rollup.run_options import GroupingConfig
-from rollup.pipeline import (
-    DiscoveryResult,
-    ParseCounts,
-    ParseResult,
-    evaluate_no_input,
-    merge_reddit_parse,
-    stage_parse_reddit,
-)
 from rollup.state import SCHEMA_VERSION, get_schema_version, init_db
 
 FIXTURES = Path(__file__).parent / "fixtures" / "reddit"
@@ -177,6 +178,7 @@ def test_ensure_listing_body_rejects_html_login_wall() -> None:
         headers = {"Content-Type": "text/html; charset=utf-8"}
 
     import pytest
+
     from rollup.reddit.session import RedditSessionError
 
     with pytest.raises(RedditSessionError) as exc:
@@ -559,7 +561,7 @@ def test_fetch_posts_for_subs_does_not_retry_404(monkeypatch) -> None:
 def test_schema_v15_source_fetch_cache(tmp_path: Path) -> None:
     db = tmp_path / "rollup.db"
     conn = init_db(db)
-    assert get_schema_version(conn) == SCHEMA_VERSION == 18
+    assert get_schema_version(conn) == SCHEMA_VERSION == 19
     for table in (
         "reddit_posts",
         "reddit_listing_snapshots",

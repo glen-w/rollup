@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rollup.ratings import set_rating_with_reasons
@@ -79,7 +79,7 @@ def test_score_sources_ordering(tmp_path: Path):
 
 
 def test_exact_90_day_boundary(tmp_path: Path):
-    from rollup.source_quality import _in_recent_window, RECENT_DAYS, SECONDS_PER_DAY
+    from rollup.source_quality import RECENT_DAYS, SECONDS_PER_DAY, _in_recent_window
 
     assert _in_recent_window(RECENT_DAYS * SECONDS_PER_DAY)
     assert not _in_recent_window(RECENT_DAYS * SECONDS_PER_DAY + 1)

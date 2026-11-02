@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.config import DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO, Config
 from rollup.final_review_profiles import FinalReviewConfigError
 from rollup.phase3_validate import validate_phase3_runtime_config
 from rollup.run_options import GroupingConfig, RunOptions

@@ -6,9 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from rollup.config import Config, DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO
+from rollup.config import DEFAULT_FINAL_REVIEW_MAX_CHANGED_CHARS_RATIO, Config
 from rollup.group_summarize import (
     GROUP_SUMMARY_MAX_OUTPUT_CHARS,
     _format_group_prompt,

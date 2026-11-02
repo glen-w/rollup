@@ -64,7 +64,7 @@ Host Python / venv install is an advanced alternative — see [Install](#install
 | [extension/firefox/README.md](extension/firefox/README.md) | Firefox Add to Rollup (temporary add-on) |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | Where Rollup sits relative to other readers and AI digests |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Product sequence toward 1.0 and non-goals |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 1.0 bar, the edition arc after it, parked transports, non-goals |
 | [docs/CRON.md](docs/CRON.md) | launchd / crontab scheduling |
 | [docs/SOURCES.md](docs/SOURCES.md) | Source registry and muting |
 | [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md) | `--output` writers (txt, json, epub, xteink, opds, calibre) |
@@ -118,9 +118,16 @@ For local development, packaging extras, or running the CLI without Compose:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,web]"
+rollup init        # guided setup: finds Thunderbird, writes ~/.config/rollup/config.toml, runs doctor
 rollup digest
 rollup web --open
 ```
+
+`rollup init` is the answer when discovery cannot find your mail: it asks for the
+`Newsletters.sbd` path (or a Gmail label prefix), proposes state / output / log
+directories outside the mail root, and merges the result into an existing config
+without clobbering other keys. `rollup init --yes` takes every default for scripts
+and `--dry-run` prints the TOML it would write.
 
 Do not run native `rollup web` and Docker web at the same time (shared `state/rollup.db`).
 
@@ -148,6 +155,7 @@ fetches, `--scholar-mode detailed`, or `--ollama`.
 
 | Command | Purpose |
 |---------|---------|
+| `init` | Guided first-run setup: discover mail paths, write sticky TOML, run doctor (`--yes`, `--dry-run`) |
 | `inventory` | Discover folders and counts |
 | `digest` | Generate the weekly Markdown + HTML digest |
 | `doctor` | Setup, safety, and environment diagnostics |
@@ -217,8 +225,8 @@ CLI (rollup / python -m rollup)
        │     state/rollup.db (schema v18) + manifests + web index
        │
        └─ web → rollup.web (Flask; [web] extra)
-             Archive · Run Studio · Settings · Articles · LinkedIn · Reddit
-             Quality / Registry · Admin
+             Home · Archive · Search · Sources (Quality | Registry)
+             Articles · LinkedIn · Reddit · Run Studio · Settings · Admin
 ```
 
 CLI flags always win over TOML. Settings and Run Studio use the same sticky registry (`config_service` / `sticky_flags`). Network listings persist in SQLite and reuse within `fetch_ttl_hours`.
@@ -230,6 +238,8 @@ Every non-dry-run digest writes a privacy-safe JSON manifest under `state/manife
 ```
 src/rollup/                       # package source
 src/rollup/cli.py                 # command handlers; re-exports build_parser
+src/rollup/init_cmd.py            # `rollup init` guided first-run setup
+src/rollup/render/                # digest rendering (model decides, markdown/html emit, files write)
 src/rollup/pipeline/              # digest orchestration (`run_digest` plus types/status/ingest/stages/publish)
 src/rollup/state/                 # SQLite schema, migrations, and caches (`init_db` public API)
 src/rollup/gmail/                 # optional read-only Gmail API ingest (auth, session, cache)
@@ -237,6 +247,7 @@ src/rollup/addons/                # destination writers (opds, calibre)
 src/rollup/web/                   # optional Flask UI ([web] extra)
 extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
+tests/fixtures/golden/            # byte-exact MD/HTML renders of the fixture digest
 docs/                             # CONFIG, WEB, CONTRACT, COMPARISON, ROADMAP, images/, …
 website/                          # public landing; Sphinx guide assembled beside it
 CHANGELOG.md                      # release notes
@@ -245,7 +256,13 @@ CHANGELOG.md                      # release notes
 ## Tests
 
 ```bash
+make check          # ruff + mypy + pytest with the same coverage gate CI enforces
 python -m pytest tests/ -q
 ```
+
+CI runs `make check` on Python 3.10–3.13 plus the Compose preview digest.
+Rendered output is pinned by goldens under `tests/fixtures/golden/`; regenerate
+deliberately with `ROLLUP_UPDATE_GOLDENS=1 python -m pytest tests/test_render_golden.py`
+and review the diff.
 
 Regenerate synthetic fixtures: `python tests/generate_fixtures.py`.

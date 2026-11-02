@@ -11,7 +11,6 @@ from rollup.final_review_profiles import (
 )
 from rollup.llm_client import LlmExtraMissingError, validate_llm_api_base
 from rollup.provider_options import (
-    ProviderOptionsError,
     reject_litellm_ollama_model,
     validate_litellm_profile_options,
 )

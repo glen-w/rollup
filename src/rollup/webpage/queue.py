@@ -198,6 +198,7 @@ def enqueue_url(
         (canonical, digest, title, created),
     )
     conn.commit()
+    assert cur.lastrowid is not None
     item = get_by_id(conn, int(cur.lastrowid))
     assert item is not None
     return item

@@ -216,7 +216,7 @@ Web-only preferences live in the same TOML under `[ui]` (still not SQLite):
 
 ```toml
 [ui]
-landing_page = "archive"       # archive | run | settings
+landing_page = "home"          # home (default) | archive | run | settings
 preferred_view = "html"        # html | markdown | entries
 onboarding_complete = false
 ```
@@ -416,6 +416,30 @@ The only scope requested is `gmail.readonly`; the refresh token is written to `{
 - Rollup never modifies Gmail: no label changes, no read state, GET-only client.
 - `--dry-run` and web **GET** never contact Gmail; dry-run reports which labels would sync or be served from cache.
 - Settings page: enable, label prefix, explicit labels, plus an offline credentials/token/cache summary.
+- When the TTL has expired and the label snapshot has a `historyId`, the next sync is GET `history.list` plus GET `messages.get` for ids not already cached (at most four in flight). `--gmail-refresh` skips history and lists the window. An expired history id falls back to that full list and warns `gmail_history_expired`. A fresh TTL still makes no network call, including no profile call. Schema for the raw cache remains v18; continuity, RSS, and attempt rows are schema **v19**.
+
+## RSS / Atom feeds (optional)
+
+Opt-in ingest for the collection window. Not an unread inbox.
+
+```toml
+[rss]
+enabled = false
+layout = "feed"          # feed | per_source
+fetch_ttl_hours = 24
+
+[rss.feeds.example]
+url = "https://example.com/feed.xml"
+enabled = true
+```
+
+- Enable with `[rss].enabled` or `rollup digest --rss`. `--no-rss` turns it off. `--rss-refresh` bypasses the TTL.
+- HTTPS only. Private, loopback, and link-local hosts are rejected, including on redirects. Credentials in the URL are rejected.
+- Layout `feed` uses folder `rss:feed`. `per_source` uses `rss:<host>`.
+- Caps: 40 feeds, 30 items per feed, 1 MB response, 32 KB stored body. A document that declares a DTD is rejected.
+- Items inside the lookback are included. Missing dates stay as undated review items.
+- Cache lives in `rollup.db` (`rss_feeds`, `rss_items`). HTTP 304 reuses items. A failed fetch reuses a stale snapshot (`rss_cache_stale`) or marks the run partial (`rss_fetch_failed`). An RSS-only failure with nothing parsed is exit 1.
+- Manage feeds at `GET /rss` while `rollup web` is running. GET does not fetch feeds.
 
 ![Settings → Gmail card](images/web-settings-gmail.png)
 
@@ -516,7 +540,23 @@ If `root` / `mail_root` are not set in config or CLI:
 
 1. Use `~/email/gmail/Newsletters.sbd` when that directory exists (back-compat).
 2. Otherwise scan macOS Thunderbird profiles for a single `Newsletters.sbd`.
-3. If zero or multiple candidates are found, set paths explicitly (doctor explains how).
+3. If zero or multiple candidates are found, set paths explicitly (doctor explains how),
+   or run `rollup init`, which walks the same discovery, asks for what it cannot find,
+   refuses writable directories inside the mail root, and writes the sticky keys for you.
+
+## Guided setup (`rollup init`)
+
+```bash
+rollup init                       # interactive; writes ~/.config/rollup/config.toml (or ./rollup.toml / --config)
+rollup init --yes --root ~/Thunderbird/…/Newsletters.sbd --state-dir ~/rollup/state --output-dir ~/rollup/out
+rollup init --dry-run             # print the TOML, write nothing
+rollup init --gmail-label-prefix Newsletters/   # Gmail-only setup; then `rollup gmail auth`
+```
+
+`init` merges into an existing file through the same atomic, backed-up writer as the
+web Settings page, so folder themes, profiles, and model overrides survive. It never
+probes the network unless you answer yes to the optional Ollama check, and it finishes
+with `rollup doctor` unless `--skip-doctor` is given.
 
 A Gmail-only setup (`[gmail]` configured and enabled, no local mbox) may leave
 `root` pointing at a directory that does not exist; the run warns and continues.

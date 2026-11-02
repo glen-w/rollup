@@ -12,6 +12,7 @@ _WRITER_RE = re.compile(r"Running output writer (\S+)")
 _STATS_RE = re.compile(r"Folders scanned: (\d+)")
 _REDDIT_FETCH_RE = re.compile(r"Fetching Reddit: (\d+) subs?")
 _GMAIL_FETCH_RE = re.compile(r"Gmail fetch (\d+)/(\d+) (.+)$")
+_RSS_FETCH_RE = re.compile(r"RSS fetch (\d+)/(\d+) (\S+)")
 _REDDIT_SUB_RE = re.compile(
     r"Reddit \[(\d+)/(\d+)\] r/(\S+)(?: \((.+) remaining\))?"
 )
@@ -52,6 +53,9 @@ def parse_run_progress(
     reddit_current: int | None = None
     reddit_total: int | None = None
     saw_reddit_fetch = False
+    saw_rss_fetch = False
+    rss_current: int | None = None
+    rss_total: int | None = None
     gmail_current: int | None = None
     gmail_total: int | None = None
 
@@ -105,6 +109,12 @@ def parse_run_progress(
             if remaining:
                 detail = f"{detail}, {remaining} remaining"
             last_detail = detail
+        match = _RSS_FETCH_RE.search(line)
+        if match:
+            saw_rss_fetch = True
+            rss_current = int(match.group(1))
+            rss_total = int(match.group(2))
+            last_detail = f"RSS {match.group(3)} ({rss_current}/{rss_total})"
 
     if saw_stats:
         phase = "finishing"
@@ -117,7 +127,14 @@ def parse_run_progress(
     elif llm_total:
         phase = "summarizing"
         label = "Summarising with LLM"
-        percent = 40 + int(42 * llm_current / llm_total)
+        percent = 40 + int(42 * (llm_current or 0) / llm_total)
+    elif saw_rss_fetch:
+        phase = "rss"
+        label = "Fetching RSS"
+        if rss_total and rss_total > 0:
+            percent = 30 + int(10 * min(rss_current or 0, rss_total) / rss_total)
+        else:
+            percent = 30
     elif gmail_total:
         # Gmail sync runs after Reddit/LinkedIn in the ingest order.
         phase = "gmail"

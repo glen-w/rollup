@@ -13,9 +13,9 @@ from typing import Any
 from rollup.manifest import (
     STATUS_ENUM,
     SUPPORTED_SCHEMA_VERSIONS,
+    ManifestValidationError,
     filter_allowlisted,
     validate_manifest,
-    ManifestValidationError,
 )
 from rollup.output_archive import resolve_output_artifact
 from rollup.run_contracts import FAILURE_EXIT
@@ -221,7 +221,7 @@ def _iter_manifest_candidates(
                 if name == "latest.json" or not name.endswith(".json"):
                     continue
                 try:
-                    if entry.is_symlink(follow_symlinks=False):
+                    if entry.is_symlink():
                         issues.append(
                             PanelIssue("manifest_symlink", f"Skipped symlink {name!r}")
                         )
@@ -315,7 +315,8 @@ def _artifact_kinds(
         rels["html"] = indexed.get("html_relpath")
         rels["manifest"] = indexed.get("manifest_relpath")
     if manifest:
-        outputs = manifest.get("outputs") if isinstance(manifest.get("outputs"), dict) else {}
+        outputs_raw = manifest.get("outputs")
+        outputs: dict[str, Any] = outputs_raw if isinstance(outputs_raw, dict) else {}
         if rels["md"] is None:
             rels["md"] = _safe_relpath(outputs.get("markdown"))
         if rels["html"] is None:
@@ -472,6 +473,30 @@ def collect_manifest_health(
         )
         # Touch version matrix so callers can show "not recorded".
         _ = _field_or_not_recorded(payload, version, "seen_state_failed")
+
+    try:
+        from rollup.attempts import list_attempts
+
+        for row in list_attempts(conn, limit=limits.max_files):
+            run_id = row["run_id"]
+            if run_id in cards_by_id:
+                continue
+            status = row["status"] if row["status"] in STATUS_CSS else "unknown"
+            cards_by_id[run_id] = RunHealthCard(
+                run_id=run_id,
+                status=status,
+                status_css=STATUS_CSS.get(status, STATUS_CSS["unknown"]),
+                source="attempt",
+                started_at=row["started_at"],
+                completed_at=row["finished_at"],
+                degraded=status in {"partial", "failure"},
+                warning_count=None,
+                messages_included=None,
+                config_fingerprint=None,
+                diagnostics=[row["error_summary"]] if row["error_summary"] else [],
+            )
+    except Exception:
+        pass
 
     cards = sorted(
         cards_by_id.values(),

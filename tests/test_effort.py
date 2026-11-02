@@ -312,7 +312,6 @@ def test_apply_single_model_swaps_all_profiles() -> None:
 
 
 def test_resolve_profile_set_single_model() -> None:
-    from rollup.effort import apply_single_model
 
     profile_set = resolve_profile_set(effort="balanced", single_model="solo:3b")
     assert profile_set.profiles["rough"].model == "solo:3b"

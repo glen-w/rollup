@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from rollup.config import Config, DEFAULT_LOOKBACK_DAYS
+from rollup.config import Config
 from rollup.error_sanitize import sanitize_provider_message
 from rollup.linkedin.config import (
     LinkedInConfig,
@@ -15,15 +15,14 @@ from rollup.linkedin.config import (
     filter_linkedin_searches,
     folder_name_for_search,
     merge_linkedin_folder_themes,
-    parse_linkedin_config,
     search_slug_from_name,
 )
 from rollup.linkedin.fetch import (
     FixtureLinkedInClient,
-    _posts_from_commentary_regexes,
     _posts_from_embedded_json,
     posts_from_fixture_payload,
 )
+from rollup.linkedin.models import LinkedInPost
 from rollup.linkedin.parse import linkedin_post_to_parsed_message
 from rollup.linkedin.url import (
     apply_lookback_to_url,
@@ -32,17 +31,15 @@ from rollup.linkedin.url import (
     validate_content_search_url,
 )
 from rollup.linkedin.voyager import posts_from_profile_updates_payload
-from rollup.linkedin.models import LinkedInPost
 from rollup.pipeline import (
     DiscoveryResult,
     ParseCounts,
     ParseResult,
     evaluate_no_input,
     merge_linkedin_parse,
-    stage_discover,
     stage_parse_linkedin,
 )
-from rollup.user_config import load_toml_file, parse_toml_dict
+from rollup.user_config import parse_toml_dict
 from rollup.web_ids import validate_message_key, validate_source_key
 
 FIXTURES = Path(__file__).parent / "fixtures" / "linkedin"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from rollup.parse import compute_content_hash
+from rollup.payload_limits import MAX_READER_BODY_LEN
 from rollup.reader_bodies import (
     READER_TEXT_VERSION,
     ReaderBodyError,
@@ -14,7 +15,6 @@ from rollup.reader_bodies import (
     prepare_reader_text,
     validate_reader_body_write,
 )
-from rollup.payload_limits import MAX_READER_BODY_LEN
 
 
 def test_make_reader_body_write_clips():

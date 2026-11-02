@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang='en'><head><meta charset='utf-8'>
+<title>Rollup — 18 August 2016 - 15 August 2026</title>
+<link rel='icon' href='favicon.ico' type='image/x-icon'>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;line-height:1.5;}
+.rollup-header{margin-bottom:0.5rem;}
+.rollup-logo{height:120px;width:auto;border-radius:6px;}
+.rollup-subhead{margin:0.25rem 0 1rem;font-size:1.05rem;color:#444;}
+.rollup-toc{margin:1rem 0;}
+.rollup-toc ul{margin:0.35rem 0;padding-left:1.25rem;}
+.rollup-controls{margin:0 0 0.5rem;font-size:0.9rem;}
+.rollup-controls button{font:inherit;cursor:pointer;background:none;border:none;padding:0;color:#06c;text-decoration:underline;}
+details.newsletter-card{margin:1rem 0;border:1px solid #ddd;border-radius:6px;padding:0.5rem 1rem;}
+details.newsletter-card>summary{cursor:pointer;font-weight:400;}
+details.newsletter-card>summary strong{font-weight:600;}
+details.run-details{margin:1rem 0;border:none;padding:0;border-top:1px solid #eee;}
+details.run-details>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}
+details.other-links{border:none;padding:0;margin-top:0.5rem;}
+details.other-links>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}
+details.hidden-links{border:none;padding:0;margin-top:0.5rem;}
+details.hidden-links>summary{cursor:pointer;font-weight:600;font-size:0.9rem;color:#666;}
+#undated{border:1px solid #c90;border-radius:6px;padding:0.5rem 1rem;background:#fffbe6;}
+.folder-byline{margin:-0.25rem 0 0.75rem;font-size:0.95rem;color:#555;}
+.run-details-section{margin-top:1rem;}
+.run-details-heading{font-size:1rem;margin:0 0 0.5rem;font-weight:600;color:#444;}
+.stats{background:#f5f5f5;padding:1rem;border-radius:6px;white-space:pre-wrap;font-size:0.9rem;}
+.summary h3{font-size:1rem;margin:1rem 0 0.35rem;font-weight:600;}
+.summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}
+.summary li{margin:0.2rem 0;}
+.summary p{margin:0.5rem 0;}
+.link-domain{color:#666;font-size:0.9em;}
+.item-type{margin:0 0 0.75rem;font-size:0.9rem;color:#666;}
+.briefing-synthesis{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ddd;border-radius:6px;background:#fafafa;}
+.start-here{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #cde;border-radius:6px;background:#f7fbff;}
+.attention-chip{display:inline-block;margin-left:0.5rem;font-size:0.75rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:999px;background:#eee;color:#444;vertical-align:middle;}
+.attention-high_relevance{background:#dceeff;color:#084;}
+.attention-worth_scanning{background:#eee;color:#444;}
+.attention-background{background:#f3f3f3;color:#666;}
+.attention-safely_skip{background:#f6f0e8;color:#864;}
+details.newsletter-card.safely-skip{opacity:0.85;}
+.digest-group{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ccc;border-radius:6px;}
+.group-chip{font-size:0.85rem;color:#555;margin:0.25rem 0 0.75rem;}
+.group-updates{margin:0.5rem 0;padding-left:1.25rem;}
+.group-entries{padding-left:1.25rem;}
+.group-entries .summary{margin:0.35em 0 0.75em;}
+.group-summary ul{margin:0.35rem 0 0.75rem;padding-left:1.25rem;}
+.folder-accent-brainfood>h2{border-left:4px solid #9a7b5f;padding-left:0.5rem;}.folder-accent-brainfood .newsletter-card{border-color:#9a7b5f;border-left-width:3px;}.folder-accent-brainfood .digest-group{border-color:#9a7b5f;border-left-width:3px;}.folder-accent-classify-essay>h2{border-left:4px solid #a67c6d;padding-left:0.5rem;}.folder-accent-classify-essay .newsletter-card{border-color:#a67c6d;border-left-width:3px;}.folder-accent-classify-essay .digest-group{border-color:#a67c6d;border-left-width:3px;}.folder-accent-classify-link-roundup>h2{border-left:4px solid #6b8f71;padding-left:0.5rem;}.folder-accent-classify-link-roundup .newsletter-card{border-color:#6b8f71;border-left-width:3px;}.folder-accent-classify-link-roundup .digest-group{border-color:#6b8f71;border-left-width:3px;}.folder-accent-classify-multi-section-digest>h2{border-left:4px solid #7a8ba8;padding-left:0.5rem;}.folder-accent-classify-multi-section-digest .newsletter-card{border-color:#7a8ba8;border-left-width:3px;}.folder-accent-classify-multi-section-digest .digest-group{border-color:#7a8ba8;border-left-width:3px;}.folder-accent-classify-short-update>h2{border-left:4px solid #6b8f71;padding-left:0.5rem;}.folder-accent-classify-short-update .newsletter-card{border-color:#6b8f71;border-left-width:3px;}.folder-accent-classify-short-update .digest-group{border-color:#6b8f71;border-left-width:3px;}.folder-accent-enviro>h2{border-left:4px solid #5a8a9e;padding-left:0.5rem;}.folder-accent-enviro .newsletter-card{border-color:#5a8a9e;border-left-width:3px;}.folder-accent-enviro .digest-group{border-color:#5a8a9e;border-left-width:3px;}.folder-accent-grouping-daily-digest>h2{border-left:4px solid #8a8a6a;padding-left:0.5rem;}.folder-accent-grouping-daily-digest .newsletter-card{border-color:#8a8a6a;border-left-width:3px;}.folder-accent-grouping-daily-digest .digest-group{border-color:#8a8a6a;border-left-width:3px;}.folder-accent-grouping-notifications>h2{border-left:4px solid #4a9e6b;padding-left:0.5rem;}.folder-accent-grouping-notifications .newsletter-card{border-color:#4a9e6b;border-left-width:3px;}.folder-accent-grouping-notifications .digest-group{border-color:#4a9e6b;border-left-width:3px;}.folder-accent-hoops>h2{border-left:4px solid #5a8a9e;padding-left:0.5rem;}.folder-accent-hoops .newsletter-card{border-color:#5a8a9e;border-left-width:3px;}.folder-accent-hoops .digest-group{border-color:#5a8a9e;border-left-width:3px;}.folder-accent-misc>h2{border-left:4px solid #a67c6d;padding-left:0.5rem;}.folder-accent-misc .newsletter-card{border-color:#a67c6d;border-left-width:3px;}.folder-accent-misc .digest-group{border-color:#a67c6d;border-left-width:3px;}.folder-accent-parse-edge-cases-empty-bodies>h2{border-left:4px solid #b07a7a;padding-left:0.5rem;}.folder-accent-parse-edge-cases-empty-bodies .newsletter-card{border-color:#b07a7a;border-left-width:3px;}.folder-accent-parse-edge-cases-empty-bodies .digest-group{border-color:#b07a7a;border-left-width:3px;}.folder-accent-tech>h2{border-left:4px solid #4a9e6b;padding-left:0.5rem;}.folder-accent-tech .newsletter-card{border-color:#4a9e6b;border-left-width:3px;}.folder-accent-tech .digest-group{border-color:#4a9e6b;border-left-width:3px;}.folder-accent-trackerwall>h2{border-left:4px solid #8b7fa8;padding-left:0.5rem;}.folder-accent-trackerwall .newsletter-card{border-color:#8b7fa8;border-left-width:3px;}.folder-accent-trackerwall .digest-group{border-color:#8b7fa8;border-left-width:3px;}.folder-accent-default>h2{border-left:4px solid #ccc;padding-left:0.5rem;}.folder-accent-default .newsletter-card{border-color:#ccc;border-left-width:3px;}.folder-accent-default .digest-group{border-color:#ccc;border-left-width:3px;}
+.summary-metadata table{border-collapse:collapse;margin:1rem 0;}
+.summary-metadata th,.summary-metadata td{border:1px solid #ddd;padding:0.25rem 0.5rem;text-align:left;}
+</style></head><body>
+<header class='rollup-header'>
+<img class='rollup-logo' src='rollup_logo.png' alt='Rollup logo'>
+</header>
+<p class='rollup-subhead'><em>18 August 2016 - 15 August 2026 · 24 newsletters</em></p>
+<section class='briefing-synthesis'><h2>This window at a glance</h2><ul>
+<li>Covered 5 ways: edition</li>
+<li>Covered 5 ways: build failed main</li>
+<li>13 folder(s) · 24 items in the window</li>
+</ul>
+</section>
+
+<nav class='rollup-toc' aria-label='Contents'><p class='rollup-controls'><button type='button' id='expand-all-cards' aria-label='Expand all newsletter cards'>Expand all</button> · <button type='button' id='collapse-all-cards' aria-label='Collapse all newsletter cards'>Collapse all</button></p><ul><li><a href='#folder-brainfood'>brainfood (1)</a></li><li><a href='#folder-classify-essay'>classify/essay (1)</a></li><li><a href='#folder-classify-link-roundup'>classify/link_roundup (1)</a></li><li><a href='#folder-classify-multi-section-digest'>classify/multi_section_digest (1)</a></li><li><a href='#folder-classify-short-update'>classify/short_update (1)</a></li><li><a href='#folder-enviro'>enviro (1)</a></li><li><a href='#folder-grouping-daily-digest'>grouping/daily_digest (1)</a></li><li><a href='#folder-grouping-notifications'>grouping/notifications (1)</a></li><li><a href='#folder-hoops'>hoops (2)</a></li><li><a href='#folder-misc'>misc (1)</a></li><li><a href='#folder-parse-edge-cases-empty-bodies'>parse_edge_cases/empty_bodies (1)</a></li><li><a href='#folder-tech'>tech (1)</a></li><li><a href='#folder-trackerwall'>trackerwall (1)</a></li><li><a href='#undated'>Undated / needs review</a></li></ul></nav>
+<section id='folder-brainfood' class='folder-section folder-accent-brainfood'><h2>brainfood</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Brainfood Weekly</strong> — brain — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and curiosity. Quick thoughts on learning and…</p></div>
+</div></details>
+</section>
+<section id='folder-classify-essay' class='folder-section folder-accent-classify-essay'><h2>classify/essay</h2><p class='folder-byline'><em>1 newsletter, 8 minutes reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Long Essay</strong> — essay — 🕐 8 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Essay</p>
+<div class='summary'><p>This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long essay paragraph about ideas. This is a long…</p></div>
+</div></details>
+</section>
+<section id='folder-classify-link-roundup' class='folder-section folder-accent-classify-link-roundup'><h2>classify/link_roundup</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Link Roundup</strong> — links — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Link roundup</p>
+<div class='summary'><p><a href="https://news.example/0" target="_blank" rel="noopener noreferrer">Story 0</a> word <a href="https://news.example/1" target="_blank" rel="noopener noreferrer">Story 1</a> word <a href="https://news.example/2" target="_blank" rel="noopener noreferrer">Story 2</a> word <a href="https://news.example/3" target="_blank" rel="noopener noreferrer">Story 3</a> word <a href="https://news.example/4" target="_blank" rel="noopener noreferrer">Story 4</a> word <a href="https://news.example/5" target="_blank" rel="noopener noreferrer">Story 5</a> word <a href="https://news.example/6" target="_blank" rel="noopener noreferrer">Story 6</a> word <a href="https://news.example/7" target="_blank" rel="noopener noreferrer">Story 7</a> word <a href="https://news.example/8" target="_blank" rel="noopener noreferrer">Story 8</a> word <a href="https://news.example/9" target="_blank" rel="noopener noreferrer">Story 9</a> word <a href="https://news.example/10" target="_blank" rel="noopener noreferrer">Story 10</a> word <a href="https://news.example/11" target="_blank" rel="noopener noreferrer">Story 11</a> word [Story…</p></div>
+<details class='other-links'><summary>Other links</summary><ul>
+<li><a href="https://news.example/0" target="_blank" rel="noopener noreferrer">Story 0</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/1" target="_blank" rel="noopener noreferrer">Story 1</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/2" target="_blank" rel="noopener noreferrer">Story 2</a> <span class="link-domain">· news.example</span></li>
+</ul></details>
+<details class='hidden-links'><summary>+12 more links in original</summary><ul>
+<li><a href="https://news.example/3" target="_blank" rel="noopener noreferrer">Story 3</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/4" target="_blank" rel="noopener noreferrer">Story 4</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/5" target="_blank" rel="noopener noreferrer">Story 5</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/6" target="_blank" rel="noopener noreferrer">Story 6</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/7" target="_blank" rel="noopener noreferrer">Story 7</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/8" target="_blank" rel="noopener noreferrer">Story 8</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/9" target="_blank" rel="noopener noreferrer">Story 9</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/10" target="_blank" rel="noopener noreferrer">Story 10</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/11" target="_blank" rel="noopener noreferrer">Story 11</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/12" target="_blank" rel="noopener noreferrer">Story 12</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/13" target="_blank" rel="noopener noreferrer">Story 13</a> <span class="link-domain">· news.example</span></li>
+<li><a href="https://news.example/14" target="_blank" rel="noopener noreferrer">Story 14</a> <span class="link-domain">· news.example</span></li>
+</ul></details>
+</div></details>
+</section>
+<section id='folder-classify-multi-section-digest' class='folder-section folder-accent-classify-multi-section-digest'><h2>classify/multi_section_digest</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Multi Section</strong> — multi — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Multi section digest</p>
+<div class='summary'><h3>Section 0</h3><p>Bullet content.</p><ul><li>point</li><li>point</li></ul><h3>Section 1</h3><p>Bullet content.</p><ul><li>point</li><li>point</li></ul><h3>Section 2</h3><p>Bullet content.</p><ul><li>point</li><li>point</li></ul><h3>Section 3</h3><p>Bullet content.</p><ul><li>point</li><li>point</li></ul><h3>Section 4</h3><p>Bullet content.</p><ul><li>point</li><li>point</li></ul></div>
+</div></details>
+</section>
+<section id='folder-classify-short-update' class='folder-section folder-accent-classify-short-update'><h2>classify/short_update</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Short Update</strong> — short — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Brief update. Meeting tomorrow.</p></div>
+</div></details>
+</section>
+<section id='folder-enviro' class='folder-section folder-accent-enviro'><h2>enviro</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Climate Update</strong> — enviro — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Multi section digest</p>
+<div class='summary'><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><ul><li>item</li><li>item</li></ul><h3>Section One</h3><p>Policy news.</p><h3>Section Two</h3><p>Report out.</p><p>-…</p></div>
+</div></details>
+</section>
+<section id='folder-grouping-daily-digest' class='folder-section folder-accent-grouping-daily-digest'><h2>grouping/daily_digest</h2><p class='folder-byline'><em>5 newsletters, 5 minutes reading time</em></p>
+<section class='digest-group' aria-labelledby='group-965e058e31f6135b' data-group-type='daily_editions'>
+<h3 id='group-965e058e31f6135b'>editor · the daily — edition — 5 editions this week</h3>
+<p class='group-chip'>Grouped · 5 messages</p>
+<details><summary>Show 5 messages from editor · the daily — edition</summary>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>The Daily — 2026-08-04 edition</strong> — editor — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Morning briefing.</p><h3>Markets</h3><ul><li>point</li></ul><h3>Politics</h3><ul><li>point</li></ul></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>The Daily — 2026-08-03 edition</strong> — editor — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Morning briefing.</p><h3>Markets</h3><ul><li>point</li></ul><h3>Politics</h3><ul><li>point</li></ul></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>The Daily — 2026-08-02 edition</strong> — editor — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Morning briefing.</p><h3>Markets</h3><ul><li>point</li></ul><h3>Politics</h3><ul><li>point</li></ul></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>The Daily — 2026-08-01 edition</strong> — editor — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Morning briefing.</p><h3>Markets</h3><ul><li>point</li></ul><h3>Politics</h3><ul><li>point</li></ul></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>The Daily — 2026-07-31 edition</strong> — editor — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Morning briefing.</p><h3>Markets</h3><ul><li>point</li></ul><h3>Politics</h3><ul><li>point</li></ul></div>
+</div></details>
+</details>
+</section>
+</section>
+<section id='folder-grouping-notifications' class='folder-section folder-accent-grouping-notifications'><h2>grouping/notifications</h2><p class='folder-byline'><em>5 newsletters, 5 minutes reading time</em></p>
+<section class='digest-group' aria-labelledby='group-c5cc1312e21a0a85' data-group-type='notification_stream'>
+<h3 id='group-c5cc1312e21a0a85'>notifications · build failed on main #0 — 5 updates this week</h3>
+<p class='group-chip'>Grouped · 5 messages</p>
+<ul role='list' class='group-updates'>
+<li><strong><time datetime='2026-08-04T15:30:58+02:00'>2026-08-04</time></strong> — Build failed on main #0<br><em>CI pipeline failed briefly.</em></li>
+<li><strong><time datetime='2026-08-03T15:30:58+02:00'>2026-08-03</time></strong> — Build failed on main #1<br><em>CI pipeline failed briefly.</em></li>
+<li><strong><time datetime='2026-08-02T15:30:58+02:00'>2026-08-02</time></strong> — Build failed on main #2<br><em>CI pipeline failed briefly.</em></li>
+<li><strong><time datetime='2026-08-01T15:30:58+02:00'>2026-08-01</time></strong> — Build failed on main #3<br><em>CI pipeline failed briefly.</em></li>
+<li><strong><time datetime='2026-07-31T15:30:58+02:00'>2026-07-31</time></strong> — Build failed on main #4<br><em>CI pipeline failed briefly.</em></li>
+</ul>
+</section>
+</section>
+<section id='folder-hoops' class='folder-section folder-accent-hoops'><h2>hoops</h2><p class='folder-byline'><em>2 newsletters, 2 minutes reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Game Recap</strong> — hoops — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Short recap of last night.</p></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Old Game</strong> — hoops — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Old game outside window.</p></div>
+</div></details>
+</section>
+<section id='folder-misc' class='folder-section folder-accent-misc'><h2>misc</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Misc Newsletter</strong> — misc — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Misc content here.</p></div>
+</div></details>
+</section>
+<section id='folder-parse-edge-cases-empty-bodies' class='folder-section folder-accent-parse-edge-cases-empty-bodies'><h2>parse_edge_cases/empty_bodies</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Empty Body Notification</strong> — edge — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Unclassified</p>
+</div></details>
+</section>
+<section id='folder-tech' class='folder-section folder-accent-tech'><h2>tech</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Tech Roundup</strong> — tech — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Link roundup</p>
+<div class='summary'><h3>Links</h3><p><a href="https://example.com/0" target="_blank" rel="noopener noreferrer">Link 0</a> <a href="https://example.com/1" target="_blank" rel="noopener noreferrer">Link 1</a> <a href="https://example.com/2" target="_blank" rel="noopener noreferrer">Link 2</a> <a href="https://example.com/3" target="_blank" rel="noopener noreferrer">Link 3</a> <a href="https://example.com/4" target="_blank" rel="noopener noreferrer">Link 4</a> <a href="https://example.com/5" target="_blank" rel="noopener noreferrer">Link 5</a> <a href="https://example.com/6" target="_blank" rel="noopener noreferrer">Link 6</a> <a href="https://example.com/7" target="_blank" rel="noopener noreferrer">Link 7</a> <a href="https://example.com/8" target="_blank" rel="noopener noreferrer">Link 8</a> <a href="https://example.com/9" target="_blank" rel="noopener noreferrer">Link 9</a> <a href="https://example.com/10" target="_blank" rel="noopener noreferrer">Link 10</a> <a href="https://example.com/11" target="_blank" rel="noopener noreferrer">Link 11</a></p><p>Some prose about tech.</p></div>
+<details class='other-links'><summary>Other links</summary><ul>
+<li><a href="https://example.com/0" target="_blank" rel="noopener noreferrer">Link 0</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/1" target="_blank" rel="noopener noreferrer">Link 1</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/2" target="_blank" rel="noopener noreferrer">Link 2</a> <span class="link-domain">· example.com</span></li>
+</ul></details>
+<details class='hidden-links'><summary>+9 more links in original</summary><ul>
+<li><a href="https://example.com/3" target="_blank" rel="noopener noreferrer">Link 3</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/4" target="_blank" rel="noopener noreferrer">Link 4</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/5" target="_blank" rel="noopener noreferrer">Link 5</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/6" target="_blank" rel="noopener noreferrer">Link 6</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/7" target="_blank" rel="noopener noreferrer">Link 7</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/8" target="_blank" rel="noopener noreferrer">Link 8</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/9" target="_blank" rel="noopener noreferrer">Link 9</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/10" target="_blank" rel="noopener noreferrer">Link 10</a> <span class="link-domain">· example.com</span></li>
+<li><a href="https://example.com/11" target="_blank" rel="noopener noreferrer">Link 11</a> <span class="link-domain">· example.com</span></li>
+</ul></details>
+</div></details>
+</section>
+<section id='folder-trackerwall' class='folder-section folder-accent-trackerwall'><h2>trackerwall</h2><p class='folder-byline'><em>1 newsletter, 1 minute reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Tracker Wall Digest</strong> — links — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Multi section digest</p>
+<div class='summary'><h3>Useful links</h3><p><a href="https://substack.com/app-link/post?publication_id=111&amp;post_id=222&amp;token=abcdef&amp;utm_source=email" target="_blank" rel="noopener noreferrer">Open post</a></p><p><a href="https://events.teams.microsoft.com/event/123/register" target="_blank" rel="noopener noreferrer">Register</a></p><p><a href="https://calendar.google.com/calendar/event?action=RESPOND&amp;text=Demo&amp;dates=20260702T100000Z/20260702T110000Z&amp;rst=1" target="_blank" rel="noopener noreferrer">Add to calendar</a></p><p><a href="https://calendar.google.com/calendar/event?action=RESPOND&amp;text=Demo&amp;dates=20260702T100000Z/20260702T110000Z&amp;rst=2" target="_blank" rel="noopener noreferrer">RSVP copy</a></p><p>[Open…</p></div>
+<p><strong>Key links:</strong></p>
+<ul>
+<li><a href="https://substack.com/app-link/post?publication_id=111&amp;post_id=222&amp;token=abcdef&amp;utm_source=email" target="_blank" rel="noopener noreferrer">Open post</a> <span class="link-domain">· substack.com</span></li>
+<li><a href="https://events.teams.microsoft.com/event/123/register" target="_blank" rel="noopener noreferrer">Register for Teams event</a> <span class="link-domain">· events.teams.microsoft.com</span></li>
+<li><a href="https://u14608870.ct.sendgrid.net/ls/click?upn=abc123def456" target="_blank" rel="noopener noreferrer">Open link</a> <span class="link-domain">· u14608870.ct.sendgrid.net</span></li>
+<li><a href="https://calendar.google.com/calendar/event?action=RESPOND&amp;text=Demo&amp;dates=20260702T100000Z/20260702T110000Z&amp;rst=1" target="_blank" rel="noopener noreferrer">Add to calendar</a> <span class="link-domain">· calendar.google.com</span></li>
+</ul>
+<details class='hidden-links'><summary>+3 more links in original</summary><ul>
+<li><a href="https://eotrx.substackcdn.com/o/abc/p.gif?token=secret" target="_blank" rel="noopener noreferrer">pixel</a> <span class="link-domain">· eotrx.substackcdn.com</span></li>
+<li><a href="http://www.w3.org/1999/xhtml" target="_blank" rel="noopener noreferrer">xhtml</a> <span class="link-domain">· w3.org</span></li>
+<li><a href="https://calendar.google.com/calendar/event?action=RESPOND&amp;text=Demo&amp;dates=20260702T100000Z/20260702T110000Z&amp;rst=2" target="_blank" rel="noopener noreferrer">RSVP copy</a> <span class="link-domain">· calendar.google.com</span></li>
+</ul></details>
+</div></details>
+</section>
+<section id='undated'><h2>Undated / needs review</h2><p class='folder-byline'><em>2 newsletters, 2 minutes reading time</em></p>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>Bad Date</strong> — edge — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>Body with an unparseable date.</p></div>
+</div></details>
+<details class='newsletter-card' data-newsletter-card data-attention-band='worth_scanning'><summary><strong>No Date Newsletter</strong> — nodate — 🕐 1 min<span class='attention-chip attention-worth_scanning'>Worth scanning</span></summary><div class='card-body'>
+<p class='item-type'>Short update</p>
+<div class='summary'><p>This has no date header.</p></div>
+</div></details>
+</section>
+<details class='run-details'><summary>Digest generation details</summary><section class='run-details-section stats-section'><h3 class='run-details-heading'>Stats</h3><div class='stats'>Folders scanned: 15
+Messages parsed: 24
+Dated included: 22
+Undated needing review: 2
+Skipped outside window: 0
+Skipped seen undated: 0
+Deduped messages: 0
+Parse errors: 0
+Summaries: Ollama 0 · LiteLLM 0 · cache 0 · fallback 23 · errors 0</div></section></details>
+<script>
+document.getElementById('expand-all-cards')?.addEventListener('click', function () {
+  document.querySelectorAll('details.newsletter-card').forEach(function (el) { el.open = true; });
+});
+document.getElementById('collapse-all-cards')?.addEventListener('click', function () {
+  document.querySelectorAll('details.newsletter-card').forEach(function (el) { el.open = false; });
+});
+</script>
+</body></html>

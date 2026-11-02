@@ -7,8 +7,8 @@ import re
 from datetime import datetime
 from email.utils import parseaddr
 
-from rollup.payload_limits import MAX_LINK_HREF_LEN, MAX_READER_HTML_CHARS
 from rollup.links_sanitize import sanitize_http_url
+from rollup.payload_limits import MAX_LINK_HREF_LEN, MAX_READER_HTML_CHARS
 from rollup.render import (
     _folder_accent_class,
     _folder_display_name,

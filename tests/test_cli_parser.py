@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from rollup import cli
-from rollup import cli_parser
+from rollup import cli, cli_parser
 
 
 def test_cli_reexports_build_parser() -> None:

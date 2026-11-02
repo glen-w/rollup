@@ -14,7 +14,6 @@ from rollup.summary_profiles import (
     SummaryProfileSet,
     ThinkValue,
     UnknownSummaryProfileError,
-    resolve_profile_ollama_options,
     resolve_profile_transport_options,
 )
 

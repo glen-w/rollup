@@ -6,7 +6,6 @@ import re
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +16,7 @@ from rollup.config import Config
 from rollup.doctor import run_doctor
 from rollup.run_index import IndexEntry, RunIndexPayload, index_rollup_run
 from rollup.run_options import RunOptions
-from rollup.state import BUSY_TIMEOUT_MS, connect_db, init_db
+from rollup.state import connect_db, init_db
 from rollup.utc import format_utc
 
 NOW = datetime(2024, 6, 1, tzinfo=timezone.utc)
@@ -147,7 +146,7 @@ def test_doctor_web_index_pass_and_warn(tmp_path: Path):
 
 
 def test_busy_db_returns_503(tmp_path: Path, monkeypatch):
-    flask = pytest.importorskip("flask")
+    pytest.importorskip("flask")
     from rollup import state as state_mod
     from rollup.web.app import create_app
     from rollup.web_ids import encode_opaque

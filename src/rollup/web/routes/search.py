@@ -14,7 +14,7 @@ from flask import (
 
 from rollup.ask import ASK_TOP_K, REFUSE_MESSAGE, answer_question
 from rollup.config import DEFAULT_LLM_PROVIDER, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL
-from rollup.corpus import SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, search_corpus
+from rollup.corpus import SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, CorpusHit, search_corpus
 from rollup.web.config import load_web_config_document
 from rollup.web.csrf import ensure_csrf_token, rotate_csrf_token, validate_csrf_token
 from rollup.web_ids import IdError, encode_opaque
@@ -101,7 +101,7 @@ def _hits_for_template(hits):
 def search_index():
     ensure_csrf_token()
     query = (request.args.get("q") or "").strip()
-    hits = ()
+    hits: tuple[CorpusHit, ...] = ()
     if query:
         try:
             limit = min(

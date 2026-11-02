@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from rollup.addons.calibre.writer import CalibreOutputWriter
-from rollup.addons.calibre.config import parse_calibre_config
 from rollup.addons.opds import OpdsOutputWriter
 from rollup.addons.opds.render import briefing_title, render_opds_atom
 from rollup.config import Config

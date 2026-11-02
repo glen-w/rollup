@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Iterable, Mapping
 
 # Curated neutral palette — intentional without personal taxonomy branding.
 ACCENT_PALETTE: tuple[str, ...] = (

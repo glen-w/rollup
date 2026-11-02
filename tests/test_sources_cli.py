@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rollup.cli import build_parser
+from rollup.models import ParsedMessage
+from rollup.source_registry import observe_sources, set_overrides
 from rollup.sources_cmd import cmd_sources
 from rollup.state import init_db
-from rollup.source_registry import observe_sources, set_overrides
-from rollup.models import ParsedMessage
-from datetime import datetime, timezone
 
 
 def _msg() -> ParsedMessage:

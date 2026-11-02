@@ -1,317 +1,440 @@
 {% extends "base.html" %}
-{% block title %}Settings — Rollup{% endblock %}
+{% from "partials/info_macros.html" import field_error %}
+{% block title %}Settings · Rollup{% endblock %}
+{% block content_class %}content-wide{% endblock %}
 {% block content %}
-<h1>Configuration Centre</h1>
-<p class="meta">Edit the real digest TOML — not a separate web settings database.</p>
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-lede">Configuration Centre — edits the real digest TOML, not a separate web settings database. Every save is previewed as a diff, backed up, and written atomically.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('run.run_studio') }}">Run Studio</a>
+  </div>
+</div>
 
 {% if doc and doc.search_conflict %}
-<p class="banner">Multiple config files found ({{ doc.conflicting_paths | join(', ') }}).
-Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on merge when both exist.</p>
+<div class="banner">Multiple config files found ({{ doc.conflicting_paths | join(', ') }}).
+Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on merge when both exist.</div>
 {% endif %}
 
-{% if onboarding %}
-<section class="onboarding card-section">
-  <h2>First-run checklist</h2>
-  <ul class="checklist">
-    {% for label, done, hint in onboarding %}
-    <li class="{% if done %}done{% endif %}">
-      <span class="check">{% if done %}✓{% else %}○{% endif %}</span>
-      <strong>{{ label }}</strong>
-      <span class="muted"> — {{ hint }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  <p class="note"><a href="{{ url_for('run.run_studio') }}">Open Run Studio</a> for a dry-run after paths are set.</p>
-</section>
+{% if field_errors and field_errors.get('_general') %}
+<div class="banner banner-danger" role="alert">{{ field_errors.get('_general') }}</div>
+{% endif %}
+
+{% if onboarding and not (doc and doc.loaded.ui.onboarding_complete) %}
+<details class="card">
+  <summary>First-run checklist <span class="badge badge-count">{{ onboarding | selectattr(1) | list | length }}/{{ onboarding | length }}</span></summary>
+  <div class="card-body">
+    <ul class="checklist">
+      {% for label, done, hint in onboarding %}
+      <li class="{% if done %}done{% endif %}">
+        <span class="check" aria-hidden="true">{% if done %}✓{% else %}○{% endif %}</span>
+        <span><strong>{{ label }}</strong><span class="visually-hidden">{{ ' (done)' if done else ' (to do)' }}</span> <span class="muted">— {{ hint }}</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>
 {% endif %}
 
 {% if not doc %}
-<p class="banner">Configuration could not be loaded.</p>
+<div class="banner banner-danger">Configuration could not be loaded.</div>
 {% else %}
 <p class="meta">Editing <code>{{ doc.path }}</code>
   {% if not doc.exists %}(will be created){% endif %}
-  · revision <code>{{ doc.revision[:20] }}…</code>
+  · revision <code>{{ doc.revision[:12] }}…</code>
 </p>
 
-<form method="post" action="{{ url_for('settings.settings_preview') }}" class="settings-form">
+{% set tabs = [
+  ('tab-paths', 'Paths'),
+  ('tab-defaults', 'Defaults'),
+  ('tab-summaries', 'Summaries'),
+  ('tab-outputs', 'Outputs'),
+  ('tab-network', 'Network sources'),
+  ('tab-interest', 'Interest profile'),
+  ('tab-presentation', 'Presentation'),
+  ('tab-profiles', 'Profiles'),
+  ('tab-personalisation', 'Personalisation'),
+] %}
+
+<form method="post" action="{{ url_for('settings.settings_preview') }}" class="settings-form" data-tabs data-pending="Previewing…">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <section class="card-section">
-    <h2>Paths</h2>
-    <p class="hint-badge local">local-only</p>
+  <ul class="tabs">
+    {% for tab_id, label in tabs %}
+    <li><a href="#{{ tab_id }}">{{ label }}{% if tab_errors and tab_errors.get(tab_id) %} <span class="badge tab-error-count" aria-label="{{ tab_errors.get(tab_id) }} error(s)">{{ tab_errors.get(tab_id) }}</span>{% endif %}</a></li>
+    {% endfor %}
+  </ul>
+
+  <section class="tab-panel card-section" id="tab-paths" aria-labelledby="tab-paths-title">
+    <h2 id="tab-paths-title">Paths <span class="hint-badge local">local-only</span></h2>
     <p class="note">Writes stay outside the mail root. Containment is validated before save.</p>
-    <label>Mail root <span class="hint-badge writes">reads mail here</span>
-      <input type="text" name="mail_root" value="{{ sticky.get('mail_root', '') }}" placeholder="~/Library/Thunderbird/…/Mail/…">
+    {{ field_error(field_errors, 'paths') }}
+    <label class="field">
+      <span class="field-label">Mail root <span class="hint-badge writes">reads mail here</span></span>
+      <input type="text" name="mail_root" value="{{ sticky.get('mail_root', '') }}" placeholder="~/Library/Thunderbird/…/Mail/…" {% if field_errors and field_errors.get('mail_root') %}aria-invalid="true" aria-describedby="err-mail_root"{% endif %}>
+      {{ field_error(field_errors, 'mail_root') }}
     </label>
-    <label>Newsletter root <code>.sbd</code>
+    <label class="field">
+      <span class="field-label">Newsletter root <code>.sbd</code></span>
       <input type="text" name="root" value="{{ sticky.get('root', '') }}" placeholder="…/Newsletters.sbd">
     </label>
-    <label>Output directory <span class="hint-badge writes">writes digests here</span>
+    <label class="field">
+      <span class="field-label">Output directory <span class="hint-badge writes">writes digests here</span></span>
       <input type="text" name="output_dir" value="{{ sticky.get('output_dir', '') }}">
     </label>
-    <label>State directory <span class="hint-badge writes">writes database here</span>
+    <label class="field">
+      <span class="field-label">State directory <span class="hint-badge writes">writes database here</span></span>
       <input type="text" name="state_dir" value="{{ sticky.get('state_dir', '') }}">
     </label>
-    <label>Log directory
+    <label class="field">
+      <span class="field-label">Log directory</span>
       <input type="text" name="log_dir" value="{{ sticky.get('log_dir', '') }}">
     </label>
   </section>
 
-  <section class="card-section">
-    <h2>Defaults</h2>
-    <label>Default run profile
+  <section class="tab-panel card-section" id="tab-defaults" aria-labelledby="tab-defaults-title">
+    <h2 id="tab-defaults-title">Defaults</h2>
+    <label class="field">
+      <span class="field-label">Default run profile</span>
       <select name="profile">
         {% for p in profiles %}
         <option value="{{ p.name }}" {% if sticky.get('profile', effective.profile_name) == p.name %}selected{% endif %}>{{ p.name }} — {{ p.description }}</option>
         {% endfor %}
       </select>
     </label>
-    <label>Lookback days
+    <label class="field field-narrow">
+      <span class="field-label">Lookback days</span>
       <input type="number" name="lookback_days" min="1" value="{{ sticky.get('lookback_days', 7) }}">
     </label>
-    <label>Include folders (comma-separated; empty = all)
+    <label class="field">
+      <span class="field-label">Include folders</span>
       <input type="text" name="folder" value="{{ (sticky.get('folder') or []) | join(', ') }}">
+      <span class="field-hint">Comma-separated; empty = all.</span>
     </label>
-    <label>Exclude folders
+    <label class="field">
+      <span class="field-label">Exclude folders</span>
       <input type="text" name="exclude_folder" value="{{ (sticky.get('exclude_folder') or []) | join(', ') }}">
     </label>
-    <label>
+    <label class="field-inline">
       <input type="hidden" name="no_grouping" value="0">
       <input type="checkbox" name="no_grouping" value="1" {% if sticky.get('no_grouping') %}checked{% endif %}>
-      Disable grouping
+      <span>Disable grouping</span>
     </label>
-    <label>Grouping min size
+    <label class="field field-narrow">
+      <span class="field-label">Grouping min size</span>
       <input type="number" name="grouping_min_size" min="1" value="{{ sticky.get('grouping_min_size', 2) }}">
     </label>
   </section>
 
-  <section class="card-section">
-    <h2>Summaries</h2>
-    <label>
+  <section class="tab-panel card-section" id="tab-summaries" aria-labelledby="tab-summaries-title">
+    <h2 id="tab-summaries-title">Summaries</h2>
+    <label class="field-inline">
       <input type="hidden" name="ollama" value="0">
       <input type="checkbox" name="ollama" value="1" {% if sticky.get('ollama') %}checked{% endif %}>
-      Enable LLM summaries <span class="hint-badge ollama">calls a model</span>
+      <span>Enable LLM summaries <span class="hint-badge ollama">calls a model</span></span>
     </label>
     <p class="note">When off, entries use preview excerpts — no Ollama or LiteLLM calls (local Ollama still counts as on). API keys are never stored in TOML — set them in the environment for LiteLLM.</p>
-    <label>LLM provider (fallback / group path)
-      <select name="llm_provider">
-        <option value="ollama" {% if sticky.get('llm_provider', 'ollama') == 'ollama' %}selected{% endif %}>ollama (native local)</option>
-        <option value="litellm" {% if sticky.get('llm_provider') == 'litellm' %}selected{% endif %}>litellm (optional extra)</option>
-      </select>
-    </label>
-    <label>LLM model (fallback / group; optional)
-      <input type="text" name="llm_model" value="{{ sticky.get('llm_model', '') }}" placeholder="provider model string; blank uses Ollama effort default when provider is ollama">
-    </label>
+    <div class="grid-2">
+      <div>
+        <label class="field">
+          <span class="field-label">LLM provider <span class="muted">(fallback / group path)</span></span>
+          <select name="llm_provider">
+            <option value="ollama" {% if sticky.get('llm_provider', 'ollama') == 'ollama' %}selected{% endif %}>ollama (native local)</option>
+            <option value="litellm" {% if sticky.get('llm_provider') == 'litellm' %}selected{% endif %}>litellm (optional extra)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">LLM model <span class="muted">(fallback / group; optional)</span></span>
+          <input type="text" name="llm_model" value="{{ sticky.get('llm_model', '') }}" placeholder="provider model string">
+          <span class="field-hint">Blank uses the Ollama effort default when provider is ollama.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Effort</span>
+          <select name="effort">
+            {% for e in ['light', 'balanced', 'high'] %}
+            <option value="{{ e }}" {% if sticky.get('effort', 'balanced') == e %}selected{% endif %}>{{ e }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div>
+        <label class="field">
+          <span class="field-label">Ollama model <span class="muted">(optional override)</span></span>
+          <input type="text" name="ollama_model" value="{{ sticky.get('ollama_model', '') }}" placeholder="leave blank for effort default">
+        </label>
+        <label class="field">
+          <span class="field-label">Summary profile</span>
+          <input type="text" name="summary_profile" value="{{ sticky.get('summary_profile', '') }}" placeholder="e.g. standard">
+        </label>
+      </div>
+    </div>
     <p class="note">LiteLLM may send newsletter text to a remote endpoint unless you point it at a loopback <code>api_base</code> via CLI. Do not route <code>ollama/…</code> models through LiteLLM — use provider <code>ollama</code>.</p>
-    <label>Effort
-      <select name="effort">
-        {% for e in ['light', 'balanced', 'high'] %}
-        <option value="{{ e }}" {% if sticky.get('effort', 'balanced') == e %}selected{% endif %}>{{ e }}</option>
+    <details class="card">
+      <summary>Per-effort model ladders</summary>
+      <div class="card-body">
+        <p class="note">Customise which Ollama models each effort uses. Leave a slot blank to keep the built-in default (shown as placeholder). A sticky <code>ollama_model</code> / <code>--ollama-model</code> still overrides the group/fallback model for a run.</p>
+        {% for ladder in effort_ladders %}
+        <h3 class="effort-ladder-heading">{{ ladder.name }}</h3>
+        <p class="muted small">{{ ladder.description }}</p>
+        <div class="effort-ladder-grid">
+          {% for slot in ladder.slots %}
+          <label class="field">
+            <span class="field-label">{{ slot.label }}</span>
+            <input type="text" name="effort_model_{{ ladder.name }}_{{ slot.name }}" value="{{ slot.value }}" placeholder="{{ slot.default }}">
+          </label>
+          {% endfor %}
+        </div>
         {% endfor %}
-      </select>
-    </label>
-    <label>Ollama model (optional override)
-      <input type="text" name="ollama_model" value="{{ sticky.get('ollama_model', '') }}" placeholder="leave blank for effort default">
-    </label>
-    <label>Summary profile
-      <input type="text" name="summary_profile" value="{{ sticky.get('summary_profile', '') }}" placeholder="e.g. standard">
-    </label>
-    <p class="note">Customise which Ollama models each effort uses. Leave a slot blank to keep the built-in default (shown as placeholder). Profile names and type routes stay the same. A sticky <code>ollama_model</code> / <code>--ollama-model</code> still overrides the group/fallback model for a run.</p>
-    {% for ladder in effort_ladders %}
-    <h3 class="effort-ladder-heading">{{ ladder.name }}</h3>
-    <p class="muted">{{ ladder.description }}</p>
-    <div class="effort-ladder-grid">
-      {% for slot in ladder.slots %}
-      <label>{{ slot.label }}
-        <input type="text" name="effort_model_{{ ladder.name }}_{{ slot.name }}"
-               value="{{ slot.value }}" placeholder="{{ slot.default }}">
-      </label>
-      {% endfor %}
-    </div>
-    {% endfor %}
+      </div>
+    </details>
   </section>
 
-  <section class="card-section">
-    <h2>Outputs</h2>
-    <p class="note">Markdown and HTML are always written. Add-ons (xteink / txt / json / epub) and destinations (opds / calibre) are optional.</p>
+  <section class="tab-panel card-section" id="tab-outputs" aria-labelledby="tab-outputs-title">
+    <h2 id="tab-outputs-title">Outputs</h2>
+    <p class="note">Markdown and HTML are always written. Add-ons (xteink / txt / json / epub) and destinations (opds / calibre / kindle) are optional.</p>
+    <div class="grid-2">
+      <label class="field">
+        <span class="field-label">Kindle address</span>
+        <input type="email" name="kindle_to" value="{{ kindle.to or '' }}" placeholder="name@kindle.com">
+      </label>
+      <label class="field">
+        <span class="field-label">From address</span>
+        <input type="email" name="kindle_from" value="{{ kindle.sender or '' }}" placeholder="you@example.com">
+      </label>
+    </div>
+    <p class="note">SMTP host and password stay in the environment (<code>ROLLUP_KINDLE_SMTP_HOST</code>, <code>ROLLUP_KINDLE_SMTP_PASSWORD</code>). Credentials present: {% if kindle_smtp_ready %}<span class="badge badge-ok">yes</span>{% else %}<span class="badge badge-warn">no</span>{% endif %}</p>
     {% set outs = sticky.get('output') or ['all'] %}
-    <label>
-      <input type="radio" name="output_mode" value="all" {% if outs == ['all'] or not outs %}checked{% endif %}>
-      All discovered writers
-    </label>
-    <label>
-      <input type="radio" name="output_mode" value="none" {% if outs == ['none'] %}checked{% endif %}>
-      Markdown / HTML only
-    </label>
-    <label>
-      <input type="radio" name="output_mode" value="subset" {% if outs not in [['all'], ['none'], []] and outs %}checked{% endif %}>
-      Selected writers
-    </label>
-    <div class="writer-list">
-      {% for w in writers %}
-      <label class="inline">
-        <input type="checkbox" name="output_writer" value="{{ w }}" {% if w in outs %}checked{% endif %}>
-        {{ w }}{% if w == 'xteink' %} <span class="muted">(Xteink X3)</span>{% endif %}
+    <fieldset>
+      <legend>Writers</legend>
+      <label class="field-inline">
+        <input type="radio" name="output_mode" value="all" {% if outs == ['all'] or not outs %}checked{% endif %}>
+        <span>All discovered writers</span>
       </label>
-      {% endfor %}
-    </div>
+      <label class="field-inline">
+        <input type="radio" name="output_mode" value="none" {% if outs == ['none'] %}checked{% endif %}>
+        <span>Markdown / HTML only</span>
+      </label>
+      <label class="field-inline">
+        <input type="radio" name="output_mode" value="subset" {% if outs not in [['all'], ['none'], []] and outs %}checked{% endif %}>
+        <span>Selected writers</span>
+      </label>
+      <div class="writer-list">
+        {% for w in writers %}
+        <label class="field-inline">
+          <input type="checkbox" name="output_writer" value="{{ w }}" {% if w in outs %}checked{% endif %}>
+          <span>{{ w }}{% if w == 'xteink' %} <span class="muted">(Xteink X3)</span>{% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
   </section>
 
-  <section class="card-section">
-    <h2>LinkedIn</h2>
-    <p class="hint-badge ollama">network opt-in</p>
+  <section class="tab-panel card-section" id="tab-network" aria-labelledby="tab-network-title">
+    <h2 id="tab-network-title">Network sources <span class="hint-badge ollama">opt-in</span></h2>
+    <h3>LinkedIn</h3>
     <p class="note">Manage named fromMember searches on the <a href="{{ url_for('linkedin.linkedin_index') }}">LinkedIn</a> page. Session cookies stay in <code>~/.config/rollup/env</code> — never in TOML.</p>
-    <label>
+    <label class="field-inline">
       <input type="hidden" name="linkedin_enabled" value="0">
       <input type="checkbox" name="linkedin_enabled" value="1" {% if linkedin.enabled %}checked{% endif %}>
-      Enable LinkedIn fetch on digest runs
+      <span>Enable LinkedIn fetch on digest runs</span>
     </label>
-  </section>
 
-  <section class="card-section">
-    <h2>Reddit</h2>
-    <p class="note">Manage subreddits on the <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a> page. No credentials required (public JSON/RSS). Optional OAuth lives in <code>~/.config/rollup/env</code> — never in TOML.</p>
-    <label>
+    <h3>Reddit</h3>
+    <p class="note">Manage subreddits on the <a href="{{ url_for('reddit.reddit_index') }}">Reddit</a> page. No credentials required (public JSON/RSS). Optional OAuth lives in <code>~/.config/rollup/env</code>.</p>
+    <label class="field-inline">
       <input type="hidden" name="reddit_enabled" value="0">
       <input type="checkbox" name="reddit_enabled" value="1" {% if reddit.enabled %}checked{% endif %}>
-      Enable Reddit fetch on digest runs
+      <span>Enable Reddit fetch on digest runs</span>
     </label>
-  </section>
 
-  <section class="card-section">
-    <h2>Gmail</h2>
-    <p class="hint-badge ollama">network opt-in</p>
-    <p class="note">Read-only Gmail API ingest for people without a Thunderbird mbox tree. Labels become digest folders (<code>Newsletters/tech</code> → <code>tech</code> when the prefix is stripped). Authorise once with <code>rollup gmail auth</code>; the OAuth client id/secret live in <code>~/.config/rollup/env</code> and the token in <code>state_dir/gmail_token.json</code> — never in TOML. Rollup only requests <code>gmail.readonly</code> and never modifies labels or read state.</p>
+    <h3>RSS</h3>
+    <p class="note">Manage feeds on the <a href="{{ url_for('rss.rss_index') }}">RSS</a> page. Fetch happens at digest time. There is no unread inbox.</p>
+    <label class="field-inline">
+      <input type="hidden" name="rss_enabled" value="0">
+      <input type="checkbox" name="rss_enabled" value="1" {% if rss.enabled %}checked{% endif %}>
+      <span>Enable RSS fetch on digest runs</span>
+    </label>
+
+    <h3>Gmail</h3>
+    <p class="note">Read-only Gmail API ingest for people without a Thunderbird mbox tree. Labels become digest folders (<code>Newsletters/tech</code> → <code>tech</code> when the prefix is stripped). Authorise once with <code>rollup gmail auth</code>; the OAuth client id/secret live in <code>~/.config/rollup/env</code> and the token in <code>state_dir/gmail_token.json</code>. Rollup only requests <code>gmail.readonly</code>.</p>
     {% if gmail_status %}
     <p class="note">
-      Credentials: <strong>{{ 'set' if gmail_status.credentials_env else 'missing' }}</strong> ·
-      Token: <strong>{% if gmail_status.token_present %}{{ 'present' if gmail_status.token_scope_readonly is not sameas false else 'wrong scope' }}{% else %}missing{% endif %}</strong> ·
-      Cached: {{ gmail_status.cached_labels | length }} label(s), {{ gmail_status.cached_messages }} message(s)
+      Credentials: {% if gmail_status.credentials_env %}<span class="badge badge-ok">set</span>{% else %}<span class="badge badge-warn">missing</span>{% endif %}
+      · Token: {% if gmail_status.token_present %}{% if gmail_status.token_scope_readonly is not sameas false %}<span class="badge badge-ok">present</span>{% else %}<span class="badge badge-fail">wrong scope</span>{% endif %}{% else %}<span class="badge badge-warn">missing</span>{% endif %}
+      · Cached: {{ gmail_status.cached_labels | length }} label(s), {{ gmail_status.cached_messages }} message(s)
     </p>
     {% endif %}
-    <label>
+    <label class="field-inline">
       <input type="hidden" name="gmail_enabled" value="0">
       <input type="checkbox" name="gmail_enabled" value="1" {% if gmail.enabled %}checked{% endif %}>
-      Enable Gmail ingest on digest runs
+      <span>Enable Gmail ingest on digest runs</span>
     </label>
-    <label>Label prefix (take every label underneath, e.g. <code>Newsletters</code>)
-      <input type="text" name="gmail_label_prefix" value="{{ gmail.label_prefix or '' }}" placeholder="Newsletters">
-    </label>
-    <label>Explicit labels (comma-separated, e.g. <code>Newsletters/tech, Digests</code>)
-      <input type="text" name="gmail_labels" value="{{ gmail.labels | join(', ') }}" placeholder="Newsletters/tech, Newsletters/enviro">
-    </label>
+    <div class="grid-2">
+      <label class="field">
+        <span class="field-label">Label prefix</span>
+        <input type="text" name="gmail_label_prefix" value="{{ gmail.label_prefix or '' }}" placeholder="Newsletters">
+        <span class="field-hint">Take every label underneath, e.g. <code>Newsletters</code>.</span>
+      </label>
+      <label class="field">
+        <span class="field-label">Explicit labels</span>
+        <input type="text" name="gmail_labels" value="{{ gmail.labels | join(', ') }}" placeholder="Newsletters/tech, Newsletters/enviro">
+        <span class="field-hint">Comma-separated.</span>
+      </label>
+    </div>
+
+    <h3>Google Scholar <span class="hint-badge local">mail enrichment</span></h3>
+    <p class="note">Scholar alerts already in Thunderbird. <strong>Default</strong> treats them like other item-list mail (no extra network). <strong>Detailed</strong> fetches each paper’s landing page and summarises it (HTTPS at digest time; LLM summaries still need Enable LLM summaries). PDFs are skipped; arXiv PDF links are rewritten to abstract pages.</p>
+    <div class="field-row">
+      <label class="field field-narrow">
+        <span class="field-label">Mode</span>
+        <select name="scholar_mode">
+          {% for mode in scholar_modes %}
+          <option value="{{ mode }}" {% if scholar.mode == mode %}selected{% endif %}>{{ mode }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field field-narrow">
+        <span class="field-label">Papers per email</span>
+        <input type="number" name="scholar_max_papers_per_email" min="1" max="50" value="{{ scholar.max_papers_per_email }}">
+      </label>
+      <label class="field field-narrow">
+        <span class="field-label">Fetches per run</span>
+        <input type="number" name="scholar_max_fetches_per_run" min="1" max="200" value="{{ scholar.max_fetches_per_run }}">
+      </label>
+    </div>
   </section>
 
-  <section class="card-section">
-    <h2>Google Scholar</h2>
-    <p class="hint-badge ollama">mail enrichment</p>
-    <p class="note">Scholar alerts already in Thunderbird. <strong>Default</strong> treats them like other item-list mail (no extra network). <strong>Detailed</strong> fetches each paper’s landing page and summarises it (HTTPS at digest time; LLM summaries still need Enable LLM summaries). PDFs are skipped; arXiv PDF links are rewritten to abstract pages. Caps apply per email and per run.</p>
-    <label>Mode
-      <select name="scholar_mode">
-        {% for mode in scholar_modes %}
-        <option value="{{ mode }}" {% if scholar.mode == mode %}selected{% endif %}>{{ mode }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Papers fetched per email
-      <input type="number" name="scholar_max_papers_per_email" min="1" max="50" value="{{ scholar.max_papers_per_email }}">
-    </label>
-    <label>Fetches per digest run
-      <input type="number" name="scholar_max_fetches_per_run" min="1" max="200" value="{{ scholar.max_fetches_per_run }}">
-    </label>
-  </section>
-
-  <section class="card-section">
-    <h2>Interest profile</h2>
+  <section class="tab-panel card-section" id="tab-interest" aria-labelledby="tab-interest-title">
+    <h2 id="tab-interest-title">Interest profile</h2>
     <p class="note">Short prose about what you care about. Ranking annotates the briefing (Start here / safely skip) and never drops included mail. Empty profile uses Quality, saved/dismissed, and source priority only.</p>
-    <label>Profile
+    <label class="field field-wide">
+      <span class="field-label">Profile</span>
       <textarea name="interest_profile" rows="6" maxlength="8000" placeholder="I care about local-first tools, LLM evals, and shipping software. Background: crypto markets.">{{ interest.profile }}</textarea>
     </label>
   </section>
 
-  <section class="card-section">
-    <h2>Folder presentation</h2>
-    <p class="note">Emoji, accent, display name, and order. Preview uses placeholder cards.</p>
-    <div class="folder-theme-grid">
-      {% for row in folder_rows %}
-      <div class="folder-theme-row" style="border-left: 4px solid {{ row.accent }};">
-        <input type="hidden" name="folder_slug" value="{{ row.slug }}">
-        <strong class="folder-preview">{{ row.preview_label }}</strong>
-        <label>Emoji <input type="text" name="folder_emoji" value="{{ row.emoji }}" maxlength="8"></label>
-        <label>Accent <input type="text" name="folder_accent" value="{{ row.accent }}"></label>
-        <label>Display name <input type="text" name="folder_display_name" value="{{ row.display_name }}" placeholder="{{ row.name }}"></label>
-        <label>Order <input type="number" name="folder_order" value="{{ row.order }}"></label>
-        <div class="appearance-preview">
-          <article class="placeholder-card" style="border-left-color: {{ row.accent }};">
-            <strong>{{ row.preview_label }}</strong>
-            <p class="muted">Sample newsletter · 3 min</p>
-            <p>Placeholder summary for appearance preview.</p>
-          </article>
-        </div>
+  <section class="tab-panel card-section" id="tab-presentation" aria-labelledby="tab-presentation-title">
+    <h2 id="tab-presentation-title">Folder presentation</h2>
+    <p class="note">Emoji, accent, display name, and order per folder. The preview card shows the saved accent.</p>
+    {% for row in folder_rows %}
+    <div class="folder-theme-row folder-accent-{{ row.slug }}">
+      <input type="hidden" name="folder_slug" value="{{ row.slug }}">
+      <strong class="folder-preview">{{ row.preview_label }} <span class="muted small mono">{{ row.slug }}</span></strong>
+      <label class="field">
+        <span class="field-label">Emoji</span>
+        <input type="text" name="folder_emoji" value="{{ row.emoji }}" maxlength="8">
+      </label>
+      <label class="field">
+        <span class="field-label">Display name</span>
+        <input type="text" name="folder_display_name" value="{{ row.display_name }}" placeholder="{{ row.name }}">
+      </label>
+      <div class="field">
+        <span class="field-label" id="accent-label-{{ row.slug }}">Accent</span>
+        <span class="accent-field">
+          <input type="color" value="{{ row.accent if row.accent and row.accent|length == 7 else '#4a7fd4' }}" data-accent-picker aria-labelledby="accent-label-{{ row.slug }}">
+          <input type="text" name="folder_accent" value="{{ row.accent }}" data-accent-text aria-labelledby="accent-label-{{ row.slug }}" placeholder="#4a7fd4">
+        </span>
       </div>
-      {% else %}
-      <p class="muted">No folders discovered yet — set newsletter root first, or add themes after a digest.</p>
-      {% endfor %}
+      <label class="field field-narrow">
+        <span class="field-label">Order</span>
+        <input type="number" name="folder_order" value="{{ row.order }}">
+      </label>
+      <article class="placeholder-card folder-accent-{{ row.slug }}">
+        <strong>{{ row.preview_label }}</strong>
+        <p class="muted">Sample newsletter · 3 min</p>
+        <p>Placeholder summary for appearance preview.</p>
+      </article>
     </div>
-  </section>
-
-  <section class="card-section">
-    <h2>Saved profiles</h2>
-    <p class="note">Built-ins <code>weekly</code> / <code>daily</code> are read-only. Add custom profiles (e.g. tech-only).</p>
-    {% for p in profiles if p.name not in ['weekly', 'daily'] %}
-    <div class="profile-row">
-      <input type="text" name="profile_name" value="{{ p.name }}">
-      <input type="number" name="profile_lookback" placeholder="lookback" value="{{ p.values.get('lookback_days', '') }}">
-      <input type="text" name="profile_folder" placeholder="folders" value="{{ (p.values.get('folder') or []) | join(', ') }}">
-      <input type="text" name="profile_effort" placeholder="effort" value="{{ p.values.get('effort', '') }}">
-      <select name="profile_ollama">
-        <option value="">LLM: default</option>
-        <option value="1" {% if p.values.get('ollama') is sameas true %}selected{% endif %}>LLM on</option>
-        <option value="0" {% if p.values.get('ollama') is sameas false %}selected{% endif %}>LLM off</option>
-      </select>
-      <label class="inline"><input type="checkbox" name="remove_profile" value="{{ p.name }}"> Remove</label>
-    </div>
+    {% else %}
+    <p class="muted">No folders discovered yet — set newsletter root first, or add themes after a digest.</p>
     {% endfor %}
-    <div class="profile-row">
-      <input type="text" name="profile_name" placeholder="new-profile-name">
-      <input type="number" name="profile_lookback" placeholder="lookback" value="7">
-      <input type="text" name="profile_folder" placeholder="e.g. tech">
-      <input type="text" name="profile_effort" placeholder="light">
-      <select name="profile_ollama">
-        <option value="">LLM: default</option>
-        <option value="1">LLM on</option>
-        <option value="0">LLM off</option>
-      </select>
+  </section>
+
+  <section class="tab-panel card-section" id="tab-profiles" aria-labelledby="tab-profiles-title">
+    <h2 id="tab-profiles-title">Saved profiles</h2>
+    <p class="note">Built-ins <code>weekly</code> / <code>daily</code> are read-only. Add custom profiles (e.g. tech-only). Leave the name blank to skip the new row.</p>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Lookback</th>
+            <th scope="col">Folders</th>
+            <th scope="col">Effort</th>
+            <th scope="col">LLM</th>
+            <th scope="col" class="check">Remove</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in profiles if p.name not in ['weekly', 'daily'] %}
+          <tr>
+            <td><input type="text" name="profile_name" value="{{ p.name }}" aria-label="Profile name"></td>
+            <td><input type="number" name="profile_lookback" placeholder="lookback" value="{{ p.values.get('lookback_days', '') }}" aria-label="Lookback days for {{ p.name }}"></td>
+            <td><input type="text" name="profile_folder" placeholder="folders" value="{{ (p.values.get('folder') or []) | join(', ') }}" aria-label="Folders for {{ p.name }}"></td>
+            <td><input type="text" name="profile_effort" placeholder="effort" value="{{ p.values.get('effort', '') }}" aria-label="Effort for {{ p.name }}"></td>
+            <td>
+              <select name="profile_ollama" aria-label="LLM for {{ p.name }}">
+                <option value="">default</option>
+                <option value="1" {% if p.values.get('ollama') is sameas true %}selected{% endif %}>on</option>
+                <option value="0" {% if p.values.get('ollama') is sameas false %}selected{% endif %}>off</option>
+              </select>
+            </td>
+            <td class="check"><input type="checkbox" name="remove_profile" value="{{ p.name }}" aria-label="Remove profile {{ p.name }}"></td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td><input type="text" name="profile_name" placeholder="new-profile-name" aria-label="New profile name"></td>
+            <td><input type="number" name="profile_lookback" placeholder="lookback" value="7" aria-label="New profile lookback days"></td>
+            <td><input type="text" name="profile_folder" placeholder="e.g. tech" aria-label="New profile folders"></td>
+            <td><input type="text" name="profile_effort" placeholder="light" aria-label="New profile effort"></td>
+            <td>
+              <select name="profile_ollama" aria-label="New profile LLM">
+                <option value="">default</option>
+                <option value="1">on</option>
+                <option value="0">off</option>
+              </select>
+            </td>
+            <td class="check"></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
-  <section class="card-section">
-    <h2>Personalisation</h2>
-    <label>Default landing page
-      <select name="landing_page">
-        {% for lp in landing_pages %}
-        <option value="{{ lp }}" {% if doc.loaded.ui.landing_page == lp %}selected{% endif %}>{{ lp }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Preferred output view
-      <select name="preferred_view">
-        {% for pv in preferred_views %}
-        <option value="{{ pv }}" {% if doc.loaded.ui.preferred_view == pv %}selected{% endif %}>{{ pv }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
+  <section class="tab-panel card-section" id="tab-personalisation" aria-labelledby="tab-personalisation-title">
+    <h2 id="tab-personalisation-title">Personalisation</h2>
+    <div class="grid-2">
+      <label class="field">
+        <span class="field-label">Default landing page</span>
+        <select name="landing_page">
+          {% for lp in landing_pages %}
+          <option value="{{ lp }}" {% if doc.loaded.ui.landing_page == lp %}selected{% endif %}>{{ lp }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Preferred output view</span>
+        <select name="preferred_view">
+          {% for pv in preferred_views %}
+          <option value="{{ pv }}" {% if doc.loaded.ui.preferred_view == pv %}selected{% endif %}>{{ pv }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label class="field-inline">
       <input type="hidden" name="onboarding_complete" value="0">
       <input type="checkbox" name="onboarding_complete" value="1" {% if doc.loaded.ui.onboarding_complete %}checked{% endif %}>
-      Setup complete (hide checklist emphasis)
+      <span>Setup complete (hide the first-run checklist)</span>
     </label>
+    <p class="note">Colour theme follows your system by default; use the Theme button in the header to force light or dark on this browser.</p>
   </section>
 
-  <p>
-    <button type="submit" class="primary">Preview effective diff</button>
-    <a class="button-link" href="{{ url_for('run.run_studio') }}">Open Run Studio</a>
-  </p>
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Preview changes</button>
+    <span class="muted small">Nothing is written until you confirm the diff on the next screen.</span>
+  </div>
 </form>
 {% endif %}
 {% endblock %}
