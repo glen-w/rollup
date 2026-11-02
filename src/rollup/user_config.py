@@ -17,6 +17,7 @@ from rollup.effort import (
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, parse_linkedin_config
 from rollup.reddit.config import RedditConfig, parse_reddit_config
+from rollup.attention.config import InterestConfig, parse_interest_config
 from rollup.scholar.config import ScholarConfig, parse_scholar_config
 
 if sys.version_info >= (3, 11):
@@ -58,7 +59,7 @@ UI_LANDING_PAGES = frozenset({"archive", "run", "settings"})
 UI_PREFERRED_VIEWS = frozenset({"html", "markdown", "entries"})
 
 TOP_LEVEL_KEYS = STICKY_KEYS | frozenset(
-    {"folders", "profiles", "ui", "efforts", "linkedin", "reddit", "scholar"}
+    {"folders", "profiles", "ui", "efforts", "linkedin", "reddit", "scholar", "interest"}
 )
 
 FOLDER_THEME_KEYS = frozenset({"emoji", "accent", "display_name", "order"})
@@ -85,6 +86,7 @@ class LoadedUserConfig:
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    interest: InterestConfig = field(default_factory=InterestConfig)
     sources: tuple[Path, ...] = ()
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -421,6 +423,10 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         scholar = parse_scholar_config(data.get("scholar"), path=path)
     except ValueError as exc:
         raise UserConfigError(str(exc)) from exc
+    try:
+        interest = parse_interest_config(data.get("interest"), path=path)
+    except ValueError as exc:
+        raise UserConfigError(str(exc)) from exc
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
@@ -430,6 +436,7 @@ def parse_toml_dict(data: Mapping[str, Any], *, path: Path) -> LoadedUserConfig:
         linkedin=linkedin,
         reddit=reddit,
         scholar=scholar,
+        interest=interest,
         sources=(path,),
     )
 
@@ -463,6 +470,7 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
     linkedin = overlay.linkedin if overlay.sources else base.linkedin
     reddit = overlay.reddit if overlay.sources else base.reddit
     scholar = overlay.scholar if overlay.sources else base.scholar
+    interest = overlay.interest if overlay.sources else base.interest
     return LoadedUserConfig(
         values=values,
         folder_themes=folder_themes,
@@ -472,6 +480,7 @@ def _merge_loaded(base: LoadedUserConfig, overlay: LoadedUserConfig) -> LoadedUs
         linkedin=linkedin,
         reddit=reddit,
         scholar=scholar,
+        interest=interest,
         sources=tuple(base.sources) + tuple(overlay.sources),
     )
 

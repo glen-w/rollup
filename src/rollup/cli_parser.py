@@ -124,6 +124,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Minimum messages to form a notification_stream group",
     )
+    dig.add_argument(
+        "--no-attention",
+        action="store_true",
+        default=False,
+        help="Skip attention ranking (inclusion is unchanged either way)",
+    )
+    dig.add_argument(
+        "--attention-report",
+        action="store_true",
+        default=False,
+        help="Print attention band counts to stdout",
+    )
+    dig.add_argument(
+        "--interest-file",
+        help="Replace [interest].profile with the contents of this file",
+    )
     ollama_group = dig.add_mutually_exclusive_group()
     ollama_group.add_argument(
         "--ollama",

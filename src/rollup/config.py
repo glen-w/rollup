@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from rollup.linkedin.config import LinkedInConfig
 from rollup.reddit.config import RedditConfig
+from rollup.attention.config import InterestConfig
 from rollup.scholar.config import ScholarConfig
 
 if TYPE_CHECKING:
@@ -99,6 +100,9 @@ class Config:
     no_reddit: bool = True
     reddit: RedditConfig = field(default_factory=RedditConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    interest: InterestConfig = field(default_factory=InterestConfig)
+    no_attention: bool = False
+    attention_report: bool = False
     reddit_refresh: bool = False
     linkedin_refresh: bool = False
 

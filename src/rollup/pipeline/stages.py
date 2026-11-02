@@ -521,6 +521,24 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         dated_items = summarize_result.dated_entries
         undated_items = summarize_result.undated_entries
 
+    attention_metadata = None
+    if not config.no_attention:
+        from rollup.attention.stage import apply_attention
+
+        complete = None
+        if effective_run.allow_attention_llm:
+            complete = _attention_complete(config)
+        dated_items, undated_items, attention_metadata = apply_attention(
+            tuple(dated_items),
+            tuple(undated_items),
+            interest=config.interest,
+            conn=session.conn,
+            snapshot=snapshot,
+            generated_at=generated_at,
+            allow_llm=effective_run.allow_attention_llm and complete is not None,
+            complete=complete,
+        )
+
     all_rendered = list(summarize_result.dated_entries) + list(
         summarize_result.undated_entries
     )
@@ -561,6 +579,7 @@ def _run_core_stages(session: _DigestSession) -> DigestRunResult | None:
         grouping_metadata=_grouping_metadata(grouping_result)
         if grouping.enabled
         else None,
+        attention_metadata=attention_metadata,
     )
 
     if effective_run.allow_group_summary_network:
@@ -637,3 +656,35 @@ def _grouping_metadata(grouping_result: GroupingResult):
         )
     except Exception:
         return None
+
+
+def _attention_complete(config):
+    """Return a ``complete(prompt) -> str`` callable, or None if LLM is unavailable."""
+    try:
+        from rollup.llm_client import CompletionRequest, get_llm_client
+    except Exception:
+        return None
+
+    def complete(prompt: str) -> str:
+        client = get_llm_client(
+            provider=config.llm_provider,
+            ollama_url=config.ollama_url,
+            allow_remote_ollama=config.allow_remote_ollama,
+            llm_api_base=config.llm_api_base,
+        )
+        model = config.llm_model or config.ollama_model
+        result = client.complete(
+            CompletionRequest(
+                model=model,
+                prompt=prompt,
+                stream=False,
+                timeout_seconds=60.0,
+                temperature=0.1,
+                response_format_json=True,
+            ),
+            max_output_chars=8_000,
+            show_progress=False,
+        )
+        return result.text
+
+    return complete

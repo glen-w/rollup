@@ -88,6 +88,7 @@ class EffectiveRun:
     allow_reddit_network: bool
     allow_webpage_network: bool
     allow_scholar_network: bool
+    allow_attention_llm: bool
     apply_policy: ApplyPolicy | None
 
     @property
@@ -121,6 +122,12 @@ def resolve_effective_run(
     allow_reddit_network = not run_options.dry_run and config.reddit_enabled
     allow_webpage_network = not run_options.dry_run and config.webpage_enabled
     allow_scholar_network = not run_options.dry_run and config.scholar.detailed
+    allow_attention_llm = (
+        not run_options.dry_run
+        and config.llm_enabled
+        and not config.no_attention
+        and config.interest.present
+    )
 
     return EffectiveRun(
         root=config.root,
@@ -191,6 +198,7 @@ def resolve_effective_run(
         allow_reddit_network=allow_reddit_network,
         allow_webpage_network=allow_webpage_network,
         allow_scholar_network=allow_scholar_network,
+        allow_attention_llm=allow_attention_llm,
         apply_policy=apply_policy,
     )
 

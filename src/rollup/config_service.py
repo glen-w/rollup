@@ -18,6 +18,7 @@ from rollup.effort import EFFORT_NAMES, EffortModelOverride
 from rollup.folder_theme import FolderThemeOverride
 from rollup.linkedin.config import LinkedInConfig, LinkedInSearch
 from rollup.reddit.config import RedditConfig, RedditSub
+from rollup.attention.config import InterestConfig
 from rollup.scholar.config import ScholarConfig
 from rollup.run_profiles import (
     DEFAULT_RUN_PROFILE,
@@ -83,6 +84,7 @@ class EffectiveConfigView:
     linkedin: LinkedInConfig = field(default_factory=LinkedInConfig)
     reddit: RedditConfig = field(default_factory=RedditConfig)
     scholar: ScholarConfig = field(default_factory=ScholarConfig)
+    interest: InterestConfig = field(default_factory=InterestConfig)
 
 
 @dataclass
@@ -99,6 +101,7 @@ class ConfigPatch:
     linkedin: LinkedInConfig | None = None
     reddit: RedditConfig | None = None
     scholar: ScholarConfig | None = None
+    interest: InterestConfig | None = None
 
 
 def compute_revision(path: Path) -> str:
@@ -186,6 +189,7 @@ def resolve_effective(
         linkedin=loaded.linkedin,
         reddit=loaded.reddit,
         scholar=loaded.scholar,
+        interest=loaded.interest,
     )
 
 
@@ -257,6 +261,9 @@ def validate_patch(patch: ConfigPatch, *, base: LoadedUserConfig) -> list[Valida
                 ),
                 "scholar": _scholar_to_raw(
                     patch.scholar if patch.scholar is not None else base.scholar
+                ),
+                "interest": _interest_to_raw(
+                    patch.interest if patch.interest is not None else base.interest
                 ),
             },
             path=Path("<patch>"),
@@ -357,6 +364,10 @@ def _scholar_to_raw(scholar: ScholarConfig) -> dict[str, Any]:
     }
 
 
+def _interest_to_raw(interest: InterestConfig) -> dict[str, Any]:
+    return {"profile": interest.profile}
+
+
 def _ui_to_raw(ui: UiPreferences) -> dict[str, Any]:
     return {
         "landing_page": ui.landing_page,
@@ -412,6 +423,14 @@ def effective_diff(
                 "scholar.max_fetches_per_run",
                 str(before.scholar.max_fetches_per_run),
                 str(after.scholar.max_fetches_per_run),
+            )
+        )
+    if before.interest.profile != after.interest.profile:
+        rows.append(
+            (
+                "interest.profile",
+                before.interest.profile or "(empty)",
+                after.interest.profile or "(empty)",
             )
         )
     effort_keys = sorted(
@@ -655,6 +674,10 @@ def _apply_patch_to_doc(
         scholar_table["max_papers_per_email"] = patch.scholar.max_papers_per_email
         scholar_table["max_fetches_per_run"] = patch.scholar.max_fetches_per_run
         doc["scholar"] = scholar_table
+    if patch.interest is not None:
+        interest_table = tomlkit.table()
+        interest_table["profile"] = patch.interest.profile
+        doc["interest"] = interest_table
 
 
 def _to_toml_value(value: Any) -> Any:
@@ -729,6 +752,7 @@ def patch_from_form_values(
     linkedin: LinkedInConfig | None = None,
     reddit: RedditConfig | None = None,
     scholar: ScholarConfig | None = None,
+    interest: InterestConfig | None = None,
 ) -> ConfigPatch:
     """Build a ConfigPatch from optional form fields (None = leave unchanged)."""
     values: dict[str, Any] = {}
@@ -787,6 +811,7 @@ def patch_from_form_values(
         linkedin=linkedin,
         reddit=reddit,
         scholar=scholar,
+        interest=interest,
     )
 
 

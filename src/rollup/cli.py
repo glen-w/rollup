@@ -131,6 +131,21 @@ def _resolve_linkedin_config(args: argparse.Namespace) -> LinkedInConfig:
     return linkedin
 
 
+def _resolve_interest_config(args: argparse.Namespace):
+    from pathlib import Path
+
+    from rollup.attention.config import InterestConfig, load_interest_file
+
+    loaded = getattr(args, "_loaded_user_config", None)
+    interest = getattr(loaded, "interest", None) or InterestConfig()
+    path = getattr(args, "interest_file", None)
+    if path:
+        from dataclasses import replace
+
+        return replace(interest, profile=load_interest_file(Path(path)))
+    return interest
+
+
 def _resolve_scholar_config(args: argparse.Namespace) -> ScholarConfig:
     loaded = getattr(args, "_loaded_user_config", None)
     scholar = getattr(loaded, "scholar", None) or ScholarConfig()
@@ -313,6 +328,9 @@ def _build_config(
         no_reddit=_resolve_no_reddit(args),
         reddit=_resolve_reddit_config(args),
         scholar=_resolve_scholar_config(args),
+        interest=_resolve_interest_config(args),
+        no_attention=getattr(args, "no_attention", False),
+        attention_report=getattr(args, "attention_report", False),
         reddit_refresh=getattr(args, "reddit_refresh", False),
         linkedin_refresh=getattr(args, "linkedin_refresh", False),
     )
@@ -862,6 +880,16 @@ def cmd_digest(args: argparse.Namespace) -> int:
                 )
             )
         )
+
+    if (
+        config.attention_report
+        and result.report is not None
+        and result.report.attention_metadata is not None
+        and not run_options.quiet
+    ):
+        from rollup.attention import format_attention_report
+
+        print(format_attention_report(result.report.attention_metadata))
 
     if result.error_message:
         print(

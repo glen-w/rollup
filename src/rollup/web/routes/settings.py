@@ -40,6 +40,7 @@ from rollup.effort import (
 from rollup.folder_theme import FolderThemeOverride, folder_display_name, folder_slug, theme_for
 from rollup.linkedin.config import LinkedInConfig, merge_linkedin_folder_themes
 from rollup.reddit.config import RedditConfig
+from rollup.attention.config import InterestConfig
 from rollup.scholar.config import (
     MAX_FETCHES_PER_RUN,
     MAX_PAPERS_PER_EMAIL,
@@ -131,6 +132,13 @@ def _reddit_enabled_from_form(base: RedditConfig) -> RedditConfig:
         time_filter=base.time_filter,
         subs=base.subs,
     )
+
+
+def _interest_from_form(base: InterestConfig) -> InterestConfig:
+    profile = request.form.get("interest_profile")
+    if profile is None:
+        return base
+    return InterestConfig(profile=profile.strip())
 
 
 def _scholar_from_form(base: ScholarConfig) -> ScholarConfig:
@@ -266,13 +274,16 @@ def _patch_from_request() -> ConfigPatch:
         base_linkedin = loaded.linkedin
         base_reddit = loaded.reddit
         base_scholar = loaded.scholar
+        base_interest = loaded.interest
     except Exception:
         base_linkedin = LinkedInConfig()
         base_reddit = RedditConfig()
         base_scholar = ScholarConfig()
+        base_interest = InterestConfig()
     linkedin = _linkedin_enabled_from_form(base_linkedin)
     reddit = _reddit_enabled_from_form(base_reddit)
     scholar = _scholar_from_form(base_scholar)
+    interest = _interest_from_form(base_interest)
     return patch_from_form_values(
         mail_root=request.form.get("mail_root"),
         root=request.form.get("root"),
@@ -300,6 +311,7 @@ def _patch_from_request() -> ConfigPatch:
         linkedin=linkedin,
         reddit=reddit,
         scholar=scholar,
+        interest=interest,
     )
 
 
@@ -433,6 +445,7 @@ def _settings_page_context(doc, effective, *, db=None) -> dict:
         "reddit": doc.loaded.reddit if doc else RedditConfig(),
         "scholar": doc.loaded.scholar if doc else ScholarConfig(),
         "scholar_modes": sorted(SCHOLAR_MODES),
+        "interest": doc.loaded.interest if doc else InterestConfig(),
         "preview_token": None,
         "diff_rows": None,
         "patch_summary": None,
@@ -500,6 +513,7 @@ def settings_preview():
             ),
             reddit=patch.reddit if patch.reddit is not None else doc.loaded.reddit,
             scholar=patch.scholar if patch.scholar is not None else doc.loaded.scholar,
+            interest=patch.interest if patch.interest is not None else doc.loaded.interest,
             sources=doc.loaded.sources,
         )
         if patch.remove_profiles:
@@ -515,6 +529,7 @@ def settings_preview():
                 linkedin=after_loaded.linkedin,
                 reddit=after_loaded.reddit,
                 scholar=after_loaded.scholar,
+                interest=after_loaded.interest,
                 sources=after_loaded.sources,
             )
         after = resolve_effective(after_loaded)

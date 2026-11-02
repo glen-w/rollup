@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rollup.attention.config import InterestConfig
 from rollup.config import Config
 from rollup.effective_run import EffectiveRun, resolve_effective_run
 from rollup.run_options import GroupingConfig, RunOptions
@@ -81,6 +82,7 @@ def test_effective_run_network_arms_disabled_by_dry_run() -> None:
     assert effective.allow_reddit_network is False
     assert effective.allow_webpage_network is False
     assert effective.allow_scholar_network is False
+    assert effective.allow_attention_llm is False
 
 
 def test_effective_run_network_arms_enabled_by_stage() -> None:
@@ -127,6 +129,7 @@ def test_effective_run_network_arms_respect_disabled_stages() -> None:
     assert effective.allow_reddit_network is False
     assert effective.allow_webpage_network is False
     assert effective.allow_scholar_network is False
+    assert effective.allow_attention_llm is False
     assert effective.apply_policy is None
 
 
@@ -140,6 +143,23 @@ def test_final_review_network_independent_of_no_ollama() -> None:
     assert effective.allow_summary_network is False
     assert effective.allow_final_review_network is True
     assert effective.allow_group_summary_network is False
+    assert effective.allow_attention_llm is False
+
+
+def test_attention_llm_requires_ollama_and_profile() -> None:
+    with_profile = resolve_effective_run(
+        _config(
+            no_ollama=False,
+            interest=InterestConfig(profile="local-first tools"),
+        ),
+        RunOptions(dry_run=False),
+    )
+    assert with_profile.allow_attention_llm is True
+    no_profile = resolve_effective_run(
+        _config(no_ollama=False),
+        RunOptions(dry_run=False),
+    )
+    assert no_profile.allow_attention_llm is False
 
 
 def test_webpage_network_on_by_default_when_not_dry_run() -> None:

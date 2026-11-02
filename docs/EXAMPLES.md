@@ -280,6 +280,22 @@ python -m rollup digest --ollama --scholar-mode detailed
 python -m rollup digest --scholar-mode detailed --dry-run   # parse papers, no HTTP
 ```
 
+## Interest profile / attention
+
+Rank or annotate without dropping mail. Empty `[interest].profile` still uses
+Quality and saved/dismissed signals when present.
+
+```toml
+[interest]
+profile = "I care about local-first tools and LLM evals."
+```
+
+```bash
+python -m rollup digest --no-ollama --interest-file ./interest.txt --attention-report
+python -m rollup digest --no-attention
+python -m rollup digest --no-ollama --attention-report
+```
+
 Or set mode and caps in **Settings → Google Scholar**. Registry source detail
 shows a banner when the source looks like Scholar.
 

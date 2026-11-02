@@ -33,7 +33,7 @@ source policy + publication integrity + multi-format digest output. See
 | LinkedIn / Reddit / webpages | TOML + GUI + opt-in CLI flags | Ingest transports for the collection window (not inboxes). Credentials in env only; payloads cached in `rollup.db`. Details: [CONFIG.md](CONFIG.md) |
 | Source policy | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface, grouping |
 | Summaries | Preview by default; LLM via `--ollama` | Entry summaries. Whole-digest QA is `--final-review` (independent of `--ollama`) |
-| Attention (planned) | Interest profile + ratings | Rank or annotate. Must **not** silently drop included material |
+| Attention | `[interest].profile` + Quality / saved / dismissed | Rank or annotate. Must **not** silently drop included material |
 
 ## Invariants
 

@@ -198,6 +198,14 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
   </section>
 
   <section class="card-section">
+    <h2>Interest profile</h2>
+    <p class="note">Short prose about what you care about. Ranking annotates the briefing (Start here / safely skip) and never drops included mail. Empty profile uses Quality, saved/dismissed, and source priority only.</p>
+    <label>Profile
+      <textarea name="interest_profile" rows="6" maxlength="8000" placeholder="I care about local-first tools, LLM evals, and shipping software. Background: crypto markets.">{{ interest.profile }}</textarea>
+    </label>
+  </section>
+
+  <section class="card-section">
     <h2>Folder presentation</h2>
     <p class="note">Emoji, accent, display name, and order. Preview uses placeholder cards.</p>
     <div class="folder-theme-grid">

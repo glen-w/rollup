@@ -54,7 +54,7 @@ asserted in tests. The sticky key `profile` is resolved via `--profile` /
 | `output` | `--output` |
 | `profile` | `--profile` (not sticky→argv body) |
 
-`[linkedin]`, `[reddit]`, `[scholar]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
+`[linkedin]`, `[reddit]`, `[scholar]`, `[interest]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
 separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled`
 still inject `--linkedin` / `--reddit` when neither enable nor disable flag is on
 the CLI. `[scholar].mode = "detailed"` (or `--scholar-mode detailed`) is mail
@@ -384,6 +384,28 @@ max_fetches_per_run = 40
 | `detailed` | Replace the alert card with one card per paper. Fetch each landing-page abstract (cached in `scholar_paper_bodies`). LLM summarises each paper when `--ollama` is on; otherwise the abstract excerpt is the preview. | HTTPS at digest time |
 
 CLI `--scholar-mode default|detailed` wins over TOML. Settings (`/settings`) has the same controls. Dry-run never fetches.
+
+## Interest profile (attention)
+
+Prose, not weights. Ranking annotates the briefing and **never drops** included
+mail. Empty profile uses Quality scores, saved/dismissed interaction, and
+source priority only; if those are empty too, every item is `worth_scanning`.
+
+```toml
+[interest]
+profile = """
+I care about local-first tools, LLM evals, and shipping software.
+Background: crypto markets, celebrity news.
+"""
+```
+
+CLI: `--interest-file PATH` replaces the TOML profile for that run.
+`--no-attention` skips ranking (inclusion still matches). `--attention-report`
+prints band counts. Optional LLM reband runs only with `--ollama` and a
+non-empty profile; failures keep the heuristic bands.
+
+Settings → Interest profile has the same textarea. Cutoffs are documented
+constants, not TOML knobs. See [design/briefing-arc.md](design/briefing-arc.md).
 
 `detailed` unwraps `scholar.google.com/scholar_url?url=…`, rewrites `arxiv.org/pdf/…` to `/abs/…`, and skips raw PDFs (`scholar_pdf_skipped` — email title/authors/snippet only). Fetch failures fall back to the email snippet (`scholar_fetch_failed`) and do not fail the digest. Papers stay in the Thunderbird folder section, standalone, with `message_key` `scholar:paper:<sha256(url)>` and the parent Scholar `source_key`. They are **not** added to the Articles queue.
 

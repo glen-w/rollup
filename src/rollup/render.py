@@ -149,6 +149,77 @@ def _sort_entries_by_read_time(
     return tuple(sorted(entries, key=key))
 
 
+def _sort_digest_items(items: tuple[DigestItem, ...]) -> tuple[DigestItem, ...]:
+    if not any(
+        getattr(entry, "attention_band", None) is not None
+        for entry in _iter_item_entries(items)
+    ):
+        return _sort_entries_by_read_time(items)
+    from rollup.attention.annotate import sort_items_by_attention
+
+    return sort_items_by_attention(items)
+
+
+def _iter_item_entries(items: tuple[DigestItem, ...]):
+    for item in items:
+        if isinstance(item, DigestGroup):
+            yield from item.entries
+        else:
+            yield item
+
+
+def _attention_chip_md(entry: DigestEntry) -> str:
+    band = entry.attention_band
+    if not band:
+        return ""
+    from rollup.attention.bands import BAND_LABELS
+
+    label = BAND_LABELS.get(band, band)
+    return f"- **Attention:** {label}"
+
+
+def _attention_chip_html(entry: DigestEntry) -> str:
+    band = entry.attention_band
+    if not band:
+        return ""
+    from rollup.attention.bands import BAND_LABELS
+
+    label = html_module.escape(BAND_LABELS.get(band, band))
+    return f"<span class='attention-chip attention-{html_module.escape(band)}'>{label}</span>"
+
+
+def _render_start_here_md(report: DigestReport) -> list[str]:
+    from rollup.attention.annotate import high_relevance_entries
+
+    entries = high_relevance_entries(report)
+    if not entries:
+        return []
+    lines = ["## Start here", ""]
+    for entry in entries:
+        p = entry.classified.parsed
+        lines.append(f"- **{p.subject}** — {_display_sender(p.sender)}")
+    lines.append("")
+    return lines
+
+
+def _render_start_here_html(report: DigestReport) -> str:
+    from rollup.attention.annotate import high_relevance_entries
+
+    entries = high_relevance_entries(report)
+    if not entries:
+        return ""
+    parts = ["<section class='start-here'><h2>Start here</h2><ul>"]
+    for entry in entries:
+        p = entry.classified.parsed
+        parts.append(
+            "<li><strong>"
+            f"{html_module.escape(p.subject)}</strong> — "
+            f"{html_module.escape(_display_sender(p.sender))}</li>"
+        )
+    parts.append("</ul></section>")
+    return "\n".join(parts)
+
+
 def _folder_slug(folder: str) -> str:
     return folder_slug(folder)
 
@@ -725,8 +796,11 @@ def _render_entry_md(
         f"- **From:** {p.sender} · **Date:** {_format_date(p.date_parsed)} · "
         f"**Read:** {_format_read_time(p.read_time_minutes)} · **Type:** {ntype}",
         f"- **Folder:** {_folder_display_name(p.folder_name, folder_themes)}",
-        "",
     ]
+    chip = _attention_chip_md(entry)
+    if chip:
+        lines.append(chip)
+    lines.extend(["",])
     if entry.summary:
         summary = clean_summary_output(entry.summary)
         if summary:
@@ -768,17 +842,18 @@ def render_markdown(
         f"_Week of {ws} to {we} · {total} newsletters_",
         "",
     ]
+    lines.extend(_render_start_here_md(report))
     lines.extend(_render_toc_md(report, folder_themes))
     for folder in sort_folder_names(report.dated_by_folder.keys(), folder_themes):
         entries = report.dated_by_folder[folder]
         lines.append(f"## {_folder_display_name(folder, folder_themes)}")
         lines.append("")
-        for item in _sort_entries_by_read_time(entries):
+        for item in _sort_digest_items(entries):
             lines.append(_render_item_md(item, max_display_links, folder_themes))
     if report.undated:
         lines.append("## Undated / needs review")
         lines.append("")
-        for item in _sort_entries_by_read_time(report.undated):
+        for item in _sort_digest_items(report.undated):
             lines.append(_render_item_md(item, max_display_links, folder_themes))
     lines.extend(_render_run_details_md(report))
     return "\n".join(lines).rstrip() + "\n"
@@ -808,9 +883,14 @@ def _render_entry_html(
         f"{html_module.escape(_display_sender(p.sender))} — "
         f"{_format_read_time(p.read_time_minutes)}"
     )
+    skip_class = (
+        " safely-skip" if entry.attention_band == "safely_skip" else ""
+    )
+    chip = _attention_chip_html(entry)
     parts = [
-        "<details class='newsletter-card' data-newsletter-card>"
-        f"<summary>{summary_line}</summary><div class='card-body'>"
+        f"<details class='newsletter-card{skip_class}' data-newsletter-card"
+        f" data-attention-band='{html_module.escape(entry.attention_band or '')}'>"
+        f"<summary>{summary_line}{chip}</summary><div class='card-body'>"
     ]
     parts.append(
         f"<p class='item-type'>{html_module.escape(_format_newsletter_type(ntype))}</p>"
@@ -901,6 +981,13 @@ def render_html(
         ".summary p{margin:0.5rem 0;}",
         ".link-domain{color:#666;font-size:0.9em;}",
         ".item-type{margin:0 0 0.75rem;font-size:0.9rem;color:#666;}",
+        ".start-here{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #cde;border-radius:6px;background:#f7fbff;}",
+        ".attention-chip{display:inline-block;margin-left:0.5rem;font-size:0.75rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:999px;background:#eee;color:#444;vertical-align:middle;}",
+        ".attention-high_relevance{background:#dceeff;color:#084;}",
+        ".attention-worth_scanning{background:#eee;color:#444;}",
+        ".attention-background{background:#f3f3f3;color:#666;}",
+        ".attention-safely_skip{background:#f6f0e8;color:#864;}",
+        "details.newsletter-card.safely-skip{opacity:0.85;}",
         ".digest-group{margin:1rem 0;padding:0.75rem 1rem;border:1px solid #ccc;border-radius:6px;}",
         ".group-chip{font-size:0.85rem;color:#555;margin:0.25rem 0 0.75rem;}",
         ".group-updates{margin:0.5rem 0;padding-left:1.25rem;}",
@@ -915,6 +1002,7 @@ def render_html(
         f"<img class='rollup-logo' src='{LOGO_FILENAME}' alt='{ROLLUP_TITLE} logo'>",
         "</header>",
         f"<p class='rollup-subhead'><em>{html_module.escape(window_label)} · {total} newsletters</em></p>",
+        _render_start_here_html(report),
         _render_toc_html(
             anchor_map,
             include_undated=bool(report.undated),
@@ -926,7 +1014,7 @@ def render_html(
         entries = report.dated_by_folder[folder]
         section_id = section_ids[folder]
         accent_class = _folder_accent_class(folder)
-        sorted_entries = _sort_entries_by_read_time(entries)
+        sorted_entries = _sort_digest_items(entries)
         body_parts.append(
             f"<section id='{html_module.escape(section_id)}' "
             f"class='folder-section {accent_class}'>"
@@ -941,7 +1029,7 @@ def render_html(
             "<section id='undated'><h2>Undated / needs review</h2>"
             f"{_render_section_byline_html(report.undated)}"
         )
-        for item in _sort_entries_by_read_time(report.undated):
+        for item in _sort_digest_items(report.undated):
             body_parts.append(_render_item_html(item, max_display_links))
         body_parts.append("</section>")
     body_parts.append(_render_run_details_html(report))

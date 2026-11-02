@@ -20,12 +20,10 @@ material at digest time; Rollup takes a window and produces the rollup.
    reference. The contract stays short and authoritative. Remaining work is
    keeping the split honest as features land. Briefing-layer invariants:
    [design/briefing-arc.md](design/briefing-arc.md).
-2. **Attention / relevance / skip-safely.** Explicit interest profiles (simple
-   prose, not dozens of weights) that rank or annotate entries: high relevance /
-   worth scanning / background / safely skip. **Preserve deterministic
-   inclusion** — ranking changes attention, never silently drops material.
-   Later, existing Quality / read / save / dismiss signals can inform the
-   model.
+2. **Attention / relevance / skip-safely.** **Shipped.** `[interest].profile`
+   plus Quality / saved / dismissed / source priority. Bands: high relevance /
+   worth scanning / background / safely skip. Ranking never silently drops
+   material. Optional LLM reband with `--ollama`.
 3. **Cross-source consolidation.** Detect redundancy, overlapping coverage,
    and recurring themes across newsletters, LinkedIn, Reddit, and articles in
    the same window. The briefing should say “this showed up three ways” rather
@@ -65,6 +63,7 @@ audience; doing it earlier risks becoming another generic inbox reader.
 - **Reddit + LinkedIn listing cache** (`rollup.db` schema v15): persist network listings; `--reddit-refresh` / `--linkedin-refresh` force a live pull
 - **Firefox Add to Rollup**: toolbar/context-menu capture into `webpage_queue` via `POST /articles/capture` (Bearer token in `{state_dir}/extension_token`). Ingest-only; `rollup web` must be running.
 - **Google Scholar detailed mode**: `[scholar].mode = "detailed"` / `--scholar-mode detailed` fetches paper landing pages from Scholar alert emails and summarises each paper (schema v16 cache). Default mode keeps alerts as `item_list` mail.
+- **Attention / skip-safely**: `[interest].profile`, `--interest-file`, `--no-attention`, `--attention-report`. Heuristic bands plus optional LLM reband. Start here / safely skip chrome. Inclusion invariant.
 
 ## Standing rule (network sources)
 
