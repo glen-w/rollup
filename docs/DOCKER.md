@@ -32,9 +32,9 @@ The override bind-mounts your host paths:
 | Host | Container | Purpose |
 |------|-----------|---------|
 | `~/.config/rollup/config.toml` | `/data/config/config.toml` | Sticky config (Settings / Reddit page writes here) |
-| `~/.config/rollup/env` | `/data/config/env` | LinkedIn cookies (never commit) |
+| `~/.config/rollup/env` | `/data/config/env` | LinkedIn cookies, optional Reddit OAuth, Gmail client id/secret (never commit) |
 | `~/Documents/rollup-outputs` | `/data/output` | Digests |
-| `./state` | `/data/state` | `rollup.db`, manifests, article queue |
+| `./state` | `/data/state` | `rollup.db`, manifests, article queue, `gmail_token.json` |
 | `./logs` | `/data/logs` | Run logs |
 | `~/email/gmail` | `/data/mail` | mbox (read-only) |
 
@@ -62,6 +62,7 @@ Non-path settings (folder themes, LinkedIn searches, Reddit subs, efforts) load 
 | LinkedIn | `~/.config/rollup/env` | Yes (when enabled; skipped when listing cache is fresh) |
 | Reddit | None (optional `ROLLUP_REDDIT_*` in env) | Yes (when `[reddit].enabled`; skipped when listing cache is fresh) |
 | Webpage articles | None | Yes (on fetch runs for pending URLs) |
+| Gmail labels | `ROLLUP_GMAIL_*` in env + `/data/state/gmail_token.json` | Yes (when `[gmail].enabled`; skipped when the label cache is fresh) |
 | Ollama on host | — | `host.docker.internal:11434` via `extra_hosts` |
 
 Default mail-only digest makes no network calls.

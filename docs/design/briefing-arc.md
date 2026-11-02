@@ -65,7 +65,7 @@ blocks. Reader bodies never appear in manifests.
 ## Non-goals (this arc)
 
 - Send-to-Kindle (optional network writer on the same seam)
-- RSS ingest, richer LinkedIn, Gmail API
+- RSS ingest, richer LinkedIn (Gmail read-only ingest shipped separately; not a briefing layer)
 - Embeddings / vector DB
 - Auto-unsubscribe or mutating Thunderbird
 - Dropping mail from the briefing

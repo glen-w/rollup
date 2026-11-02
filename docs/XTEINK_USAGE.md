@@ -54,5 +54,5 @@ rollup digest --xteink --ollama --effort high --lookback-days 7
 ## Third-party writers
 
 Packages can register additional writers via the `rollup.output_writers` entry
-point group (see README). Built-in names: `xteink`, `txt`, `json`, `epub` — see
-[OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+point group (see README). Built-in names: `xteink`, `txt`, `json`, `epub`, plus the
+optional destinations `opds` and `calibre` — see [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).

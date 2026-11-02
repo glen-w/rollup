@@ -36,6 +36,8 @@ ERROR: Another digest run is in progress (run_id=...)
 ```
 
 Stale locks (dead PID or older than 6 hours) are recovered automatically.
+`rollup doctor` reports a `run_lock` check: a held lock (pid, operation, run id)
+or a stale one that the next run will recover.
 
 ## Exit codes
 
@@ -43,7 +45,7 @@ Stale locks (dead PID or older than 6 hours) are recovered automatically.
 |------|---------|
 | 0 | Success (or dry-run success), including empty-window success and web-index-only degradation |
 | 1 | Hard failure (safety, lock, missing root, invalid config, no-input, required publication failure, no usable digest) |
-| 2 | Partial success — required dated digest usable, but material issues occurred |
+| 2 | Partial success — required dated digest usable, but material issues occurred. The CLI prints one `partial: <reasons>` line on stderr (for example `partial: optional writer, gmail`) and the manifest lists the same flags under `degradations` |
 
 Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `rollup.run_contracts`):
 
@@ -66,6 +68,8 @@ Degradation details (integrity matrix; see also [CONTRACT.md](CONTRACT.md) and `
 | LinkedIn-only run (`--folder linkedin:…`, no mbox) and fetch fails | 1 | Nothing published |
 | Reddit fetch fails; mail still publishes | 2 | Dated mail digest usable; Reddit section omitted; `reddit_fetch_failed` (or similar) in warnings |
 | Reddit-only run (`--folder reddit:…`, no mbox) and fetch fails | 1 | Nothing published |
+| Gmail label fetch fails; other sources still publish | 2 | Dated digest usable; stale label snapshot reused when available (`gmail_cache_stale`), otherwise label omitted (`gmail_fetch_failed`) |
+| Gmail-only run (no mbox / LinkedIn / Reddit / webpage input) and fetch fails | 1 | Nothing published |
 | High parse/summary error rates | 2 | Dated digest remains usable but incomplete or lower quality |
 
 **Irreversible boundary:** `latest.*`, seen-state, web index, and `success` status wait until every required dated artifact and required output writer has final paths. Manifest / web-index failures must not mark unpublished messages seen.
@@ -102,14 +106,21 @@ Optional Reddit script-app OAuth uses `ROLLUP_REDDIT_CLIENT_ID`,
 `ROLLUP_REDDIT_CLIENT_SECRET`, `ROLLUP_REDDIT_USERNAME`, and
 `ROLLUP_REDDIT_PASSWORD` in the same env file.
 
+Gmail ingest (`[gmail].enabled`) needs `ROLLUP_GMAIL_CLIENT_ID` /
+`ROLLUP_GMAIL_CLIENT_SECRET` in the env file and a one-time interactive
+`rollup gmail auth` run as the same user with the same `--state-dir`; the
+refresh token in `{state_dir}/gmail_token.json` is renewed automatically by
+scheduled runs. No browser is needed after that.
+
 See [CONFIG.md](CONFIG.md#linkedin-content-searches-optional).
 
 ## Listing cache vs weekly jobs
 
 Reddit and LinkedIn listings reuse SQLite snapshots for `fetch_ttl_hours`
-(default 24). A weekly job usually expires that window and fetches live. A
-daily job within 24 hours will skip the network unless you pass
-`--reddit-refresh` / `--linkedin-refresh` or set TTL to `0`.
+(default 24); Gmail label syncs default to 6 hours. A weekly job usually
+expires those windows and fetches live. A daily job within the window will
+skip the network unless you pass `--reddit-refresh` / `--linkedin-refresh` /
+`--gmail-refresh` or set the TTL to `0`.
 
 ## launchd (preferred on macOS)
 
@@ -182,7 +193,11 @@ source of truth:
    publication fails, because the dated digest exists.
 4. Write the run manifest. `dated_outputs_written` records whether the dated
    Markdown + HTML outputs were written; `latest_outputs_updated` records whether
-   the latest aliases moved.
+   the latest aliases moved; `degradations` lists the partial-exit flags and
+   `lifecycle_events` the ordered publication steps that ran.
+
+Dated files are written **before** the previous batch is moved into
+`output_dir/archive/`, so a crash mid-publish cannot leave the output root empty.
 
 Readers still accept the legacy manifest key `outputs_published` as an alias for
 `dated_outputs_written`, but new manifests write `dated_outputs_written`.

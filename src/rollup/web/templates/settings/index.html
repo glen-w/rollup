@@ -133,7 +133,7 @@ Saves write to <code>{{ doc.path }}</code>; cwd <code>rollup.toml</code> wins on
 
   <section class="card-section">
     <h2>Outputs</h2>
-    <p class="note">Markdown and HTML are always written. Add-ons (xteink / txt / json / epub) are optional.</p>
+    <p class="note">Markdown and HTML are always written. Add-ons (xteink / txt / json / epub) and destinations (opds / calibre) are optional.</p>
     {% set outs = sticky.get('output') or ['all'] %}
     <label>
       <input type="radio" name="output_mode" value="all" {% if outs == ['all'] or not outs %}checked{% endif %}>

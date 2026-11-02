@@ -54,11 +54,11 @@ asserted in tests. The sticky key `profile` is resolved via `--profile` /
 | `output` | `--output` |
 | `profile` | `--profile` (not sticky→argv body) |
 
-`[linkedin]`, `[reddit]`, `[scholar]`, `[calibre]`, `[interest]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
-separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled`
-still inject `--linkedin` / `--reddit` when neither enable nor disable flag is on
-the CLI. `[scholar].mode = "detailed"` (or `--scholar-mode detailed`) is mail
-enrichment, not a new ingest source.
+`[linkedin]`, `[reddit]`, `[gmail]`, `[scholar]`, `[calibre]`, `[interest]`, `[folders]`, `[profiles.*]`, `[efforts.*]`, and `[ui]` are
+separate TOML tables, not sticky keys. `[linkedin].enabled` / `[reddit].enabled` /
+`[gmail].enabled` still inject `--linkedin` / `--reddit` / `--gmail` when neither
+enable nor disable flag is on the CLI. `[scholar].mode = "detailed"` (or
+`--scholar-mode detailed`) is mail enrichment, not a new ingest source.
 
 Scheduler helpers use a **separate** `cron_helpers.build_scheduled_digest_argv` (paths +
 `--cron`); do not confuse it with the sticky registry.
@@ -96,8 +96,13 @@ output = ["json", "txt"]   # subset
 drop_dir = "~/Calibre Library/auto-add"  # optional; skipped when unset
 ```
 
-`opds` is optional (partial on failure) and also served at loopback `GET /opds`.
-See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+`opds` and `calibre` are **destination** writers: optional (failure is partial,
+exit 2, not a hard stop). `opds` is also served at loopback `GET /opds` while
+`rollup web` runs. `calibre` copies every artifact of the run (EPUB, Atom, HTML,
+Markdown, JSON, TXT, XTEINK) into `drop_dir`, which must sit outside the mail
+root; `rollup doctor` checks it. See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+
+![Settings → Outputs: all discovered writers, Markdown/HTML only, or a subset](images/web-settings-outputs.png)
 
 ## Folder themes
 
@@ -376,10 +381,10 @@ Labels become digest folders. With `label_prefix = "Newsletters"`, label `Newsle
 [gmail]
 enabled = true
 label_prefix = "Newsletters"        # take every label underneath; strip it from folder names
-# labels = ["Digests", "Work/Weekly"]  # and/or explicit labels
+# labels = ["Digests", "Work/Weekly"]  # and/or explicit labels (max 100)
 # strip_prefix = "Newsletters"       # defaults to label_prefix
-fetch_ttl_hours = 6                  # reuse the label sync within this window; 0 = always sync
-max_messages_per_label = 200         # per run (max 1000)
+fetch_ttl_hours = 6                  # reuse the label sync within this window (0–168); 0 = always sync
+max_messages_per_label = 200         # newest first, per label (1–1000)
 # extra_query = "-label:muted"       # appended to the Gmail search used for the window
 ```
 
@@ -392,23 +397,27 @@ Credentials never live in TOML. Create an OAuth client in Google Cloud (**APIs &
 ROLLUP_GMAIL_CLIENT_ID=…apps.googleusercontent.com
 ROLLUP_GMAIL_CLIENT_SECRET=…
 
-rollup gmail auth              # opens a browser; loopback redirect on 127.0.0.1
+rollup gmail auth              # opens a browser; loopback redirect on 127.0.0.1 (PKCE)
+rollup gmail auth --no-browser # print the authorisation URL instead of opening a browser
 rollup gmail auth --manual     # SSH / containers: paste the redirect URL instead
-rollup gmail labels            # list labels; * marks the ones your config selects
-rollup gmail status            # offline: credentials, token, label cache
+rollup gmail labels            # list labels (network); * marks the ones your config selects, with folder names
+rollup gmail status            # offline: credentials, token scope, label cache
 ```
 
-The only scope requested is `gmail.readonly`; the refresh token is written to `{state_dir}/gmail_token.json` (mode 600). `rollup doctor` reports a `gmail_auth` check when Gmail is enabled.
+The only scope requested is `gmail.readonly`; the refresh token is written to `{state_dir}/gmail_token.json` (mode 600). A token granted with any other scope is refused — revoke Rollup at `myaccount.google.com/permissions` and re-run `auth` (also the fix when Google returns no refresh token). `rollup doctor` reports a `gmail_auth` check when Gmail is enabled.
 
 ### Behaviour
 
 - Enable: `[gmail].enabled = true` and/or `rollup digest --gmail`. `--no-gmail` turns it off for a run.
 - Sync per label: `messages.list` for the lookback window (`after:` padded by a day) then `messages.get?format=raw` **only for ids not already cached**. Raw mail is stored zlib-compressed in `rollup.db` (schema **v18**, `gmail_messages` / `gmail_label_sync`); payloads over 2 MB are skipped; raw rows older than 120 days are swept.
-- `fetch_ttl_hours` (default `6`) serves a label from cache without any API call; `--gmail-refresh` forces a sync. On failure a stale snapshot is reused (`gmail_cache_stale`), otherwise `gmail_fetch_failed` marks the run **partial** (exit 2). Gmail-only runs with nothing fetched hard-fail (exit 1).
+- `fetch_ttl_hours` (default `6`) serves a label from cache without any API call; `--gmail-refresh` forces a sync. On failure a stale snapshot is reused (`gmail_cache_stale`), otherwise `gmail_fetch_failed` marks the run **partial** (exit 2). Gmail-only runs with nothing fetched hard-fail (exit 1). Missing credentials or token add `gmail_no_credentials` / `gmail_no_token` warnings instead of calling the network.
+- `--folder` / `--exclude-folder` take the mapped folder names (`tech`, not `Newsletters/tech`).
 - A Gmail-only setup may have no local mbox root at all; `--root` is tolerated missing when Gmail is enabled and configured.
 - Rollup never modifies Gmail: no label changes, no read state, GET-only client.
 - `--dry-run` and web **GET** never contact Gmail; dry-run reports which labels would sync or be served from cache.
 - Settings page: enable, label prefix, explicit labels, plus an offline credentials/token/cache summary.
+
+![Settings → Gmail card](images/web-settings-gmail.png)
 
 ## Webpage articles (optional)
 
@@ -509,12 +518,15 @@ If `root` / `mail_root` are not set in config or CLI:
 2. Otherwise scan macOS Thunderbird profiles for a single `Newsletters.sbd`.
 3. If zero or multiple candidates are found, set paths explicitly (doctor explains how).
 
+A Gmail-only setup (`[gmail]` configured and enabled, no local mbox) may leave
+`root` pointing at a directory that does not exist; the run warns and continues.
+
 ## Related
 
 - Product contract: [CONTRACT.md](CONTRACT.md)
 - Comparison: [COMPARISON.md](COMPARISON.md)
 - Roadmap: [ROADMAP.md](ROADMAP.md)
-- Web UI (Settings + Run Studio + Articles + LinkedIn + Reddit): [WEB.md](WEB.md)
+- Web UI (Settings + Run Studio + Articles + LinkedIn + Reddit + Gmail card): [WEB.md](WEB.md)
 - Docker (default deploy): [DOCKER.md](DOCKER.md)
 - Source policy (per-newsletter overrides): [SOURCES.md](SOURCES.md)
 - Examples: [EXAMPLES.md](EXAMPLES.md)

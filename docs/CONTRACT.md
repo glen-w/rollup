@@ -6,7 +6,9 @@ worth reading — without becoming the store of record for those sources.
 
 Thunderbird **owns the ongoing stream**. Rollup takes a time window and
 produces **the rollup**. You do not need a special newsletter address, a
-second mailbox, or to make Rollup authoritative for subscriptions.
+second mailbox, or to make Rollup authoritative for subscriptions. Where the
+newsletters live in Gmail labels instead of a local mbox, the optional
+read-only Gmail backend reads those labels under the same rules.
 
 Optional **LinkedIn**, **Reddit**, and **webpage** sources add material at
 digest time. They are ingest transports, not inboxes: no continuous feed, no
@@ -28,7 +30,7 @@ source policy + publication integrity + multi-format digest output. See
 
 | Layer | Owner | Responsibility |
 |-------|--------|----------------|
-| Filing | Thunderbird message filters | Move newsletters into folders under a `.sbd` tree |
+| Filing | Thunderbird message filters (or Gmail filters → labels) | Move newsletters into folders under a `.sbd` tree, or into labels under `[gmail].label_prefix` |
 | Window & folders | Run profile / CLI / TOML | Which calendar days and which folders enter the digest |
 | LinkedIn / Reddit / webpages | TOML + GUI + opt-in CLI flags | Ingest transports for the collection window (not inboxes). Credentials in env only; payloads cached in `rollup.db`. Details: [CONFIG.md](CONFIG.md) |
 | Source policy | `rollup sources` (SQLite) | Enable/disable, priority, type override, always-surface, grouping |
@@ -39,7 +41,8 @@ source policy + publication integrity + multi-format digest output. See
 
 These do not change without an explicit contract revision:
 
-- Never write, delete, or rename anything under the mail root
+- Never write, delete, or rename anything under the mail root; the Gmail
+  backend requests only `gmail.readonly` and calls only `GET` endpoints
 - Default `rollup digest` makes **no network calls**
 - LLM summarisation is opt-in (`--ollama`). `--final-review` calls a model
   independently and does **not** require `--ollama`. Google Scholar `detailed`

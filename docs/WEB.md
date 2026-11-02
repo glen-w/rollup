@@ -18,6 +18,8 @@ Local, single-user browser UI for browsing digests, rating emails, reviewing new
 | `/admin` | Read-only health + body maintenance |
 | `/opds` | OPDS 1.2 catalog of published briefings (e-readers; loopback) |
 
+![Archive: indexed digests with run stats and artifact links](images/web-archive.png)
+
 ## Install / start
 
 ### Default: Docker
@@ -64,17 +66,23 @@ Sticky TOML paths/profile defaults apply to `rollup web` the same way as digest 
 
 ## Configuration Centre (`/settings`)
 
-Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers, LinkedIn/Reddit enablement (manage searches and subs on their own pages), **Google Scholar mode** (`default` vs `detailed` paper fetch), **interest profile** (attention / skip-safely prose), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
+![Settings: first-run checklist and path validation](images/web-settings.png)
+
+Edit sticky digest configuration in the browser: paths (with containment validation), default profile / lookback / folders / grouping, LLM enablement (`ollama` sticky) + provider/model + effort + **per-effort model ladders** + summary profile, output writers (add-ons plus the optional `opds` / `calibre` destinations), LinkedIn/Reddit enablement (manage searches and subs on their own pages), **Gmail** ingest (enable, label prefix, explicit labels, offline credentials / token / cache status — authorisation itself is `rollup gmail auth` on the CLI), **Google Scholar mode** (`default` vs `detailed` paper fetch), **interest profile** (attention / skip-safely prose), folder presentation (emoji / accent / display name / order), saved `[profiles.*]`, and `[ui]` personalisation. API keys and `--llm-api-base` are never sticky. Cookie copy + run: [EXAMPLES.md](EXAMPLES.md#linkedin-content-searches-opt-in-network).
 
 Saves are previewed as an effective-config diff, confirmed with a one-time maintenance token, validated, backed up, and persisted atomically with optimistic concurrency (revision mismatch → re-preview). Digest settings are **not** stored in SQLite.
 
 ## Run Studio (`/run`)
 
-Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, LinkedIn search count when enabled, enabled Reddit subs, **articles in lookback**, writers, LLM enablement / provider privacy hints), dry-run discovery, then run a real digest as a **background subprocess** (single in-memory active-run slot — not a scheduler). The result page shows a live progress bar and log tail via polling `GET /run/status`; when the run finishes, the page refreshes to artifact links. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`), including `--linkedin` when `[linkedin].enabled` and `--reddit` when `[reddit].enabled` are set. The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
+![Run Studio workflow: compose, review the effective run, run, open artifacts](images/run-studio-workflow.gif)
+
+Guided digest composer: pick a profile or temporary overrides, inspect the effective run (matched folders, LinkedIn search count when enabled, enabled Reddit subs, **articles in lookback**, writers, LLM enablement / provider privacy hints), dry-run discovery, then run a real digest as a **background subprocess** (single in-memory active-run slot — not a scheduler). The result page shows a live progress bar and log tail via polling `GET /run/status` (phases include LinkedIn / Reddit / Gmail sync, parsing, summarising, writing); when the run finishes, the page refreshes to artifact links. Exit 2 runs show the `partial: …` reasons from the log. Argv is built from the same sticky↔CLI registry as the CLI (`config_service.build_digest_argv` / `sticky_flags`), including `--linkedin` when `[linkedin].enabled` and `--reddit` when `[reddit].enabled` are set. The equivalent CLI / sample cron line is shown for automation (see [CRON.md](CRON.md)).
 
 **Single-model run:** Compose includes a checkbox that forces every summary profile (plus group/fallback and final review) onto one model for that run only (`--single-model`, not sticky). When the LLM provider is Ollama, the dropdown is filled from local tags via `POST /run/ollama-models` (CSRF). GET `/run` never contacts Ollama. If Ollama is unreachable, the control falls back to a text field. LiteLLM uses a text field. Checking the box also enables LLM summaries (`--ollama`).
 
 ## Article library (`/articles`)
+
+![Articles: add a URL, copy the Firefox capture token, pending / failed / saved lists](images/web-articles.png)
 
 Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage_queue`), not TOML. The next digest fetches each new page at runtime (folder `webpage:queue`), caches the body, and includes the article when it was **saved within the lookback window** (same caching pattern as mail). Failed fetches stay **failed** for retry from the GUI. Pass `--no-webpage` on the CLI to skip. SSRF checks apply to user-supplied URLs.
 
@@ -82,7 +90,9 @@ Add HTTPS article URLs for digest inclusion. URLs are stored in SQLite (`webpage
 
 ## Search (`/search`)
 
-Full-text search over the convenience cache (`message_corpus_fts`, schema v17): reader bodies, titles, and summaries. `GET /search?q=` is CSRF-free and read-only. Ask Rollup (`POST /ask`) retrieves top FTS hits and may only answer from those excerpts; empty hits return a fixed refuse message. Ask is hidden until sticky `ollama = true`. No conversation memory.
+![Search: FTS hits over cached bodies, titles, and summaries; Ask appears once LLM summaries are enabled](images/web-search.png)
+
+Full-text search over the convenience cache (`message_corpus_fts`, added in schema v17): reader bodies, titles, and summaries. `GET /search?q=` is CSRF-free and read-only. Ask Rollup (`POST /ask`) retrieves top FTS hits and may only answer from those excerpts; empty hits return a fixed refuse message. Ask is hidden until sticky `ollama = true`. No conversation memory.
 
 ## LinkedIn (`/linkedin`)
 
@@ -100,6 +110,8 @@ Admin deep diagnostics are **POST-only** (`POST /admin/deep-check` with CSRF). D
 
 ## Admin observability
 
+![Admin: read-only doctor, schema version, recent runs](images/web-admin.png)
+
 Local **Admin** (`/admin`) shows panel-isolated health: web process settings, default digest effective configuration (pure config resolver), read-only doctor, schema, recent runs (index + bounded manifesto scan), and reader-body aggregates plus maintenance.
 
 **Incomplete manifesto history:** a run whose manifesto write failed completely cannot be discovered through manifesto scanning. Do not treat the Admin run list as a complete failure log.
@@ -107,6 +119,8 @@ Local **Admin** (`/admin`) shows panel-isolated health: web process settings, de
 Manifest diagnostics are allowlisted, truncated, and redacted (no subjects, senders, bodies, URLs, or absolute paths). Directory listing is capped (`max_dir_entries`); candidates are parsed then sorted by persisted timestamp before retaining `max_files`.
 
 ## Source registry
+
+![Registry: enable / disable, always-surface, bulk actions, per-source manage links](images/web-registry.png)
 
 - **Quality** (`/sources`): Bayesian ranking / content browsing, plus live suggestion cards
 - **Registry** (`/sources/registry`): enable/disable, priority, always-surface, overrides, bulk actions, same suggestion cards
@@ -117,6 +131,8 @@ Manifest diagnostics are allowlisted, truncated, and redacted (no subjects, send
 ## Reader bodies
 
 Pipeline indexing stores plaintext bodies in `message_reader_bodies` when a digest run indexes entries. In the web UI, each entry card offers **Read newsletter** (lazy expander + full-page fallback at `/messages/<opaque>/body`).
+
+![Rollup detail: run stats, folder index, and entry cards with rating / read / source profile controls](images/web-rollup-detail.png)
 
 CLI maintenance:
 
@@ -145,7 +161,7 @@ Digest holds the run lock file; web rating/policy writes use short SQLite transa
 
 ## Backup
 
-Back up `{state_dir}/rollup.db` (and optionally `web_secret` and `extension_token`) to preserve ratings, interaction state, and extension pairing. Back up your `config.toml` (Settings also keeps `.bak` and timestamped copies under `config-backups/`).
+Back up `{state_dir}/rollup.db` (and optionally `web_secret`, `extension_token`, and `gmail_token.json`) to preserve ratings, interaction state, extension pairing, and Gmail authorisation. Back up your `config.toml` (Settings also keeps `.bak` and timestamped copies under `config-backups/`).
 
 ## Related
 

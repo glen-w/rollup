@@ -31,7 +31,8 @@ the combination of:
 - **durable source policy** (identities, mute, priority, type, grouping)
 - **publication integrity** (staged artifacts, irreversible `latest.*` /
   seen-state, partial-failure exit codes)
-- **multi-format digest output** (Markdown, HTML, EPUB, e-ink, JSON, TXT)
+- **multi-format digest output** (Markdown, HTML, EPUB, e-ink, JSON, TXT) plus
+  reading destinations (OPDS catalog, Calibre drop folder)
 
 The pitch is not “the self-hosted AI newsletter reader”. That niche now has
 competitors. The pitch is:
@@ -74,9 +75,11 @@ themes, redundancy, and “what can I safely skip?” See [ROADMAP.md](ROADMAP.m
 
 Starting from the existing Thunderbird store without becoming another mailbox is
 still unusual. Thunderbird filters file mail into folders; Rollup digests those
-folders. Optional LinkedIn, Reddit, and webpage sources are ingest transports
+folders (or, with the Gmail backend, the Gmail labels you already file into). Optional LinkedIn, Reddit, and webpage sources are ingest transports
 for the same window; they are not inboxes, and they do not replace that contract.
 
-Gmail API ingestion is [post-1.0](ROADMAP.md): it would expand the audience, but
-doing it before the briefing experience itself is distinct risks turning Rollup
-into another generic inbox reader.
+Gmail API ingestion shipped as an **opt-in, read-only backend** ([ROADMAP](ROADMAP.md)):
+configured labels map to folders and raw mail runs through the same parser as
+mbox. It is off by default and never writes to Gmail, so it widens the audience
+without turning Rollup into another generic inbox reader. Thunderbird mbox
+remains primary.

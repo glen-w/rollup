@@ -16,6 +16,8 @@ Docker Compose** — see [DOCKER](DOCKER.md); host Python / venv is advanced.
 The GitHub [README](https://github.com/glen-w/rollup#readme) is the same
 first-run story.
 
+![The rollup: a bounded HTML briefing](images/briefing-html.png)
+
 ```{toctree}
 :maxdepth: 2
 :caption: Start here

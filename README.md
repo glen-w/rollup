@@ -8,10 +8,12 @@ Local-first personal briefing engine. Turn the sources you deliberately follow
 into a calm, high-quality periodic digest — without surrendering the underlying
 data or your choice of inference.
 
-Rollup reads newsletters from your existing Thunderbird mbox store (and optional
-LinkedIn, Reddit, and webpage sources), classifies them, and writes **the
-rollup** — Markdown, HTML, and optional EPUB / e-ink artifacts — without
-modifying any mail.
+Rollup reads newsletters from your existing Thunderbird mbox store (or
+read-only Gmail labels, plus optional LinkedIn, Reddit, and webpage sources),
+classifies them, and writes **the rollup** — Markdown, HTML, and optional
+EPUB / e-ink / OPDS artifacts — without modifying any mail.
+
+![The rollup: a bounded HTML briefing with a glance, contents, and per-folder sections](docs/images/briefing-html.png)
 
 Thunderbird owns the ongoing stream. Rollup takes a time window and produces a
 **bounded reading object**. It is not an RSS reader: there is no unread count,
@@ -38,6 +40,8 @@ open http://localhost:8765
 
 Configure paths and run digests from the UI (Settings / Run Studio). Details: [docs/DOCKER.md](docs/DOCKER.md).
 
+![Run Studio: compose a run, check the effective configuration, run the digest, open the artifacts](docs/images/run-studio-workflow.gif)
+
 The stranger proof does not use `docker-compose.override.yml` and does not need Ollama. **Preview** is the default digest mode (`rollup digest` with no `--ollama`); it is not a dry-run. Thunderbird mbox is the primary input; an optional read-only Gmail API backend (`[gmail]`, `rollup gmail auth`) feeds the same parser.
 
 ```bash
@@ -54,8 +58,8 @@ Host Python / venv install is an advanced alternative — see [Install](#install
 | Doc | Purpose |
 |-----|---------|
 | [docs/DOCKER.md](docs/DOCKER.md) | Default deploy (Compose; host config/state/output mounts) |
-| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Scholar) |
-| [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / webpage / Scholar, effort ladders |
+| [docs/EXAMPLES.md](docs/EXAMPLES.md) | Runnable commands (inventory, digest, web, cron, LinkedIn, Reddit, Gmail, Scholar, OPDS / Calibre) |
+| [docs/CONFIG.md](docs/CONFIG.md) | TOML sticky config, profiles, paths, LinkedIn / Reddit / Gmail / webpage / Scholar, effort ladders |
 | [docs/WEB.md](docs/WEB.md) | Local web UI (Archive, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
 | [extension/firefox/README.md](extension/firefox/README.md) | Firefox Add to Rollup (temporary add-on) |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Product contract and publication integrity |
@@ -84,7 +88,7 @@ All output, state, and logs are written outside the mail store.
 ## Requirements
 
 - **Docker Desktop** (or Docker Engine + Compose v2) for the default deploy
-- Thunderbird mbox format (not Maildir)
+- Thunderbird mbox format (not Maildir) — or Gmail labels via the optional read-only Gmail API ingest
 - **No Ollama server required** for the default digest workflow
 - Python 3.10+ only if you use the host/venv install below
 
@@ -121,8 +125,8 @@ rollup web --open
 Do not run native `rollup web` and Docker web at the same time (shared `state/rollup.db`).
 
 The default `rollup digest` uses preview excerpts only and makes **no network
-calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
-`--scholar-mode detailed`, or `--ollama`.
+calls** unless you opt in with `--linkedin`, `--reddit`, `--gmail`, webpage queue
+fetches, `--scholar-mode detailed`, or `--ollama`.
 
 ## Network policy
 
@@ -153,6 +157,7 @@ calls** unless you opt in with `--linkedin`, `--reddit`, webpage queue fetches,
 | `bodies` | Reader-body cache stats, check, backfill, prune |
 | `search` | Full-text search over cached reader bodies, titles, and summaries |
 | `ask` | Grounded question over search hits (requires `--ollama`) |
+| `gmail` | Read-only Gmail ingest: `auth` (one-time OAuth), `labels`, `status` |
 | `web` | Local loopback UI (Archive, Search, Settings, Run Studio, Articles, LinkedIn, Reddit, Admin) |
 
 Runnable recipes: [docs/EXAMPLES.md](docs/EXAMPLES.md). Flag and TOML reference: [docs/CONFIG.md](docs/CONFIG.md). `rollup digest --help` is the complete flag list.
@@ -163,7 +168,9 @@ Default MD/HTML stay in core. Niche formats attach as **output writers** after
 the digest report is built. **By default every discovered writer runs**; pass
 `--output NAME` to select a subset, or `--output none` for Markdown/HTML only.
 
-Built-in writers: **`xteink`**, **`txt`**, **`json`**, **`epub`** — see
+Built-in writers: **`xteink`**, **`txt`**, **`json`**, **`epub`**, plus the
+optional destinations **`opds`** (also served at `GET /opds`) and **`calibre`**
+(drop folder; needs `[calibre].drop_dir`) — see
 [docs/OUTPUT_WRITERS.md](docs/OUTPUT_WRITERS.md).
 
 ## Modes
@@ -203,11 +210,11 @@ CLI (rollup / python -m rollup)
   cli_parser + sticky_flags + user_config (TOML)
        │
        ├─ digest → pipeline.run_digest
-       │     mbox discovery  +  linkedin/  +  reddit/  +  webpage/  +  scholar/
+       │     mbox discovery  +  gmail/  +  linkedin/  +  reddit/  +  webpage/  +  scholar/
        │     parse → classify → filter / grouping
        │     summarize (preview excerpts, or --ollama / LiteLLM)
        │     render MD/HTML → output writers → publication
-       │     state/rollup.db (schema v17) + manifests + web index
+       │     state/rollup.db (schema v18) + manifests + web index
        │
        └─ web → rollup.web (Flask; [web] extra)
              Archive · Run Studio · Settings · Articles · LinkedIn · Reddit
@@ -216,7 +223,7 @@ CLI (rollup / python -m rollup)
 
 CLI flags always win over TOML. Settings and Run Studio use the same sticky registry (`config_service` / `sticky_flags`). Network listings persist in SQLite and reuse within `fetch_ttl_hours`.
 
-Every non-dry-run digest writes a privacy-safe JSON manifest under `state/manifests/`. Exit codes are `0` for success, `1` for hard failure, and `2` for a usable digest with material degradation — see [docs/CRON.md](docs/CRON.md#exit-codes).
+Every non-dry-run digest writes a privacy-safe JSON manifest under `state/manifests/` (including `degradations` and `lifecycle_events`). Exit codes are `0` for success, `1` for hard failure, and `2` for a usable digest with material degradation; exit 2 also prints a one-line `partial: …` summary on stderr — see [docs/CRON.md](docs/CRON.md#exit-codes).
 
 ## Project layout
 
@@ -225,10 +232,12 @@ src/rollup/                       # package source
 src/rollup/cli.py                 # command handlers; re-exports build_parser
 src/rollup/pipeline/              # digest orchestration (`run_digest` plus types/status/ingest/stages/publish)
 src/rollup/state/                 # SQLite schema, migrations, and caches (`init_db` public API)
+src/rollup/gmail/                 # optional read-only Gmail API ingest (auth, session, cache)
+src/rollup/addons/                # destination writers (opds, calibre)
 src/rollup/web/                   # optional Flask UI ([web] extra)
 extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data
-docs/                             # CONFIG, WEB, CONTRACT, COMPARISON, ROADMAP, …
+docs/                             # CONFIG, WEB, CONTRACT, COMPARISON, ROADMAP, images/, …
 website/                          # public landing; Sphinx guide assembled beside it
 CHANGELOG.md                      # release notes
 ```

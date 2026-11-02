@@ -29,12 +29,23 @@ Move `--output-dir`, `--state-dir`, and `--log-dir` outside `--mail-root`.
 ### Another digest run is in progress
 
 A lock is held at `state/rollup.lock`. Wait for the other run, or if the process
-is dead, the next run recovers stale locks automatically.
+is dead, the next run recovers stale locks automatically. `rollup doctor`
+shows the holder (`run_lock`: pid, operation, run id) and whether it is stale.
 
 ### Empty digest / everything skipped outside window
 
 Fixture or live mail dates may be outside `--lookback-days`. Increase the
 lookback or regenerate fixtures with `python tests/generate_fixtures.py`.
+
+### Exit 2 with `partial: …` on stderr
+
+The dated digest is usable but something degraded. The line names the causes
+(`optional writer`, `latest publication`, `seen-state`, `manifest`, `final
+review`, `group summaries`, `linkedin`, `reddit`, `webpage`, `gmail`, `web
+index`); the manifest carries the same flags under `degradations` and the
+ordered steps under `lifecycle_events`. Optional destination writers (`opds`,
+`calibre`) never block Markdown/HTML. Exit-code matrix:
+[CRON.md](CRON.md#exit-codes).
 
 ### Ollama not reachable
 
@@ -81,8 +92,9 @@ codes, and bounded exception messages, but not newsletter subject/body text,
 prompts, model responses, or patch contents.
 
 Schema v2 may include `final_review` (apply skip reason, reject counts by code,
-auto-edited prose flag) and `group_summaries` (ollama_calls, cache hits, stream /
-cache errors, degraded).
+auto-edited prose flag), `group_summaries` (ollama_calls, cache hits, stream /
+cache errors, degraded), `degradations` (why a run was partial), and
+`lifecycle_events` (ordered publication steps).
 
 ### Apply mode skipped every patch
 
@@ -137,6 +149,22 @@ rollup digest --linkedin
 - **Dry-run / Settings GET:** never contacts LinkedIn.
 - **Link-post still a short teaser:** article fetch is on by default. Confirm `[linkedin].article_fetch` is not `false` and you did not pass `--no-linkedin-article-fetch`. Voyager must expose `ArticleComponent` (`content.navigationContext.actionTarget`). Job posts and posts without a link card stay commentary-only. A failed article GET leaves the teaser and sets a parse warning (`linkedin_article_fetch_failed`, `linkedin_article_empty`, `linkedin_article_url_invalid`); it does not fail the digest.
 - **How to copy cookies:** [EXAMPLES.md](EXAMPLES.md#2-copy-session-cookies-li_at-and-jsessionid).
+
+### Gmail: not ready / fetch failed
+
+Gmail ingest is opt-in (`[gmail].enabled` or `--gmail`) and read-only. Start with
+`rollup gmail status` (offline) and `rollup doctor` (`gmail_auth` check).
+
+- **`credentials: missing`:** set `ROLLUP_GMAIL_CLIENT_ID` / `ROLLUP_GMAIL_CLIENT_SECRET` in `~/.config/rollup/env` (Google Cloud OAuth client, type *Desktop app*, Gmail API enabled). Never TOML.
+- **`token: missing`:** run `rollup gmail auth` once (`--no-browser` to print the URL; `--manual` over SSH / in containers to paste the redirect URL). The token lands in `{state_dir}/gmail_token.json`; use the same `--state-dir` as your digests.
+- **`scope is not gmail.readonly`:** the grant included another scope. Revoke Rollup at `myaccount.google.com/permissions` and re-run `auth`. Rollup refuses to use any token wider than read-only.
+- **No refresh token returned:** also fixed by revoking and re-authorising (Google only issues one on a fresh consent).
+- **`Gmail label not found`:** the label name in `[gmail].labels` / `label_prefix` does not exist. `rollup gmail labels` lists what the account has and marks selected ones.
+- **401 after it used to work:** the refresh token was revoked or expired; re-run `rollup gmail auth`.
+- **429 / 5xx:** Rollup backs off and retries a few times, then reuses the stale label snapshot (`gmail_cache_stale`) or marks the run partial (`gmail_fetch_failed`, exit 2). Gmail-only runs with nothing fetched are exit 1.
+- **Old messages keep appearing / new ones missing:** labels are served from cache for `fetch_ttl_hours` (default 6). Pass `--gmail-refresh` or set the TTL to `0`.
+- **Large newsletters skipped:** raw messages over 2 MB are not fetched (logged as a warning).
+- **Dry-run / Settings GET:** never contacts Gmail.
 
 ### Reddit fetch failed (429 / missing sub)
 

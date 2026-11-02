@@ -9,7 +9,10 @@ Runnable examples for inventory, digest generation, summary routing, the local w
 **The rollup** is the weekly Markdown + HTML digest Rollup writes to `--output-dir`
 (default `~/Documents/rollup-outputs`). Each run also copies `rollup_logo.png` and
 `favicon.ico` beside the HTML file, and by default runs every output writer
-(xteink / txt / json / epub). See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+(xteink / txt / json / epub / opds, plus calibre once a drop folder is set).
+See [OUTPUT_WRITERS.md](OUTPUT_WRITERS.md).
+
+![The finished briefing: glance, contents, and collapsible per-folder cards](images/briefing-html.png)
 
 See [README.md](../README.md) for setup, safety guarantees, and configuration defaults.
 Optional sticky config: [CONFIG.md](CONFIG.md). Product shape: [CONTRACT.md](CONTRACT.md).
@@ -25,7 +28,7 @@ cd /path/to/rollup
 source .venv/bin/activate
 ```
 
-**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), `--scholar-mode detailed` (or `[scholar].mode = "detailed"`), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
+**Default digest mode** needs no Ollama server and makes no network calls unless you pass `--linkedin` (or enable `[linkedin]` in TOML), `--reddit` (or enable `[reddit]` in TOML), webpage queue fetches (on by default; `--no-webpage` to skip), `--gmail` (or `[gmail].enabled`), `--scholar-mode detailed` (or `[scholar].mode = "detailed"`), or `--ollama`. Pass `--ollama` only when you want LLM summaries from a local Ollama instance.
 
 If you pass summary flags (for example `--summary-profile`) without `--ollama`, Rollup ignores them and prints a warning.
 
@@ -89,6 +92,11 @@ python -m rollup digest --cron --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --no-grouping --root tests/fixtures/Newsletters.sbd
 python -m rollup digest --grouping-report --root tests/fixtures/Newsletters.sbd
 ```
+
+Grouping folds same-source daily editions and notification streams into one
+card per week; essays stay standalone:
+
+![Grouped daily editions in the HTML briefing](images/briefing-grouped.png)
 
 After a digest, browse the indexed archive (requires `pip install 'rollup[web]'`):
 
@@ -261,6 +269,67 @@ rollup sources disable reddit:sub:python
 
 Optional script-app OAuth (never TOML) goes in `~/.config/rollup/env` — see [CONFIG.md](CONFIG.md#optional-oauth-environment-only). Failures: [TROUBLESHOOTING.md](TROUBLESHOOTING.md#reddit-fetch-failed-429--missing-sub).
 
+## Gmail labels (opt-in network)
+
+Read-only Gmail API ingest for newsletters filed under Gmail labels instead of a
+Thunderbird mbox tree. Labels become folders (`Newsletters/tech` → `tech` with
+`label_prefix = "Newsletters"`); raw mail goes through the same parser as mbox,
+so a newsletter seen both ways dedupes to one entry. Rollup requests only
+`gmail.readonly` and never changes labels or read state. Reference:
+[CONFIG.md](CONFIG.md#gmail).
+
+### 1. OAuth client + env file
+
+Create a Google Cloud OAuth client (**Desktop app**) with the Gmail API enabled,
+then put the id/secret in the env file (never TOML, Settings, or git):
+
+```bash
+# ~/.config/rollup/env  (chmod 600)
+ROLLUP_GMAIL_CLIENT_ID=…apps.googleusercontent.com
+ROLLUP_GMAIL_CLIENT_SECRET=…
+```
+
+### 2. Authorise once, pick labels
+
+```bash
+python -m rollup gmail auth                 # browser + loopback redirect; token → state_dir/gmail_token.json
+python -m rollup gmail auth --no-browser    # print the URL instead of opening a browser
+python -m rollup gmail auth --manual        # SSH / containers: paste the redirect URL
+python -m rollup gmail labels               # network: list labels, * marks selected ones → folder names
+python -m rollup gmail status               # offline: credentials, token scope, cached labels
+```
+
+```toml
+# ~/.config/rollup/config.toml
+[gmail]
+enabled = true
+label_prefix = "Newsletters"
+# labels = ["Digests"]
+```
+
+### 3. Run
+
+Dry-run first (no Gmail HTTP; reports which labels would sync or come from cache):
+
+```bash
+python -m rollup digest --gmail --dry-run
+```
+
+Then fetch. `--gmail` is required unless `[gmail].enabled = true` in TOML:
+
+```bash
+python -m rollup digest --gmail --lookback-days 7
+python -m rollup digest --gmail --folder tech          # mapped folder name, not the label
+python -m rollup digest --gmail --gmail-refresh         # bypass the label cache (default TTL 6h)
+python -m rollup digest --no-gmail                      # mbox only, even if TOML enables Gmail
+python -m rollup doctor                                 # gmail_auth check appears when [gmail].enabled = true
+```
+
+Gmail-only setups (no local mbox) work: leave `root` unset or pointing at a
+missing directory; the run warns and continues. Fetch failures are **partial**
+(exit 2) when mbox still publishes; a Gmail-only run with nothing fetched is
+exit 1. Settings → **Gmail** has the same enable / prefix / labels controls.
+
 ## Google Scholar alerts
 
 Scholar emails already in Thunderbird. Default mode keeps them as item-list mail
@@ -279,6 +348,9 @@ python -m rollup digest --scholar-mode default
 python -m rollup digest --ollama --scholar-mode detailed
 python -m rollup digest --scholar-mode detailed --dry-run   # parse papers, no HTTP
 ```
+
+Or set mode and caps in **Settings → Google Scholar**. Registry source detail
+shows a banner when the source looks like Scholar.
 
 ## Interest profile / attention
 
@@ -299,9 +371,6 @@ python -m rollup digest --no-coverage
 python -m rollup digest --no-ollama   # glance synthesis is always offline
 python -m rollup digest --ollama --briefing-synthesis
 ```
-
-Or set mode and caps in **Settings → Google Scholar**. Registry source detail
-shows a banner when the source looks like Scholar.
 
 ## Webpage articles (opt-in network)
 
@@ -364,6 +433,10 @@ python -m rollup doctor --root tests/fixtures/Newsletters.sbd
 python -m rollup doctor --json --root tests/fixtures/Newsletters.sbd
 python -m rollup doctor --full --root tests/fixtures/Newsletters.sbd
 ```
+
+Doctor also reports the run lock (`rollup.lock` held or stale), the Gmail
+readiness check when `[gmail].enabled = true`, and the Calibre drop directory
+when one is configured.
 
 Inspect merged TOML + profile:
 
@@ -527,7 +600,7 @@ python -m rollup digest --output opds --lookback-days 7
 curl -fsS http://127.0.0.1:8765/opds
 ```
 
-Calibre copies finished artifacts into a watch / auto-add folder (no network). Skipped in default-all until `[calibre].drop_dir` or `--calibre-drop-dir` is set:
+Calibre copies every finished artifact of the run (EPUB, Atom, HTML, Markdown, JSON, TXT, XTEINK) into a watch / auto-add folder (no network; must be outside the mail root). Skipped in default-all until `[calibre].drop_dir` or `--calibre-drop-dir` is set:
 
 ```bash
 python -m rollup digest --output calibre --calibre-drop-dir ~/Calibre\ Library/auto-add --lookback-days 7
@@ -724,7 +797,9 @@ python -m rollup digest --root tests/fixtures/Newsletters.sbd
 python -m rollup web --open
 ```
 
-**Configuration Centre** (`/settings`) edits the real digest TOML (paths, profiles, writers, folder themes). **Run Studio** (`/run`) previews the effective run, dry-runs discovery, and starts a digest without composing CLI by hand. **Articles** / **LinkedIn** / **Reddit** manage those sources. See [WEB.md](WEB.md) and [CONFIG.md](CONFIG.md).
+![Run Studio workflow](images/run-studio-workflow.gif)
+
+**Configuration Centre** (`/settings`) edits the real digest TOML (paths, profiles, writers, folder themes, Gmail / LinkedIn / Reddit enablement). **Run Studio** (`/run`) previews the effective run, dry-runs discovery, and starts a digest without composing CLI by hand. **Articles** / **LinkedIn** / **Reddit** manage those sources. See [WEB.md](WEB.md) and [CONFIG.md](CONFIG.md).
 
 Variants:
 
