@@ -473,15 +473,17 @@ Reopen only under the pressure named here. Otherwise they stay shut.
 Kept brief on purpose. Detail lives in [CHANGELOG.md](../CHANGELOG.md).
 
 - Sticky TOML, run profiles (`weekly`, `daily`), effort presets, folder themes ([CONFIG.md](CONFIG.md))
-- Writer seam: xteink, txt, json, epub, opds, calibre ([OUTPUT_WRITERS.md](OUTPUT_WRITERS.md))
-- Loopback web UI, Configuration Centre, Run Studio, Home dashboard ([WEB.md](WEB.md))
-- `sticky_flags`, `cli_parser`, `rollup.pipeline.run_digest`, `rollup.state` through schema v18
+- Writer seam: xteink, txt, json, epub, opds, calibre, kindle ([OUTPUT_WRITERS.md](OUTPUT_WRITERS.md))
+- Loopback web UI, Configuration Centre, Run Studio, Home dashboard, RSS page ([WEB.md](WEB.md))
+- `sticky_flags`, `cli_parser`, `rollup.pipeline.run_digest`, `rollup.state` through schema v19
 - LinkedIn `fromMember`, Reddit subreddits, webpage queue, listing caches (v15), Firefox capture
 - Scholar detailed mode (v16) as mail enrichment
 - Attention, coverage overlay, briefing glance / opt-in narrative (0.10)
 - Corpus FTS and grounded Ask (v17)
 - Source suggestions; OPDS and Calibre; publication telemetry; Gmail readonly ingest (v18)
 - 0.11 hardening: `rollup init`, CI gate, render goldens, publication fault injection, schema lineage, `rollup.render` package split, `archive_failed`
+- 0.12: briefing continuity, RSS / Atom ingest, Send to Kindle, Gmail history sync, digest attempts (v19)
+- 1.0 leave-it-running cut; 1.0.1 parks CI as a smoke until `make check` stays green
 
 ## Related docs
 

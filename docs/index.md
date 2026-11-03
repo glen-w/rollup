@@ -1,9 +1,9 @@
 # Rollup documentation
 
 Rollup is a local-first personal briefing engine. It reads newsletters from
-your existing Thunderbird mbox store (and optional LinkedIn, Reddit, and
-webpage sources), classifies them, and writes **the rollup** — a bounded
-digest — without modifying any mail.
+your existing Thunderbird mbox store (or read-only Gmail labels, plus optional
+LinkedIn, Reddit, RSS, and webpage sources), classifies them, and writes
+**the rollup** — a bounded digest — without modifying any mail.
 
 Thunderbird owns the ongoing stream. Rollup takes a time window and produces a
 **bounded reading object**. It is not an RSS reader: there is no unread count,

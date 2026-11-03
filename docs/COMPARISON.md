@@ -20,8 +20,9 @@ my orbit and turn it into something finite and worth reading.”
 Adding RSS as a *reader* would pull Rollup toward unread counts, scrolling
 feeds, folders, stars, sync, and “mark all read” — the territory of
 Miniflux, FreshRSS, and Readeck. RSS as a silent *ingest transport* (fetch
-the last seven days at digest time; never show an RSS inbox) is a different
-question, and is parked on the [roadmap](ROADMAP.md).
+the last seven days at digest time; never show an RSS inbox) shipped in 0.12
+(`[rss]`, `--rss`, `GET /rss`). An RSS reader remains a non-goal — see
+[ROADMAP.md](ROADMAP.md).
 
 In 2026 local-AI aggregation is no longer unusual. Rollup’s distinction is
 the combination of:
@@ -32,7 +33,7 @@ the combination of:
 - **publication integrity** (staged artifacts, irreversible `latest.*` /
   seen-state, partial-failure exit codes)
 - **multi-format digest output** (Markdown, HTML, EPUB, e-ink, JSON, TXT) plus
-  reading destinations (OPDS catalog, Calibre drop folder)
+  reading destinations (OPDS catalog, Calibre drop folder, optional Kindle)
 
 The pitch is not “the self-hosted AI newsletter reader”. That niche now has
 competitors. The pitch is:
@@ -77,7 +78,7 @@ than to support more feeds. See [ROADMAP.md](ROADMAP.md).
 
 Starting from the existing Thunderbird store without becoming another mailbox is
 still unusual. Thunderbird filters file mail into folders; Rollup digests those
-folders (or, with the Gmail backend, the Gmail labels you already file into). Optional LinkedIn, Reddit, and webpage sources are ingest transports
+folders (or, with the Gmail backend, the Gmail labels you already file into). Optional LinkedIn, Reddit, RSS, and webpage sources are ingest transports
 for the same window; they are not inboxes, and they do not replace that contract.
 
 Gmail API ingestion shipped as an **opt-in, read-only backend** ([ROADMAP](ROADMAP.md)):

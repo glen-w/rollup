@@ -69,12 +69,14 @@ def test_sphinx_kit_files_exist():
 
 def test_live_markdown_is_in_hosted_toctree():
     """New live docs must appear in docs/index.md (entry or glob) — no second corpus."""
+    conf = (DOCS / "conf.py").read_text(encoding="utf-8")
+    assert '"assessments"' in conf or "'assessments'" in conf
     hosted = _toctree_entries()
     skip = {"index.md"}
     missing: list[str] = []
     for path in sorted(DOCS.rglob("*.md")):
         rel = path.relative_to(DOCS).as_posix()
-        if rel in skip:
+        if rel in skip or rel == "assessments" or rel.startswith("assessments/"):
             continue
         if rel not in hosted:
             missing.append(rel)
@@ -135,3 +137,26 @@ def test_landing_chrome_and_version_match_package():
     rtd = (ROOT / ".readthedocs.yml").read_text(encoding="utf-8")
     assert "docs/conf.py" in rtd
     assert "extra_requirements:" in rtd
+
+
+def test_landing_and_guide_intro_share_shipped_product_claims():
+    """Marketing landing and Sphinx index stay aligned with the 1.0 product surface."""
+    landing = (ROOT / "website" / "index.html").read_text(encoding="utf-8")
+    guide_intro = (DOCS / "index.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    website_readme = (ROOT / "website" / "README.md").read_text(encoding="utf-8")
+
+    for surface, text in (
+        ("website/index.html", landing),
+        ("docs/index.md", guide_intro),
+        ("README.md", readme),
+    ):
+        for claim in ("Gmail", "LinkedIn", "Reddit", "RSS"):
+            assert claim in text, f"{surface} missing shipped source claim: {claim}"
+
+    for claim in ("Kindle", "OPDS", "Calibre", "Home", "./guide/"):
+        assert claim in landing, f"website/index.html missing claim: {claim}"
+
+    assert "schema v19" in readme
+    assert re.search(r"currently\s+\*\*\d+\.\d+", website_readme) is None
+    assert "test_sphinx_docs" in website_readme

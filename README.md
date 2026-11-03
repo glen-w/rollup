@@ -218,15 +218,15 @@ CLI (rollup / python -m rollup)
   cli_parser + sticky_flags + user_config (TOML)
        │
        ├─ digest → pipeline.run_digest
-       │     mbox discovery  +  gmail/  +  linkedin/  +  reddit/  +  webpage/  +  scholar/
+       │     mbox discovery  +  gmail/  +  linkedin/  +  reddit/  +  rss/  +  webpage/  +  scholar/
        │     parse → classify → filter / grouping
        │     summarize (preview excerpts, or --ollama / LiteLLM)
        │     render MD/HTML → output writers → publication
-       │     state/rollup.db (schema v18) + manifests + web index
+       │     state/rollup.db (schema v19) + manifests + web index
        │
        └─ web → rollup.web (Flask; [web] extra)
              Home · Archive · Search · Sources (Quality | Registry)
-             Articles · LinkedIn · Reddit · Run Studio · Settings · Admin
+             Articles · LinkedIn · Reddit · RSS · Run Studio · Settings · Admin
 ```
 
 CLI flags always win over TOML. Settings and Run Studio use the same sticky registry (`config_service` / `sticky_flags`). Network listings persist in SQLite and reuse within `fetch_ttl_hours`.
@@ -243,7 +243,7 @@ src/rollup/render/                # digest rendering (model decides, markdown/ht
 src/rollup/pipeline/              # digest orchestration (`run_digest` plus types/status/ingest/stages/publish)
 src/rollup/state/                 # SQLite schema, migrations, and caches (`init_db` public API)
 src/rollup/gmail/                 # optional read-only Gmail API ingest (auth, session, cache)
-src/rollup/addons/                # destination writers (opds, calibre)
+src/rollup/addons/                # destination writers (opds, calibre, kindle)
 src/rollup/web/                   # optional Flask UI ([web] extra)
 extension/firefox/                # Add to Rollup temporary add-on
 tests/fixtures/Newsletters.sbd/   # committed synthetic test data

@@ -6,7 +6,7 @@
     <title>Rollup — a bounded briefing from mail you already keep</title>
     <meta
       name="description"
-      content="Rollup is a local-first personal briefing engine. It reads your Thunderbird mbox (and optional LinkedIn, Reddit, and webpage sources) and writes a finite digest without modifying any mail."
+      content="Rollup is a local-first personal briefing engine. It reads your Thunderbird mbox or read-only Gmail labels (plus optional LinkedIn, Reddit, RSS, and webpage sources) and writes a finite digest without modifying any mail."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -59,9 +59,10 @@
           <p class="brand-mark">Rollup</p>
           <h1>A bounded briefing from mail you already keep.</h1>
           <p class="lede">
-            Read newsletters from your Thunderbird mbox — plus optional
-            LinkedIn, Reddit, and saved pages — and write a calm periodic
-            digest. Mail stays read-only. Inference stays yours.
+            Read newsletters from your Thunderbird mbox or read-only Gmail
+            labels — plus optional LinkedIn, Reddit, RSS, and saved pages —
+            and write a calm periodic digest. Mail stays read-only. Inference
+            stays yours.
           </p>
           <div class="cta-row">
             <a class="btn primary" href="#product">See how it works</a>
@@ -76,7 +77,7 @@
           <p class="section-lead">
             Thunderbird owns the ongoing stream. Rollup takes a time window and
             produces a finite reading object — Markdown, HTML, and optional
-            EPUB / e-ink / OPDS. It is not an RSS reader.
+            EPUB / e-ink / OPDS / Kindle. It is not an RSS reader.
           </p>
           <div class="feature-grid">
             <div class="feature">
@@ -105,8 +106,9 @@
                 Local web UI
               </h3>
               <p>
-                Loopback Flask extra: Archive, Run Studio, Settings, Articles,
-                LinkedIn, Reddit, and Admin — same TOML and SQLite as the CLI.
+                Loopback Flask extra: Home, Archive, Run Studio, Settings,
+                Articles, LinkedIn, Reddit, RSS, and Admin — same TOML and
+                SQLite as the CLI.
               </p>
             </div>
             <div class="feature">
@@ -121,8 +123,9 @@
                 Optional sources
               </h3>
               <p>
-                LinkedIn, Reddit, and webpage capture are ingest transports for
-                that window, not inboxes. Credentials never live in TOML.
+                LinkedIn, Reddit, RSS, Gmail labels, and webpage capture are
+                ingest transports for that window, not inboxes. Credentials
+                never live in TOML.
               </p>
             </div>
             <div class="feature">
@@ -150,8 +153,8 @@
             <li>Turn a week of newsletters into one bounded digest</li>
             <li>Browse the archive in a loopback web UI</li>
             <li>Schedule unattended runs with launchd or cron</li>
-            <li>Fold in LinkedIn, Reddit, saved articles, or read-only Gmail labels at digest time</li>
-            <li>Write Markdown, HTML, EPUB, or e-ink artifacts; publish to OPDS or a Calibre folder</li>
+            <li>Fold in LinkedIn, Reddit, RSS, saved articles, or read-only Gmail labels at digest time</li>
+            <li>Write Markdown, HTML, EPUB, or e-ink artifacts; publish to OPDS, Calibre, or Kindle</li>
           </ul>
           <p>
             Walkthrough:
@@ -195,7 +198,7 @@
             </li>
             <li>
               Optionally enable Ollama, schedule digests, or add LinkedIn /
-              Reddit / articles.
+              Reddit / RSS / Gmail / articles.
             </li>
           </ol>
           <p>

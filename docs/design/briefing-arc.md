@@ -1,10 +1,10 @@
 # Design note: briefing layers toward 1.0
 
 **Status:** contracts, attention, coverage, synthesis, corpus FTS/Ask, source
-intelligence, and reading destinations (OPDS / Calibre drop) have landed.
-Send-to-Kindle remains a later writer plugin. Not a commitment calendar.
-The sequence that thickens these layers — 1.0 bar, then the edition arcs —
-is [the roadmap](../ROADMAP.md). This note holds the invariants.
+intelligence, and reading destinations (OPDS / Calibre drop / Kindle) have
+landed. Not a commitment calendar. The sequence that thickens these layers —
+1.0 bar, then the edition arcs — is [the roadmap](../ROADMAP.md). This note
+holds the invariants.
 
 Rollup reduces a collection window into a **bounded reading object**. These
 layers deepen that briefing. They do not add another stream to triage.
@@ -66,7 +66,7 @@ blocks. Reader bodies never appear in manifests.
 
 ## Non-goals (this arc)
 
-- Richer LinkedIn (RSS ingest and Send-to-Kindle shipped as transports/writers, not briefing layers)
+- Richer LinkedIn (beyond the existing `fromMember` ingest)
 - Embeddings / vector DB
 - Auto-unsubscribe or mutating Thunderbird
 - Dropping mail from the briefing

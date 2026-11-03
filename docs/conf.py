@@ -42,6 +42,9 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
+    # Maintainer maturity surveys (# assess); gitignored, never public product docs.
+    "assessments",
+    "assessments/*",
 ]
 
 source_suffix = {
