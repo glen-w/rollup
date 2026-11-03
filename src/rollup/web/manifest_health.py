@@ -477,23 +477,23 @@ def collect_manifest_health(
     try:
         from rollup.attempts import list_attempts
 
-        for row in list_attempts(conn, limit=limits.max_files):
-            run_id = row["run_id"]
+        for attempt in list_attempts(conn, limit=limits.max_files):
+            run_id = attempt["run_id"]
             if run_id in cards_by_id:
                 continue
-            status = row["status"] if row["status"] in STATUS_CSS else "unknown"
+            status = attempt["status"] if attempt["status"] in STATUS_CSS else "unknown"
             cards_by_id[run_id] = RunHealthCard(
                 run_id=run_id,
                 status=status,
                 status_css=STATUS_CSS.get(status, STATUS_CSS["unknown"]),
                 source="attempt",
-                started_at=row["started_at"],
-                completed_at=row["finished_at"],
+                started_at=attempt["started_at"],
+                completed_at=attempt["finished_at"],
                 degraded=status in {"partial", "failure"},
                 warning_count=None,
                 messages_included=None,
                 config_fingerprint=None,
-                diagnostics=[row["error_summary"]] if row["error_summary"] else [],
+                diagnostics=[attempt["error_summary"]] if attempt["error_summary"] else [],
             )
     except Exception:
         pass

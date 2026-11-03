@@ -54,6 +54,7 @@ class _DigestSession:
     attempt_started: bool = False
     manifest_builder: Any = None
     summarize_result: SummarizeResult | None = None
+    continuity_unreadable: bool = False
 
 
 def _failure_result(session: _DigestSession) -> DigestRunResult:

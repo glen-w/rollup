@@ -13,7 +13,13 @@ from rollup.gmail.cache import apply_history_delta
 from rollup.gmail.session import GmailHistoryExpired
 from rollup.pipeline.ingest import stage_parse_rss
 from rollup.pipeline.status import evaluate_no_input, format_partial_reasons
-from rollup.pipeline.types import AggregatedResults, DiscoveryResult, ParseCounts, ParseResult, StageWarning
+from rollup.pipeline.types import (
+    AggregatedResults,
+    DiscoveryResult,
+    ParseCounts,
+    ParseResult,
+    StageWarning,
+)
 from rollup.rss.config import RssConfig, RssFeed
 from rollup.rss.fetch import RssFetchError, fetch_feed
 from rollup.rss.parse import RssParseError, parse_feed_xml

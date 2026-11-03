@@ -112,7 +112,7 @@ Distinguish discovered / parse-candidate / parsed-ok / parse-failed / in-window 
 
 ### Schema version
 
-`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **18** (Gmail label/message cache, FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See `tests/test_schema_migrations.py` and the lineage replay in `tests/test_schema_lineage.py` (every historical version upgrades to the current one; a crash inside a step never advances the version).
+`schema_version` labels one **canonical full** database shape (including empty cache/feature tables). The current package version is **19** (digest attempts, briefing continuity, RSS cache, Gmail label/message cache, FTS5 corpus index, Scholar paper-body cache, listing caches for Reddit/LinkedIn, webpage queue, reader bodies, source registry, web archive). Version is never written before migrations complete, never lowered, and future versions are refused before any mutate. See `tests/test_schema_migrations.py` and the lineage replay in `tests/test_schema_lineage.py` (every historical version upgrades to the current one; a crash inside a step never advances the version).
 
 ### Primary summary variant
 

@@ -27,6 +27,7 @@ htmlcov/
 .DS_Store
 .env
 .env.*
+*.key
 docker-compose.override.yml
 
 # Local watch / assessment run logs

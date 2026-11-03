@@ -71,9 +71,10 @@ What exists today, and the thinness the post-1.0 arcs are aimed at.
 
 ## 1.0 — leave it running
 
-1.0 is not “the layers got deeper.” Depth is the arc after this. 1.0 is the
-cut where a person can run `rollup init`, point cron at a weekly profile, and
-trust the result for a year without Rollup becoming their mailbox.
+Tagged **1.0.0** on 2026-11-03. 1.0 is not “the layers got deeper.” Depth is
+the arc after this. 1.0 is the cut where a person can run `rollup init`, point
+cron at a weekly profile, and trust the result for a year without Rollup
+becoming their mailbox.
 
 Preview mode (no `--ollama`, no network) is a complete product at that cut:
 glance, folder sections, attention chrome, coverage notes, Markdown and HTML.

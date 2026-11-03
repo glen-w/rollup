@@ -4,7 +4,16 @@ All notable changes to Rollup are documented in this file.
 
 ## Unreleased
 
-- **Roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) separates the 1.0 bar from the post-1.0 arcs. RSS ingest, Send to Kindle, and Gmail history sync moved from “still thin / parked” into 0.12.
+## 1.0.0 — 2026-11-03
+
+The leave-it-running cut. `rollup init`, a weekly cron line, and an offline
+fixture digest are a complete product. Models, Gmail, Reddit, LinkedIn, RSS,
+Scholar detailed mode, and destination writers stay opt-in.
+
+- **Roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) separates this 1.0 bar from the post-1.0 arcs. RSS ingest, Send to Kindle, and Gmail history sync shipped in 0.12.
+- Continuity glance treats an unreadable prior ledger as degraded synthesis rather than a crash.
+- Contract schema lineage matches the package: **v19**.
+- Lockfile matches 1.0.0 and patches urllib3, certifi, soupsieve, werkzeug, and aiohttp for published CVEs.
 
 ## 0.12.0 — 2026-11-02
 
