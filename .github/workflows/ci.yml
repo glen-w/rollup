@@ -30,8 +30,9 @@ jobs:
       - name: Fixture doctor
         run: |
           mkdir -p /tmp/rollup-ci-smoke/{state,output,logs}
-          uv run rollup doctor \
+          uv run rollup \
             --config tests/fixtures/empty_config.toml \
+            doctor \
             --root tests/fixtures/Newsletters.sbd \
             --mail-root tests/fixtures \
             --state-dir /tmp/rollup-ci-smoke/state \
@@ -39,8 +40,9 @@ jobs:
             --log-dir /tmp/rollup-ci-smoke/logs
       - name: Offline preview digest
         run: |
-          uv run rollup digest \
+          uv run rollup \
             --config tests/fixtures/empty_config.toml \
+            digest \
             --root tests/fixtures/Newsletters.sbd \
             --mail-root tests/fixtures \
             --state-dir /tmp/rollup-ci-smoke/state \
