@@ -7,7 +7,7 @@
 help:
 	@echo "Rollup Makefile"
 	@echo ""
-	@echo "Quality gate (same commands CI runs):"
+	@echo "Quality gate (local; CI is a smoke until this stays green):"
 	@echo "  check             ruff + mypy + pytest with coverage gate"
 	@echo "  lint              ruff check src tests"
 	@echo "  types             mypy (config in pyproject.toml)"

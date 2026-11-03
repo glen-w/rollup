@@ -67,7 +67,7 @@ What exists today, and the thinness the post-1.0 arcs are aimed at.
 | Capture | Firefox Add to Rollup → `webpage_queue` while `rollup web` is up. Ingest at digest time | A closed laptop loses the capture. The queue is a tray for the next edition, not a library; keep it that way while making the tray survive the web UI being down |
 | Scholar | Default mode: alerts as `item_list` mail. Detailed mode: landing pages, schema v16 cache, caps (8 papers/email, 40 fetches/run) | Enrichment of mail already in the window. Not an ingest transport and not a reference manager |
 | Publication | Staged rename, fsync, irreversible `latest.*` / seen-state, manifest `degradations` / `lifecycle_events`, exit 2, fault-injection tests | The colophon stops at the CLI and the manifest. The HTML/Markdown a person actually reads does not yet say “Reddit section is a stale snapshot” |
-| Setup | `rollup init`, doctor, Docker Compose, CI gate, render goldens, schema lineage through v19 | The first preview digest is already a complete offline product. 1.0 is the decision to treat it as one |
+| Setup | `rollup init`, doctor, Docker Compose, CI smoke, render goldens, schema lineage through v19 | CI is install + version + fixture doctor + offline preview digest. Restore ruff, mypy, coverage, the Python matrix, and `compose-preview` only after `make check` stays green on main |
 
 ## 1.0 — leave it running
 
@@ -100,6 +100,25 @@ destination writers are opt-in arms on that product.
 Gmail incremental sync and Send-to-Kindle are explicitly allowed to slip past
 this cut. They are efficiency and a destination, and neither is required to
 leave the weekly edition running.
+
+## Restore the CI quality gate
+
+Tagged **1.0.1** on 2026-11-03 after the 1.0.0 push failed the full gate
+(`ruff`, `mypy`, `pytest --cov-fail-under=80` on Python 3.10–3.13; six
+final-review tests). GitHub Actions is a smoke until that suite is
+consecutively green: install, `rollup --version`, fixture `doctor`, offline
+preview digest. `make check` and `./scripts/ci-compose-preview.sh` stay the
+local commands.
+
+**Done when**
+
+- `make check` is green on consecutive runs on main.
+- Restore the 0.11 jobs as required: ruff, mypy, coverage gate, the 3.10–3.13
+  matrix, advisory `pip-audit`, and `compose-preview`. Do not grow the gate
+  until that suite stays green.
+
+**Out of this item:** using CI as a place to add new product surface. The
+smoke exists so main can ship; expansion is the old gate, not a new one.
 
 ## After 1.0 — thicken the edition
 

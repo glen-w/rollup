@@ -49,7 +49,7 @@ docker compose -f docker-compose.ci.yml build
 ./scripts/ci-compose-preview.sh
 ```
 
-That is CI job **`compose-preview`**. It runs the same script: fixture `tests/fixtures/Newsletters.sbd` → preview digest containing `Quick thoughts on learning`, exit 0, artifact ≤256KB. An empty lookback window prints `empty_window:` and exits 0. An unreadable store prints `store_unreadable:` and exits non-zero.
+That script is the Compose stranger proof: fixture `tests/fixtures/Newsletters.sbd` → preview digest containing `Quick thoughts on learning`, exit 0, artifact ≤256KB. An empty lookback window prints `empty_window:` and exits 0. An unreadable store prints `store_unreadable:` and exits non-zero. GitHub Actions CI is a smoke (install, version, fixture doctor, offline preview digest) until `make check` stays green — then this job returns ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 Host Python / venv install is an advanced alternative — see [Install](#install) below. Sticky settings: `~/.config/rollup/config.toml` or `./rollup.toml` — [docs/CONFIG.md](docs/CONFIG.md).
 
@@ -256,11 +256,13 @@ CHANGELOG.md                      # release notes
 ## Tests
 
 ```bash
-make check          # ruff + mypy + pytest with the same coverage gate CI enforces
+make check          # ruff + mypy + pytest with the coverage gate (local)
 python -m pytest tests/ -q
 ```
 
-CI runs `make check` on Python 3.10–3.13 plus the Compose preview digest.
+CI is a smoke: install, `rollup --version`, fixture `doctor`, offline preview
+digest. Restore the full `make check` matrix and Compose preview once that
+suite stays green — [docs/ROADMAP.md](docs/ROADMAP.md).
 Rendered output is pinned by goldens under `tests/fixtures/golden/`; regenerate
 deliberately with `ROLLUP_UPDATE_GOLDENS=1 python -m pytest tests/test_render_golden.py`
 and review the diff.

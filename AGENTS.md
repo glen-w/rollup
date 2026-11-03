@@ -50,7 +50,7 @@ rollup doctor --root tests/fixtures/Newsletters.sbd --mail-root tests/fixtures \
   --log-dir /tmp/rollup-cloud-demo/logs
 curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8765/rollups
 python -m pytest tests/ -q
-make check   # ruff + mypy + pytest coverage gate, same as CI
+make check   # ruff + mypy + pytest coverage gate (local; CI is a smoke)
 ```
 
 ### Notes
