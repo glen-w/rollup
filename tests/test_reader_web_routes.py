@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("flask")
+
 from rollup.parse import compute_content_hash
 from rollup.reader_bodies import make_reader_body_write
 from rollup.reader_body_store import upsert_reader_bodies

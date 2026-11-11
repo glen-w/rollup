@@ -273,6 +273,22 @@ def test_artifact_paths_include_run_id(tmp_path: Path) -> None:
         )
 
 
+def test_artifact_write_bytes_and_extension_dot(tmp_path: Path) -> None:
+    from rollup.addons.artifact_write import (
+        atomic_write_digest_artifact,
+        digest_artifact_path,
+    )
+
+    generated_at = datetime(2026, 7, 2, 10, 30, tzinfo=timezone.utc)
+    path = digest_artifact_path(tmp_path, generated_at, ".json")
+    assert path.suffix == ".json"
+    assert "newsletter-digest.json" in path.name
+    written = atomic_write_digest_artifact(
+        tmp_path, generated_at, b'{"ok":true}', extension="json"
+    )
+    assert written.read_bytes() == b'{"ok":true}'
+
+
 def test_txt_omits_urls_and_includes_structure() -> None:
     report = _report_with_content()
     text = render_txt(report, 8)

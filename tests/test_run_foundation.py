@@ -46,6 +46,20 @@ def test_resolve_run_options_cron_defaults() -> None:
     assert opts3.publish_latest is False
 
 
+def test_resolve_run_options_dry_run_and_no_manifest() -> None:
+    dry = resolve_run_options(dry_run=True)
+    assert dry.mode == "manual"
+    assert dry.write_manifest is False
+    assert dry.publish_latest is False
+
+    no_man = resolve_run_options(no_manifest=True)
+    assert no_man.write_manifest is False
+
+    cron_dry = resolve_run_options(cron=True, dry_run=True)
+    assert cron_dry.publish_latest is False
+    assert cron_dry.write_manifest is False
+
+
 def test_atomic_write_and_publish_file_set(tmp_path: Path) -> None:
     src = tmp_path / "a.md"
     atomic_write_text(src, "hello")
@@ -62,6 +76,20 @@ def test_atomic_write_bytes_and_copy(tmp_path: Path) -> None:
     dest = tmp_path / "copy" / "bin.dat"
     atomic_copy(nested, dest)
     assert dest.read_bytes() == b"\x00\x01\xff"
+
+
+def test_atomic_write_text_cleans_temp_on_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    target = tmp_path / "out.md"
+    monkeypatch.setattr(
+        "rollup.fsutil.os.fsync",
+        lambda _fd: (_ for _ in ()).throw(OSError("fsync boom")),
+    )
+    with pytest.raises(OSError, match="fsync boom"):
+        atomic_write_text(target, "nope")
+    assert not target.exists()
+    assert not list(tmp_path.glob(".tmp-*"))
 
 
 def test_publish_file_set_rollback_on_failure(tmp_path: Path, monkeypatch) -> None:

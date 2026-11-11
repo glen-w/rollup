@@ -191,3 +191,59 @@ def test_validate_writable_allows_outside(tmp_path: Path) -> None:
         state_dir=tmp_path / "state",
         log_dir=tmp_path / "logs",
     )
+
+
+def test_validate_read_root_allow_missing_gmail_only(tmp_path: Path) -> None:
+    mail = tmp_path / "mail"
+    mail.mkdir()
+    # Missing root must still be under mail_root for the containment check.
+    missing = mail / "Newsletters.sbd"
+    warnings = validate_read_root(
+        missing,
+        mail,
+        tmp_path / "out",
+        tmp_path / "state",
+        tmp_path / "logs",
+        allow_missing_root=True,
+    )
+    assert any("Gmail-only" in w for w in warnings)
+
+
+def test_validate_read_root_warns_on_live_newsletters(tmp_path: Path) -> None:
+    mail = tmp_path / "mail"
+    live = mail / "Newsletters.sbd"
+    live.mkdir(parents=True)
+    warnings = validate_read_root(
+        live,
+        mail,
+        tmp_path / "out",
+        tmp_path / "state",
+        tmp_path / "logs",
+    )
+    assert any("live Thunderbird" in w for w in warnings)
+
+
+def test_validate_read_root_case_insensitive_newsletters_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mail = tmp_path / "mail"
+    live = mail / "newsletters.sbd"
+    live.mkdir(parents=True)
+    original_is_dir = Path.is_dir
+
+    def selective_is_dir(self: Path) -> bool:
+        # Force the canonical Newsletters.sbd probe to miss so discovery walks
+        # children (covers case-sensitive hosts; macOS APFS is usually CI-folded).
+        if self.name == "Newsletters.sbd":
+            return False
+        return original_is_dir(self)
+
+    monkeypatch.setattr(Path, "is_dir", selective_is_dir)
+    warnings = validate_read_root(
+        live,
+        mail,
+        tmp_path / "out",
+        tmp_path / "state",
+        tmp_path / "logs",
+    )
+    assert any("live Thunderbird" in w for w in warnings)

@@ -140,3 +140,42 @@ def test_cadence_sample_count_is_messages():
     est = estimate_cadence(dates)
     assert est.sample_count == 5
     assert est.label == "daily"
+
+
+def test_cadence_unknown_below_min_samples():
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    est = estimate_cadence([base, base + timedelta(days=1)])
+    assert est.label == "unknown"
+    assert est.median_hours is None
+    assert est.confidence == 0.0
+
+
+def test_cadence_weekly_and_realtime_labels():
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    weekly = [base + timedelta(days=7 * i) for i in range(5)]
+    est_w = estimate_cadence(weekly)
+    assert est_w.label == "weekly"
+    assert est_w.median_hours is not None
+
+    realtime = [base + timedelta(hours=2 * i) for i in range(5)]
+    est_r = estimate_cadence(realtime)
+    assert est_r.label == "realtime"
+
+
+def test_cadence_skips_non_positive_and_huge_gaps():
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    # Duplicate timestamps (0-hour gaps) plus one >90-day jump should not poison
+    # a otherwise-daily series once enough positive intervals remain.
+    dates = [
+        base,
+        base,  # zero delta skipped
+        base + timedelta(days=1),
+        base + timedelta(days=2),
+        base + timedelta(days=3),
+        base + timedelta(days=4),
+        base + timedelta(days=200),  # huge gap skipped
+        base + timedelta(days=201),
+    ]
+    est = estimate_cadence(dates)
+    assert est.sample_count == 8
+    assert est.label in {"daily", "several_per_week", "irregular"}

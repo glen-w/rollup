@@ -230,3 +230,54 @@ def test_source_doctor_orphan_alias_fails(tmp_path: Path) -> None:
     orphan = next(c for c in report["checks"] if c["id"] == "source_orphan_aliases")
     assert orphan["status"] == "fail"
     conn.close()
+
+
+def test_source_doctor_healthy_empty_registry(tmp_path: Path) -> None:
+    from rollup.source_doctor import run_source_doctor
+
+    conn = init_db(tmp_path / "rollup.db")
+    report = run_source_doctor(conn)
+    assert report["ok"] is True
+    by_id = {c["id"]: c for c in report["checks"]}
+    assert by_id["source_registry_schema"]["status"] == "pass"
+    assert by_id["source_foreign_keys"]["status"] == "pass"
+    assert by_id["source_orphan_aliases"]["status"] == "pass"
+    assert by_id["source_invalid_enums"]["status"] == "pass"
+    assert by_id["source_superseded"]["status"] == "pass"
+    conn.close()
+
+
+def test_source_doctor_invalid_enums_and_superseded(tmp_path: Path) -> None:
+    from rollup.source_doctor import run_source_doctor
+
+    conn = init_db(tmp_path / "rollup.db")
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO sources (source_key, identity_version, lifecycle,
+           display_name_observed, created_at, updated_at, superseded_by)
+           VALUES ('from:old@ex.com', 1, 'superseded', 'Old', ?, ?, NULL)""",
+        (now, now),
+    )
+    conn.execute(
+        """INSERT INTO sources (source_key, identity_version, lifecycle,
+           display_name_observed, created_at, updated_at)
+           VALUES ('from:live@ex.com', 1, 'active', 'Live', ?, ?)""",
+        (now, now),
+    )
+    conn.execute(
+        """INSERT INTO source_overrides (
+             source_key, enabled, always_surface, priority, newsletter_type,
+             grouping_policy, summary_profile, expected_cadence, display_name,
+             notes, updated_at, updated_by)
+           VALUES ('from:live@ex.com', 1, 0, NULL, NULL,
+             'not-a-policy', 'not-a-profile', 'not-a-cadence', NULL, NULL, ?, 'cli')""",
+        (now,),
+    )
+    conn.commit()
+    report = run_source_doctor(conn)
+    assert report["ok"] is False
+    by_id = {c["id"]: c for c in report["checks"]}
+    assert by_id["source_invalid_enums"]["status"] == "fail"
+    assert by_id["source_stale_profile"]["status"] == "warn"
+    assert by_id["source_superseded"]["status"] == "warn"
+    conn.close()
